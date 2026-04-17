@@ -9,6 +9,10 @@ dependencies = [
     "sqlalchemy>=2.0.32,<3.0.0",
     "pydantic>=2.8.0,<3.0.0",
     "uvicorn>=0.30.0,<1.0.0",
+    "pypdf>=6.10.2",
+    "pypdfium2>=5.7.0",
+    "pillow>=12.2.0",
+    "rapidocr-onnxruntime>=1.4.4",
 ]
 
 [project.optional-dependencies]

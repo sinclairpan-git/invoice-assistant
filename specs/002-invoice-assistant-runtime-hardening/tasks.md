@@ -71,9 +71,9 @@ Batch 5: 回归验证、导出一致性与收口
 
 ## Batch 2：真实 PDF 文本抽取与 OCR fallback
 
-- [ ] T21 接入真实 PDF 文本抽取 provider
-- [ ] T22 接入本地 OCR fallback 与低置信降级
-- [ ] T23 补齐真实样本回归集和解析测试
+- [x] T21 接入真实 PDF 文本抽取 provider
+- [x] T22 接入本地 OCR fallback 与低置信降级
+- [x] T23 补齐真实样本回归集和解析测试
 
 ### Task 2.1 接入真实 PDF 文本抽取 provider
 

@@ -1,9 +1,13 @@
 import json
+from pathlib import Path
 
 import pytest
 
 from backend.app.services.parsing.evidence_models import EvidenceAdapterError
-from backend.app.services.parsing.providers import adapt_ocr_output, adapt_text_extraction
+from backend.app.services.parsing.providers import adapt_ocr_output, adapt_text_extraction, extract_pdf_text
+
+
+FIXTURE_DIR = Path(__file__).parent / "fixtures" / "invoices"
 
 
 def test_text_extraction_payload_adapts_to_unified_document_evidence():
@@ -63,3 +67,39 @@ def test_missing_raw_text_raises_structured_error():
     assert error["code"] == "missing_raw_text"
     assert error["provider_name"] == "pdfminer"
     assert error["source_type"] == "text"
+
+
+def test_pdf_text_provider_extracts_real_pdf_binary_to_payload():
+    extraction = extract_pdf_text((FIXTURE_DIR / "01-standard-electronic.pdf").read_bytes())
+
+    assert extraction.source_type == "text"
+    assert extraction.provider_name == "pypdf"
+    assert "Invoice Number: STD-001" in extraction.raw_text
+    assert extraction.pages[0]["page_no"] == 1
+    assert extraction.pages[0]["text_available"] is True
+
+    evidence = adapt_text_extraction(
+        {
+            "provider_name": extraction.provider_name,
+            "provider_version": extraction.provider_version,
+            "raw_text": extraction.raw_text,
+            "pages": extraction.pages,
+            "text_blocks": extraction.text_blocks,
+            "table_lines": extraction.table_lines,
+            "field_candidates": {
+                "invoice_number": {
+                    "value": "STD-001",
+                    "confidence": extraction.base_confidence,
+                    "page_no": 1,
+                    "source_fragment": "Invoice Number: STD-001",
+                }
+            },
+            "confidence_summary": {
+                "overall": extraction.base_confidence,
+                "fields": {"invoice_number": extraction.base_confidence},
+            },
+        }
+    )
+
+    assert evidence.provider_name == "pypdf"
+    assert evidence.best_candidate("invoice_number").value == "STD-001"

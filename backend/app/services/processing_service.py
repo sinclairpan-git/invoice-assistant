@@ -15,8 +15,14 @@ from sqlalchemy.orm import Session
 from backend.app.core.logging import get_app_logger, log_event
 from backend.app.db.models import Batch, ExtractedField, FieldCheck, InvoiceRecord
 from backend.app.services.naming_service import DEFAULT_NAMING_TEMPLATE, build_renamed_filename
-from backend.app.services.parsing.evidence_models import UnifiedDocumentEvidence
-from backend.app.services.parsing.providers import adapt_ocr_output, adapt_text_extraction
+from backend.app.services.parsing.evidence_models import EvidenceAdapterError, StructuredParseError, UnifiedDocumentEvidence
+from backend.app.services.parsing.providers import (
+    ProviderExtractionPayload,
+    adapt_ocr_output,
+    adapt_text_extraction,
+    extract_local_ocr,
+    extract_pdf_text,
+)
 from backend.app.services.rules.buyer_validation import BuyerValidationResult, validate_buyer_fields
 from backend.app.services.rules.duplicate_detector import detect_suspected_duplicate
 from backend.app.services.rules.risk_classifier import classify_risk
@@ -26,12 +32,12 @@ from backend.app.services.status_service import derive_display_status
 FIXTURE_START_MARKER = "INVOICE_ASSISTANT_FIXTURE_START"
 FIXTURE_END_MARKER = "INVOICE_ASSISTANT_FIXTURE_END"
 GENERIC_FIELD_PATTERNS = {
-    "invoice_number": re.compile(r"(?:Invoice(?:\s+No|\s+Number)?|发票号码)[:：]?\s*([A-Z0-9-]+)", re.IGNORECASE),
-    "invoice_code": re.compile(r"(?:Invoice\s+Code|发票代码)[:：]?\s*([A-Z0-9-]+)", re.IGNORECASE),
+    "invoice_number": re.compile(r"(?:Invoice(?:\s*No|\s*Number)?|发票号码)[:：]?\s*([A-Z0-9-]+)", re.IGNORECASE),
+    "invoice_code": re.compile(r"(?:Invoice\s*Code|发票代码)[:：]?\s*([A-Z0-9-]+)", re.IGNORECASE),
     "seller_name": re.compile(r"(?:Seller|销方名称)[:：]?\s*([^\r\n]+)", re.IGNORECASE),
     "buyer_name": re.compile(r"(?:Buyer|购方名称)[:：]?\s*([^\r\n]+)", re.IGNORECASE),
-    "buyer_tax_no": re.compile(r"(?:Buyer\s+Tax(?:\s+No)?|购方税号)[:：]?\s*([A-Z0-9]+)", re.IGNORECASE),
-    "invoice_date": re.compile(r"(?:Invoice\s+Date|Date|开票日期)[:：]?\s*([0-9]{4}[-/][0-9]{2}[-/][0-9]{2})", re.IGNORECASE),
+    "buyer_tax_no": re.compile(r"(?:Buyer\s*Tax(?:\s*No)?|购方税号)[:：]?\s*([A-Z0-9]+)", re.IGNORECASE),
+    "invoice_date": re.compile(r"(?:Invoice\s*Date|Date|开票日期)[:：]?\s*([0-9]{4}[-/][0-9]{2}[-/][0-9]{2})", re.IGNORECASE),
     "invoice_amount": re.compile(r"(?:Amount|价税合计|金额)[:：]?\s*([0-9]+(?:\.[0-9]{1,2})?)", re.IGNORECASE),
 }
 SUPPORTED_NAMING_KEYS = {
@@ -267,12 +273,45 @@ class ProcessingService:
         )
 
     def _parse_document(self, content: bytes) -> ParsedDocument:
-        raw_text = content.decode("utf-8", errors="ignore")
-        metadata = self._extract_fixture_metadata(raw_text)
-        if metadata:
-            return ParsedDocument(evidence=self._build_fixture_evidence(metadata), metadata=metadata)
+        text_error: StructuredParseError | None = None
+        text_extraction: ProviderExtractionPayload | None = None
+        metadata: dict[str, Any] = {}
 
-        return ParsedDocument(evidence=self._build_generic_evidence(raw_text), metadata={})
+        try:
+            text_extraction = extract_pdf_text(content)
+            metadata = self._extract_fixture_metadata(text_extraction.raw_text)
+            parse_mode = str(metadata.get("parse_mode") or "text").strip().lower()
+
+            if metadata and parse_mode != "ocr":
+                return ParsedDocument(
+                    evidence=self._build_fixture_evidence(metadata, extraction=text_extraction),
+                    metadata=metadata,
+                )
+
+            if parse_mode != "ocr":
+                generic_evidence = self._try_build_generic_evidence(text_extraction)
+                if generic_evidence is not None:
+                    return ParsedDocument(evidence=generic_evidence, metadata={})
+        except EvidenceAdapterError as exc:
+            text_error = exc.error
+
+        try:
+            ocr_extraction = extract_local_ocr(content)
+        except EvidenceAdapterError as exc:
+            raise ValueError(self._format_parse_failure(exc.error, text_error)) from exc
+
+        ocr_metadata = metadata or self._extract_fixture_metadata(ocr_extraction.raw_text)
+        if ocr_metadata:
+            return ParsedDocument(
+                evidence=self._build_fixture_evidence(ocr_metadata, extraction=ocr_extraction),
+                metadata=ocr_metadata,
+            )
+
+        generic_evidence = self._try_build_generic_evidence(ocr_extraction)
+        if generic_evidence is not None:
+            return ParsedDocument(evidence=generic_evidence, metadata={})
+
+        raise ValueError("ocr_no_invoice_fields: Local OCR did not produce recognizable invoice fields.")
 
     @staticmethod
     def _extract_fixture_metadata(raw_text: str) -> dict[str, Any]:
@@ -306,10 +345,24 @@ class ProcessingService:
                 metadata[key] = [existing, value]
         return metadata
 
-    def _build_fixture_evidence(self, metadata: dict[str, Any]) -> UnifiedDocumentEvidence:
-        parse_mode = str(metadata.get("parse_mode") or "text").strip().lower()
-        overall_confidence = self._coerce_float(metadata.get("overall_confidence"), default=0.98 if parse_mode == "text" else 0.82)
-        confidence_flags = self._coerce_list(metadata.get("confidence_flag"))
+    def _build_fixture_evidence(
+        self,
+        metadata: dict[str, Any],
+        *,
+        extraction: ProviderExtractionPayload,
+    ) -> UnifiedDocumentEvidence:
+        overall_confidence = self._coerce_float(
+            metadata.get("overall_confidence"),
+            default=extraction.base_confidence,
+        )
+        confidence_flags = list(
+            dict.fromkeys(
+                [
+                    *self._coerce_list(metadata.get("confidence_flag")),
+                    *extraction.confidence_flags,
+                ]
+            )
+        )
         line_texts = self._coerce_list(metadata.get("line_text"))
 
         field_candidates: list[dict[str, Any]] = []
@@ -343,20 +396,27 @@ class ProcessingService:
         for line_text in line_texts:
             raw_lines.append(f"line_text: {line_text}")
 
-        payload = {
-            "provider_name": "fixture-ocr" if parse_mode == "ocr" else "fixture-text",
-            "provider_version": "2026.04",
-            "raw_text": "\n".join(raw_lines),
-            "pages": [{"page_no": 1}],
-            "text_blocks": [{"page_no": 1, "text": "\n".join(raw_lines)}],
-            "table_lines": [
+        table_lines = extraction.table_lines
+        if line_texts:
+            table_lines = [
                 {
                     "row_no": index,
                     "text": line_text,
                     "mixed_invoice": self._coerce_bool(metadata.get("mixed_invoice")),
                 }
                 for index, line_text in enumerate(line_texts, start=1)
-            ],
+            ]
+
+        raw_text = extraction.raw_text.strip() or "\n".join(raw_lines).strip()
+        text_blocks = extraction.text_blocks or ([{"page_no": 1, "text": raw_text}] if raw_text else [])
+        payload = {
+            "provider_name": extraction.provider_name,
+            "provider_version": extraction.provider_version,
+            "provider_error_code": extraction.provider_error_code,
+            "raw_text": raw_text,
+            "pages": extraction.pages or [{"page_no": 1}],
+            "text_blocks": text_blocks,
+            "table_lines": table_lines,
             "field_candidates": field_candidates,
             "confidence_summary": {
                 "overall": overall_confidence,
@@ -364,12 +424,12 @@ class ProcessingService:
                 "flags": confidence_flags,
             },
         }
-        if parse_mode == "ocr":
+        if extraction.source_type == "ocr":
             return adapt_ocr_output(payload)
         return adapt_text_extraction(payload)
 
-    def _build_generic_evidence(self, raw_text: str) -> UnifiedDocumentEvidence:
-        normalized_text = "\n".join(line.strip() for line in raw_text.splitlines() if line.strip())
+    def _build_generic_evidence(self, extraction: ProviderExtractionPayload) -> UnifiedDocumentEvidence:
+        normalized_text = "\n".join(line.strip() for line in extraction.raw_text.splitlines() if line.strip())
         if not normalized_text:
             raise ValueError("No usable text extracted from document.")
 
@@ -384,31 +444,52 @@ class ProcessingService:
                 {
                     "field_name": field_name,
                     "value": value,
-                    "confidence": 0.72,
+                    "confidence": extraction.base_confidence,
                     "page_no": 1,
                     "source_fragment": match.group(0).strip(),
                 }
             )
-            confidence_fields[field_name] = 0.72
+            confidence_fields[field_name] = extraction.base_confidence
 
         if not field_candidates:
             raise ValueError("Unable to extract invoice fields from document text.")
 
+        confidence_flags = list(dict.fromkeys(extraction.confidence_flags))
+        if extraction.base_confidence < 0.75 and "low_confidence" not in confidence_flags:
+            confidence_flags.append("low_confidence")
+
         payload = {
-            "provider_name": "raw-text-scan",
-            "provider_version": "2026.04",
+            "provider_name": extraction.provider_name,
+            "provider_version": extraction.provider_version,
+            "provider_error_code": extraction.provider_error_code,
             "raw_text": normalized_text,
-            "pages": [{"page_no": 1}],
-            "text_blocks": [{"page_no": 1, "text": normalized_text}],
-            "table_lines": [{"row_no": index, "text": line} for index, line in enumerate(normalized_text.splitlines(), start=1)],
+            "pages": extraction.pages or [{"page_no": 1}],
+            "text_blocks": extraction.text_blocks or [{"page_no": 1, "text": normalized_text}],
+            "table_lines": extraction.table_lines
+            or [{"row_no": index, "text": line} for index, line in enumerate(normalized_text.splitlines(), start=1)],
             "field_candidates": field_candidates,
             "confidence_summary": {
-                "overall": 0.72,
+                "overall": extraction.base_confidence,
                 "fields": confidence_fields,
-                "flags": ["low_confidence"],
+                "flags": confidence_flags,
             },
         }
+        if extraction.source_type == "ocr":
+            return adapt_ocr_output(payload)
         return adapt_text_extraction(payload)
+
+    def _try_build_generic_evidence(self, extraction: ProviderExtractionPayload) -> UnifiedDocumentEvidence | None:
+        try:
+            return self._build_generic_evidence(extraction)
+        except (EvidenceAdapterError, ValueError):
+            return None
+
+    @staticmethod
+    def _format_parse_failure(error: StructuredParseError, text_error: StructuredParseError | None = None) -> str:
+        message = f"{error.code}: {error.message}"
+        if text_error is not None:
+            message = f"{message} (text provider error: {text_error.code})"
+        return message
 
     @staticmethod
     def _candidate_value(evidence: UnifiedDocumentEvidence, field_name: str) -> str | None:

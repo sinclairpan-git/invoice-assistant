@@ -2,7 +2,7 @@
 
 **功能编号**：`002-invoice-assistant-runtime-hardening`  
 **创建日期**：2026-04-17  
-**状态**：Batch 1 已完成，Batch 2 准备中
+**状态**：Batch 2 已完成，Batch 3 准备中
 
 ## 1. 归档规则
 
@@ -109,6 +109,105 @@
 - 已完成二期 canonical 规格、研究、数据模型、计划和任务拆解
 - AI-SDLC 当前运行时已恢复到 `verify`，且 002 work item 与当前 feature branch 对齐
 - 后续可在框架授权下进入 Batch 2，开始真实解析与运行时实现
+
+#### 2.8 归档后动作
+
+- 本文件将与本批提交合并入库
+- 提交哈希：待本批提交后生成
+- 当前批次 branch disposition 状态：进行中
+- 当前批次 worktree disposition 状态：进行中
+- 是否继续下一批：是
+
+### Batch 2026-04-17-002 | T21-T23
+
+#### 2.1 批次范围
+
+- 覆盖任务：`T21`、`T22`、`T23`
+- 覆盖阶段：`execute`
+- 预读范围：`AGENTS.md`、`.ai-sdlc/memory/constitution.md`、`specs/002-invoice-assistant-runtime-hardening/spec.md`、`specs/002-invoice-assistant-runtime-hardening/plan.md`、`specs/002-invoice-assistant-runtime-hardening/tasks.md`
+- 激活的规则：Batch 2 仅实现真实 PDF 文本抽取、本地 OCR fallback、低置信降级与回归测试，不提前进入 Batch 3 的持久化作业模型
+
+#### 2.2 统一验证命令
+
+- `V1`
+  - 命令：`UV_CACHE_DIR=.uv-cache uv run --project backend --extra dev pytest backend/tests/test_document_evidence.py backend/tests/test_processing_runtime.py -q`
+  - 结果：PASS，`8 passed`
+- `V2`
+  - 命令：`UV_CACHE_DIR=.uv-cache uv run --project backend --extra dev pytest backend/tests/test_api_workflows.py backend/tests/test_end_to_end_batch.py -q`
+  - 结果：PASS，`2 passed`
+- `V3`
+  - 命令：`UV_CACHE_DIR=.uv-cache uv run --project backend --extra dev pytest backend/tests -q`
+  - 结果：PASS，`27 passed`
+- `V4`
+  - 命令：`UV_CACHE_DIR=.uv-cache uv run ai-sdlc verify constraints`
+  - 结果：PASS，`verify constraints: no BLOCKERs`
+- `V5`
+  - 命令：`python -m ai_sdlc workitem branch-check --wi specs/002-invoice-assistant-runtime-hardening`
+  - 结果：PASS，当前 feature branch 与 002 work item 已关联，branch disposition 为 `进行中`
+
+#### 2.3 任务记录
+
+##### T21 | 接入真实 PDF 文本抽取 provider
+
+- 改动范围：`backend/pyproject.toml`、`backend/uv.lock`、`backend/app/services/parsing/providers.py`、`backend/app/services/processing_service.py`、`backend/tests/test_document_evidence.py`
+- 改动内容：
+  - 新增 `pypdf`、`pypdfium2`、`rapidocr-onnxruntime`、`pillow` 依赖，并冻结到后端锁文件
+  - 在 provider 层接入真实 PDF 二进制文本抽取，输出统一的 `ProviderExtractionPayload`
+  - 将真实文本抽取结果映射到统一证据模型，并保留 provider 名称、版本与结构化错误码
+- 新增/调整的测试：新增真实电子票 provider 回归，验证 `pypdf` 文本结果可落到统一证据模型
+- 执行的命令：`UV_CACHE_DIR=.uv-cache uv run --project backend --extra dev pytest backend/tests/test_document_evidence.py -q`
+- 测试结果：PASS
+- 是否符合任务目标：是
+
+##### T22 | 接入本地 OCR fallback 与低置信降级
+
+- 改动范围：`backend/app/services/parsing/providers.py`、`backend/app/services/processing_service.py`、`backend/tests/test_processing_runtime.py`
+- 改动内容：
+  - 在文本抽取不可用或明确要求 OCR 的情况下切换到本地 OCR
+  - 将 OCR 输出接到统一证据模型，并把低置信标记继续下沉到风险分类链路
+  - 对损坏 PDF 输出结构化失败原因，保留 text provider 与 OCR provider 的错误码上下文
+- 新增/调整的测试：新增扫描票 OCR、低置信待复核、损坏 PDF 失败记录回归
+- 执行的命令：`UV_CACHE_DIR=.uv-cache uv run --project backend --extra dev pytest backend/tests/test_processing_runtime.py -q`
+- 测试结果：PASS
+- 是否符合任务目标：是
+
+##### T23 | 补齐真实样本回归集和解析测试
+
+- 改动范围：`backend/tests/test_document_evidence.py`、`backend/tests/test_processing_runtime.py`
+- 改动内容：
+  - 使用仓库内已有电子票、扫描票、低置信票、损坏票样本构建真实回归集
+  - 覆盖文本优先、OCR fallback、低置信降级和失败落库四条主路径
+  - 回跑 API 与端到端批次用例，确认合规票总金额、导出和展示口径未回退
+- 新增/调整的测试：回跑 `test_api_workflows.py`、`test_end_to_end_batch.py` 与后端全量测试
+- 执行的命令：`UV_CACHE_DIR=.uv-cache uv run --project backend --extra dev pytest backend/tests/test_api_workflows.py backend/tests/test_end_to_end_batch.py -q`、`UV_CACHE_DIR=.uv-cache uv run --project backend --extra dev pytest backend/tests -q`
+- 测试结果：PASS
+- 是否符合任务目标：是
+
+#### 2.4 代码审查结论
+
+- 宪章/规格对齐：通过，Batch 2 仅实现真实解析与运行时加固，没有越过 Batch 3 的异步持久化边界
+- 代码质量：通过，真实 provider 输出统一证据模型，OCR fallback 和失败路径已结构化
+- 测试质量：通过，provider、runtime、API、端到端和后端全量回归均已通过
+- 结论：无阻塞 Batch 3 的 Critical 问题
+
+#### 2.5 任务/计划同步状态
+
+- `tasks.md` 同步状态：已同步，`T21`、`T22`、`T23` 已标记完成
+- `related_plan`（如存在）同步状态：以 `plan.md` 为准
+- 关联 branch/worktree disposition 计划：继续在 `feature/002-invoice-assistant-runtime-hardening-dev` 上推进 Batch 3
+- 说明：Batch 2 完成后，下一批进入持久化作业、异步执行与恢复
+
+#### 2.6 自动决策记录
+
+- 真实解析阶段优先复用 `UnifiedDocumentEvidence` 与现有规则链路，避免为 OCR 另起一套模型
+- fixture metadata 继续保留为回归锚点，但运行时底层已切换为真实 provider 与真实 PDF 二进制输入
+- 低置信 OCR 不走自动通过分支，继续通过风险分类进入 `review_required`
+
+#### 2.7 批次结论
+
+- 真实 PDF 文本抽取已接入运行时，并可映射到统一证据模型
+- 本地 OCR fallback、低置信降级与损坏 PDF 失败路径均已打通
+- 现有 API、批次处理、导出和合规票总金额回归通过，可继续进入 Batch 3
 
 #### 2.8 归档后动作
 
