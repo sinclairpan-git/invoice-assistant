@@ -64,7 +64,7 @@ class BatchService:
                     storage_path_original=stored.storage_path,
                     file_sha256=stored.file_sha256,
                     processing_status="queued",
-                    review_status="pending",
+                    review_status="not_reviewed",
                     artifact_status="original_only",
                 )
                 self.session.add(invoice)

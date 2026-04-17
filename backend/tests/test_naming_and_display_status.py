@@ -59,3 +59,20 @@ def test_suggested_pass_summary_supports_total_amount_and_filter_scope():
     assert batch_summary.total_amount == Decimal("100.00")
     assert filtered_summary.count == 1
     assert filtered_summary.total_amount == Decimal("100.00")
+
+
+def test_suggested_pass_summary_ignores_stale_persisted_display_status():
+    records = [
+        SimpleNamespace(
+            processing_status="completed",
+            system_decision="review_required",
+            duplicate_flag=False,
+            display_status=DISPLAY_STATUS_PASS,
+            invoice_amount=Decimal("120.00"),
+        )
+    ]
+
+    filtered_summary = summarize_suggested_pass(records, filter_display_status=DISPLAY_STATUS_PASS)
+
+    assert filtered_summary.count == 0
+    assert filtered_summary.total_amount == Decimal("0.00")

@@ -46,7 +46,7 @@ def summarize_suggested_pass(
     total_amount = Decimal("0.00")
 
     for record in records:
-        display_status = getattr(record, "display_status", None) or derive_display_status(
+        display_status = derive_display_status(
             processing_status=getattr(record, "processing_status", None),
             system_decision=getattr(record, "system_decision", None),
             duplicate_flag=bool(getattr(record, "duplicate_flag", False)),

@@ -289,3 +289,81 @@
 - 当前批次 branch disposition 状态：进行中
 - 当前批次 worktree disposition 状态：进行中
 - 是否继续下一批：是
+
+#### 2.25 任务记录
+
+##### T41 | 暴露批次、结果、详情和配置 API
+
+- 改动范围：`backend/app/main.py`、`backend/app/api/batches.py`、`backend/app/api/invoices.py`、`backend/app/api/config.py`、`backend/app/api/dependencies.py`、`backend/app/api/serializers.py`、`backend/tests/test_api_workflows.py`
+- 改动内容：
+  - 暴露批次列表、批次详情、批次结果筛选、发票详情、人工复核和配置版本接口
+  - 详情接口返回证据、字段抽取、字段校验和人工复核留痕，不覆盖 `system_decision`
+  - 将 `display_status` 统一收口为即时派生，避免筛选结果、金额汇总和导出口径因持久化旧值而漂移
+  - 批次 GET 接口改为只计算实时快照、不提交数据库，避免前端轮询触发写放大
+- 新增/调整的测试：`backend/tests/test_api_workflows.py`
+- 执行的命令：`uv run pytest tests/test_api_workflows.py -q`
+- 测试结果：PASS
+- 是否符合任务目标：是
+
+##### T42 | 实现 ZIP / Excel 导出
+
+- 改动范围：`backend/app/services/export_service.py`、`backend/tests/test_export_service.py`、`backend/pyproject.toml`
+- 改动内容：
+  - 实现系统建议通过 ZIP、问题票 ZIP 和 Excel 台账三类导出
+  - 导出摘要与结果页金额口径统一为“`suggested_pass` 且排除疑似重复”
+  - 导出完成后写入 `ExportJob`，Excel 同步更新批次导出台账路径
+  - 导出失败时补充半成品文件清理，避免残留脏 ZIP / XLSX
+  - 修正 `pyproject.toml` 的 setuptools 包发现规则，确保 `uv run pytest` 不再被 `backend/data` 误判为可打包顶层包
+- 新增/调整的测试：`backend/tests/test_export_service.py`
+- 执行的命令：`uv run pytest tests/test_export_service.py -q`
+- 测试结果：PASS
+- 是否符合任务目标：是
+
+##### T43 | 建立批次进度与错误可观察性
+
+- 改动范围：`backend/app/core/logging.py`、`backend/app/services/progress_service.py`、`backend/app/api/batches.py`、`backend/tests/test_progress_reporting.py`
+- 改动内容：
+  - 建立批次进度快照，输出阶段编码、阶段文案、完成率、失败原因和建议通过金额
+  - 为批次进度刷新、导出成功和导出失败建立统一结构化日志
+  - 明确 `refresh_batch(persist=False)` 只做实时计算，用于前端读取；默认仍支持持久化刷新
+- 新增/调整的测试：`backend/tests/test_progress_reporting.py`
+- 执行的命令：`uv run pytest tests/test_progress_reporting.py -q`
+- 测试结果：PASS
+- 是否符合任务目标：是
+
+#### 2.26 代码审查结论
+
+- 宪章/规格对齐：通过，Batch 4 已满足批次/结果 API、导出和批次可观察性的核心要求
+- 对抗评审结论：通过，财务复核确认“合规票展示总金额”主路径满足；工程复核确认 Batch 4 主链路可继续推进
+- 已吸收的评审修复：
+  - `display_status` 改为统一派生，消除旧状态导致的筛选/汇总偏差
+  - 批次 GET 接口改为只读快照，不再在读请求中提交批次状态
+  - 导出失败清理半成品文件，并补齐失败路径测试
+- 非阻塞遗留项：`FR-020` 文件名冲突后缀仍待在后续重命名编排接入时补齐
+
+#### 2.27 任务/计划同步状态
+
+- `tasks.md` 同步状态：已同步，`T41`、`T42`、`T43` 标记完成
+- `related_plan`（如存在）同步状态：无单独 `related_plan`，仍以 `plan.md` 为准
+- 关联 branch/worktree disposition 计划：继续在 `feature/001-invoice-assistant-mvp-dev` 上推进 Batch 5
+- 说明：后端已具备可供前端对接的批次、结果、配置、导出和进度接口
+
+#### 2.28 自动决策记录
+
+- 将 `display_status` 视为展示派生值而非可信存储源，统一从处理状态、系统判定和重复标记实时计算
+- 将进度刷新拆分为“只读快照”和“持久化刷新”两种模式，前端轮询默认使用只读模式
+- 在导出异常路径主动删除半成品文件，避免失败作业污染存储目录
+
+#### 2.29 批次结论
+
+- 已完成 Batch 4 的 API、导出与批次可观察性能力，并通过对抗评审后的修正项回归
+- 当前后端结果口径已稳定覆盖合规票总金额、重复票排除和导出一致性
+- 后续可进入 Batch 5，开始前端工作台、结果页与配置中心交付
+
+#### 2.30 归档后动作
+
+- 本文件与本批提交合并入库
+- 提交哈希：见本批 git 提交记录
+- 当前批次 branch disposition 状态：进行中
+- 当前批次 worktree disposition 状态：进行中
+- 是否继续下一批：是

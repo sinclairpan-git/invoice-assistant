@@ -73,7 +73,7 @@ class InvoiceRecord(Base):
     parse_source: Mapped[str | None] = mapped_column(String(64), nullable=True)
     processing_status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
     system_decision: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    review_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    review_status: Mapped[str] = mapped_column(String(32), nullable=False, default="not_reviewed")
     artifact_status: Mapped[str] = mapped_column(String(32), nullable=False, default="original_only")
     duplicate_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     duplicate_group_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
