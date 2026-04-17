@@ -1,7 +1,10 @@
 .DS_Store
 .venv/
+backend/.venv/
+backend/*.egg-info/
 __pycache__/
 *.pyc
+*.db
 
 .superpowers/
 
