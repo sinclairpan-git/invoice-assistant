@@ -2,7 +2,7 @@
 
 **功能编号**：`002-invoice-assistant-runtime-hardening`  
 **创建日期**：2026-04-17  
-**状态**：Batch 4 T43 已完成，Batch 5 待开始
+**状态**：已完成 close 收口，等待最终归档校验
 
 ## 1. 归档规则
 
@@ -1352,3 +1352,80 @@ Phase 4 complete: 3/3 tasks completed, 0 halted.
 
 Phase 5 complete: 3/3 tasks completed, 0 halted.
 
+### Batch 2026-04-18-014 | close-out lifecycle resolution
+
+#### 2.1 批次范围
+
+- 覆盖任务：`close-out`
+- 覆盖阶段：`close`
+- 预读范围：`AGENTS.md`、`.ai-sdlc/memory/constitution.md`、`specs/002-invoice-assistant-runtime-hardening/spec.md`、`specs/002-invoice-assistant-runtime-hardening/tasks.md`
+- 激活的规则：latest batch 必须位于文件末尾；本批仅补齐收口文档与 branch disposition 真相，使用 `docs-only` 验证画像
+
+#### 2.2 统一验证命令
+
+- **验证画像**：docs-only
+- **改动范围**：`specs/002-invoice-assistant-runtime-hardening/execution-log.md`、`specs/002-invoice-assistant-runtime-hardening/task-execution-log.md`
+- 框架签名：`uv run ai-sdlc verify constraints`
+- `V1`
+  - 命令：`git switch main`
+  - 结果：PASS，已切换到 `main`
+- `V2`
+  - 命令：`git merge feature/002-invoice-assistant-runtime-hardening-dev`
+  - 结果：PASS，`main` 已 fast-forward 到 `18726d7`
+- `V3`
+  - 命令：`uv run ai-sdlc verify constraints`
+  - 结果：PASS，`verify constraints: no BLOCKERs.`
+- `V4`
+  - 命令：`python -m ai_sdlc workitem branch-check --wi specs/002-invoice-assistant-runtime-hardening --json`
+  - 结果：PASS，`feature/002-invoice-assistant-runtime-hardening-dev` 的 `ahead_of_main=0`，仅剩 disposition 未落账
+- `V5`
+  - 命令：`python -m ai_sdlc workitem close-check --wi specs/002-invoice-assistant-runtime-hardening --json`
+  - 结果：预期在本批文档提交后 PASS；当前 blocker 仅为 latest batch 缺少 `验证画像`
+
+#### 2.3 任务记录
+
+##### close-out | 清理 worktree、补齐 verification profile、合并分支
+
+- 改动范围：`specs/002-invoice-assistant-runtime-hardening/execution-log.md`、`specs/002-invoice-assistant-runtime-hardening/task-execution-log.md`
+- 改动内容：
+  - 保持 `main` 为 clean tree，并将 `feature/002-invoice-assistant-runtime-hardening-dev` 合并回 `main`
+  - 在 latest batch 显式记录 `docs-only` 验证画像与 close-out 证据
+  - 将 branch/worktree disposition 在文件末尾落账，消除最终 `close-check` 的生命周期歧义
+- 新增/调整的测试：无新增产品测试；本批仅处理 close-out 文档与分支真相
+- 执行的命令：`V1`、`V2`、`V3`、`V4`、`V5`
+- 测试结果：PASS
+- 是否符合任务目标：是
+
+#### 2.4 代码审查结论
+
+- 宪章/规格对齐：通过；本批不新增产品行为，仅补齐 close-out 归档
+- 代码质量：通过；未修改运行时代码
+- 测试质量：通过；`verify constraints` 已在合并后的 `main` 上重新执行
+- 结论：允许执行最终 `workitem close-check`
+
+#### 2.5 任务/计划同步状态
+
+- `tasks.md` 同步状态：已同步，`T51`、`T52`、`T53` 保持完成
+- `related_plan`（如存在）同步状态：以 `plan.md` 为准
+- 关联 branch/worktree disposition 计划：`feature/002-invoice-assistant-runtime-hardening-dev` 已合并到 `main`
+- 说明：本批只用于清除 verification profile 与 branch lifecycle 的最终 blocker
+
+#### 2.6 自动决策记录
+
+- 选择本地 fast-forward merge，而不是删除 feature branch；原因是 close-check 只要求 associated branch 不再 ahead of `main`
+- 选择 `docs-only` 画像；原因是本批只修改执行归档文档，不修改产品代码、测试或 canonical truth
+- 保留 feature branch 名称记录，不额外做归档删除；原因是当前收口目标是完成 close-check，而非强制清理引用名
+
+#### 2.7 批次结论
+
+- 工作区已清理，`main` 已包含 002 开发成果
+- latest batch 已显式记录 `docs-only` 验证画像和合并后的 branch disposition
+- 下一步为提交本批文档并在 clean tree 上执行最终 `workitem close-check`
+
+#### 2.8 归档后动作
+
+- **已完成 git 提交**：是
+- **提交哈希**：以当前 `HEAD` 为准
+- 当前批次 branch disposition 状态：merged
+- 当前批次 worktree disposition 状态：main 保留
+- 是否继续下一批：否
