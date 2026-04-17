@@ -4,7 +4,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -45,10 +45,17 @@ class Batch(Base):
     naming_rule_version_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("rule_versions.id"), nullable=True
     )
+    active_job_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    last_recovered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_stage_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_stage_text: Mapped[str | None] = mapped_column(String(255), nullable=True)
     snapshot_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     export_manifest_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     invoices: Mapped[list["InvoiceRecord"]] = relationship(back_populates="batch", cascade="all, delete-orphan")
+    processing_jobs: Mapped[list["ProcessingJob"]] = relationship(
+        back_populates="batch", cascade="all, delete-orphan"
+    )
     export_jobs: Mapped[list["ExportJob"]] = relationship(back_populates="batch", cascade="all, delete-orphan")
 
 
@@ -72,6 +79,7 @@ class InvoiceRecord(Base):
     invoice_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     parse_source: Mapped[str | None] = mapped_column(String(64), nullable=True)
     processing_status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
+    processing_stage: Mapped[str] = mapped_column(String(64), nullable=False, default="queued")
     system_decision: Mapped[str | None] = mapped_column(String(32), nullable=True)
     review_status: Mapped[str] = mapped_column(String(32), nullable=False, default="not_reviewed")
     artifact_status: Mapped[str] = mapped_column(String(32), nullable=False, default="original_only")
@@ -81,8 +89,17 @@ class InvoiceRecord(Base):
     display_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
     problem_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_attempt_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error_stage: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    retryable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     batch: Mapped[Batch] = relationship(back_populates="invoices")
+    processing_attempts: Mapped[list["ProcessingAttempt"]] = relationship(
+        back_populates="invoice", cascade="all, delete-orphan"
+    )
     evidence_items: Mapped[list["DocumentEvidence"]] = relationship(
         back_populates="invoice", cascade="all, delete-orphan"
     )
@@ -97,11 +114,63 @@ class InvoiceRecord(Base):
     )
 
 
+class ProcessingJob(Base):
+    __tablename__ = "processing_jobs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    batch_id: Mapped[str] = mapped_column(String(36), ForeignKey("batches.id"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
+    current_stage: Mapped[str] = mapped_column(String(64), nullable=False, default="queued")
+    total_items: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completed_items: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failed_items: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    recovery_token: Mapped[str | None] = mapped_column(String(128), nullable=True, unique=True)
+    summary_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+
+    batch: Mapped[Batch] = relationship(back_populates="processing_jobs")
+    attempts: Mapped[list["ProcessingAttempt"]] = relationship(
+        back_populates="job", cascade="all, delete-orphan"
+    )
+
+
+class ProcessingAttempt(Base):
+    __tablename__ = "processing_attempts"
+    __table_args__ = (
+        UniqueConstraint("invoice_id", "attempt_no", name="uq_processing_attempt_invoice_no"),
+        Index("ix_processing_attempts_invoice_id_status", "invoice_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    job_id: Mapped[str] = mapped_column(String(36), ForeignKey("processing_jobs.id"), nullable=False, index=True)
+    invoice_id: Mapped[str] = mapped_column(String(36), ForeignKey("invoice_records.id"), nullable=False, index=True)
+    attempt_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
+    stage: Mapped[str] = mapped_column(String(64), nullable=False, default="queued")
+    parse_source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    provider_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    provider_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    retryable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    input_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    diagnostic_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+
+    job: Mapped[ProcessingJob] = relationship(back_populates="attempts")
+    invoice: Mapped[InvoiceRecord] = relationship(back_populates="processing_attempts")
+
+
 class DocumentEvidence(Base):
     __tablename__ = "document_evidence"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     invoice_id: Mapped[str] = mapped_column(String(36), ForeignKey("invoice_records.id"), nullable=False, index=True)
+    attempt_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     source_type: Mapped[str] = mapped_column(String(64), nullable=False)
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     pages_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
@@ -121,6 +190,7 @@ class ExtractedField(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     invoice_id: Mapped[str] = mapped_column(String(36), ForeignKey("invoice_records.id"), nullable=False, index=True)
+    attempt_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     field_name: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     extracted_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     normalized_value: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -137,6 +207,7 @@ class FieldCheck(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     invoice_id: Mapped[str] = mapped_column(String(36), ForeignKey("invoice_records.id"), nullable=False, index=True)
+    attempt_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     field_name: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     expected_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     actual_value: Mapped[str | None] = mapped_column(Text, nullable=True)

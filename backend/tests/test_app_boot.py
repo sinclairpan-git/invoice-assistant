@@ -19,6 +19,8 @@ def test_app_boot_and_db_initialization(tmp_path):
     assert {
         "batches",
         "invoice_records",
+        "processing_jobs",
+        "processing_attempts",
         "document_evidence",
         "extracted_fields",
         "field_checks",

@@ -2,7 +2,7 @@
 
 **功能编号**：`002-invoice-assistant-runtime-hardening`  
 **创建日期**：2026-04-17  
-**状态**：Batch 2 已完成，Batch 3 准备中
+**状态**：Batch 3 T31 已完成，T32 准备中
 
 ## 1. 归档规则
 
@@ -208,6 +208,78 @@
 - 真实 PDF 文本抽取已接入运行时，并可映射到统一证据模型
 - 本地 OCR fallback、低置信降级与损坏 PDF 失败路径均已打通
 - 现有 API、批次处理、导出和合规票总金额回归通过，可继续进入 Batch 3
+
+#### 2.8 归档后动作
+
+- 本文件将与本批提交合并入库
+- 提交哈希：待本批提交后生成
+- 当前批次 branch disposition 状态：进行中
+- 当前批次 worktree disposition 状态：进行中
+- 是否继续下一批：是
+
+### Batch 2026-04-17-003 | T31
+
+#### 2.1 批次范围
+
+- 覆盖任务：`T31`
+- 覆盖阶段：`execute`
+- 预读范围：`AGENTS.md`、`.ai-sdlc/memory/constitution.md`、`specs/002-invoice-assistant-runtime-hardening/data-model.md`、`specs/002-invoice-assistant-runtime-hardening/tasks.md`
+- 激活的规则：本批只落地 `ProcessingJob` / `ProcessingAttempt` 持久化模型与兼容性迁移，不提前进入 worker 调度与恢复逻辑
+
+#### 2.2 统一验证命令
+
+- `V1`
+  - 命令：`UV_CACHE_DIR=.uv-cache uv run --project backend --extra dev pytest backend/tests/test_processing_jobs.py backend/tests/test_app_boot.py -q`
+  - 结果：PASS（`5 passed in 1.95s`）
+- `V2`
+  - 命令：`UV_CACHE_DIR=.uv-cache uv run --project backend --extra dev pytest backend/tests -q`
+  - 结果：PASS（`31 passed in 4.99s`）
+- `V3`
+  - 命令：`UV_CACHE_DIR=.uv-cache uv run ai-sdlc verify constraints`
+  - 结果：PASS（`verify constraints: no BLOCKERs.`）
+- `V4`
+  - 命令：`python -m ai_sdlc workitem branch-check --wi specs/002-invoice-assistant-runtime-hardening`
+  - 结果：PASS（`feature/002-invoice-assistant-runtime-hardening-dev` 与当前 workitem 关联正常，`ahead_of_main=6`）
+
+#### 2.3 任务记录
+
+##### T31 | 建立作业与尝试数据模型
+
+- 改动范围：`backend/app/db/models.py`、`backend/app/db/session.py`、`backend/tests/test_app_boot.py`、`backend/tests/test_processing_jobs.py`
+- 改动内容：
+  - 为 `Batch`、`InvoiceRecord` 增加运行态字段，补充当前 job / attempt 指针、错误摘要与重试语义
+  - 新增 `ProcessingJob`、`ProcessingAttempt` 持久化模型，明确批次级作业与发票级尝试的关系和唯一性约束
+  - 为旧 SQLite 数据库增加 additive migration，自动补齐新列与索引，同时保持已有批次数据向后兼容
+- 新增/调整的测试：
+  - `test_processing_jobs.py` 覆盖新表创建、关系语义、attempt 唯一约束与 legacy SQLite 增量迁移
+  - `test_app_boot.py` 补充启动初始化时应创建 `processing_jobs`、`processing_attempts`
+- 执行的命令：`V1`、`V2`、`V3`、`V4`
+- 测试结果：PASS（定向回归 `5 passed`，后端全量 `31 passed`）
+- 是否符合任务目标：是
+
+#### 2.4 代码审查结论
+
+- 宪章/规格对齐：通过；数据模型、增量迁移与测试范围符合 `data-model.md` 和 `tasks.md` 对 T31 的约束
+- 代码质量：通过；新增模型与现有实体关系清晰，当前态指针与历史关系做了语义隔离
+- 测试质量：通过；覆盖建表、关系、唯一约束和 legacy SQLite 升级路径
+- 结论：通过，可进入 `T32`
+
+#### 2.5 任务/计划同步状态
+
+- `tasks.md` 同步状态：已同步，`T31` 已标记完成，`T32`、`T33` 保持未完成
+- `related_plan`（如存在）同步状态：以 `plan.md` 为准
+- 关联 branch/worktree disposition 计划：继续在 `feature/002-invoice-assistant-runtime-hardening-dev` 上推进 `T32`
+- 说明：Batch 3 进入 worker 与幂等推进实现前，先用 schema 回归测试锁住持久化边界
+
+#### 2.6 自动决策记录
+
+- `active_job_id` 与 `last_attempt_id` 保持为“当前指针”字段，不额外增加双向外键，避免当前态语义与历史关系混淆
+- SQLite 迁移采用 additive 方式，仅补列和索引，不重建旧表，确保已有本地数据可无损升级
+- `ProcessingAttempt` 唯一约束按 `invoice_id + attempt_no` 固化，保证单票重试序号不会跨 job 重复
+
+#### 2.7 批次结论
+
+- T31 已完成并验证通过，下一批进入 `T32`，实现后台 worker、阶段推进与幂等保护
 
 #### 2.8 归档后动作
 
