@@ -1,0 +1,9 @@
+.DS_Store
+.venv/
+__pycache__/
+*.pyc
+
+.superpowers/
+
+.ai-sdlc/local/
+.ai-sdlc/state/

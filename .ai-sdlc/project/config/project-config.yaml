@@ -1,0 +1,24 @@
+product_form: hybrid
+default_execution_mode: auto
+default_branch_strategy: dual
+max_parallel_agents: 3
+document_locale: zh-CN
+detected_ide: codex
+agent_target: codex
+adapter_applied: codex
+adapter_version: '1'
+adapter_applied_at: '2026-04-16T13:34:21+00:00'
+adapter_activation_state: acknowledged
+adapter_support_tier: acknowledged_activation
+agent_target_source: ''
+adapter_activation_source: operator_cli
+adapter_activation_evidence: ai-sdlc adapter activate
+adapter_activated_at: '2026-04-16T13:34:21+00:00'
+adapter_ingress_state: materialized
+adapter_verification_result: unverified
+adapter_canonical_path: AGENTS.md
+adapter_degrade_reason: ''
+adapter_verification_evidence: ''
+adapter_verified_at: ''
+telemetry_profile: self_hosting
+telemetry_mode: lite
