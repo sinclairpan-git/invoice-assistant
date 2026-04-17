@@ -89,6 +89,7 @@ def serialize_invoice_summary(invoice: InvoiceRecord) -> dict[str, object]:
         "buyer_tax_no": invoice.buyer_tax_no,
         "invoice_date": _serialize_scalar(invoice.invoice_date),
         "invoice_amount": _serialize_scalar(invoice.invoice_amount),
+        "parse_source": invoice.parse_source,
         "processing_status": invoice.processing_status,
         "system_decision": invoice.system_decision,
         "review_status": invoice.review_status,

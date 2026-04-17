@@ -155,7 +155,7 @@ export function BatchResults() {
                     try {
                       const result = await createExport({
                         batchId: resolvedBatchId,
-                        exportType: "zip_pass",
+                        exportType: "suggested_pass_zip",
                         createdBy: defaultOperatorName,
                       });
                       message.success(`已生成 ${result.output_path}`);
@@ -174,7 +174,7 @@ export function BatchResults() {
                     try {
                       const result = await createExport({
                         batchId: resolvedBatchId,
-                        exportType: "zip_problem",
+                        exportType: "issue_zip",
                         createdBy: defaultOperatorName,
                       });
                       message.success(`已生成 ${result.output_path}`);
@@ -193,7 +193,7 @@ export function BatchResults() {
                     try {
                       const result = await createExport({
                         batchId: resolvedBatchId,
-                        exportType: "excel_register",
+                        exportType: "excel_manifest",
                         createdBy: defaultOperatorName,
                       });
                       message.success(`已生成 ${result.output_path}`);

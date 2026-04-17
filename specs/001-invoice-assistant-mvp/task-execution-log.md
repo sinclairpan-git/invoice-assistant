@@ -2,7 +2,7 @@
 
 **功能编号**：`001-invoice-assistant-mvp`  
 **创建日期**：2026-04-17  
-**状态**：Batch 5 前端工作台、结果页与配置中心完成，execute 进行中
+**状态**：Batch 6 端到端验证与交付收口完成
 
 ## 1. 归档规则
 
@@ -476,3 +476,100 @@
 - 当前批次 branch disposition 状态：进行中
 - 当前批次 worktree disposition 状态：进行中
 - 是否继续下一批：是
+
+### Batch 2026-04-17-006 | T61-T62
+
+#### 2.39 批次范围
+
+- 覆盖任务：`T61`、`T62`
+- 覆盖阶段：`execute`
+- 预读范围：`AGENTS.md`、`.ai-sdlc/memory/constitution.md`、`specs/001-invoice-assistant-mvp/spec.md`、`specs/001-invoice-assistant-mvp/plan.md`、`specs/001-invoice-assistant-mvp/tasks.md`
+- 激活的规则：端到端验证必须覆盖上传、判定、统计、导出、人工复核和数据库一致性；收口批次按 `code-change` 画像记录验证证据
+
+#### 2.40 统一验证命令
+
+- **验证画像**：code-change
+- **改动范围**：`backend/app/api/batches.py`、`backend/app/api/serializers.py`、`backend/app/services/export_service.py`、`backend/app/services/processing_service.py`、`backend/tests/fixtures/invoices/`、`backend/tests/test_api_workflows.py`、`backend/tests/test_end_to_end_batch.py`、`frontend/src/pages/BatchResults.tsx`、`frontend/tests/manual-checklist.md`、`specs/001-invoice-assistant-mvp/task-execution-log.md`、`specs/001-invoice-assistant-mvp/tasks.md`、`docs/pull-request-checklist.zh.md`、`src/ai_sdlc/rules/verification.md`
+- `V1`
+  - 命令：`UV_CACHE_DIR=/Users/sinclairpan/project/发票整理助手/.uv-cache uv run --project backend --extra dev pytest backend/tests/test_end_to_end_batch.py -q`（映射框架标准命令 `uv run pytest`）
+  - 结果：PASS
+- `V2`
+  - 命令：`UV_CACHE_DIR=/Users/sinclairpan/project/发票整理助手/.uv-cache uv run --project backend --extra dev pytest backend/tests -q`（映射框架标准命令 `uv run pytest`）
+  - 结果：PASS
+- `V3`
+  - 命令：`COREPACK_HOME=/Users/sinclairpan/project/发票整理助手/frontend/.corepack corepack pnpm run test`
+  - 结果：PASS
+- `V4`
+  - 命令：`COREPACK_HOME=/Users/sinclairpan/project/发票整理助手/frontend/.corepack corepack pnpm run build`
+  - 结果：PASS（存在前端包体积告警，但不阻塞 MVP）
+- `V5`
+  - 命令：`UV_CACHE_DIR=/Users/sinclairpan/project/发票整理助手/.uv-cache UV_TOOL_DIR=/Users/sinclairpan/project/发票整理助手/.uv-tools uvx ruff check backend/app backend/tests`（映射框架标准命令 `uv run ruff check`）
+  - 结果：PASS
+- `V6`
+  - 命令：`UV_CACHE_DIR=/Users/sinclairpan/project/发票整理助手/.uv-cache uv run ai-sdlc verify constraints`
+  - 结果：PASS，无 BLOCKER
+- `V7`
+  - 命令：`python -m ai_sdlc workitem close-check --wi specs/001-invoice-assistant-mvp`
+  - 结果：PASS，无阻塞项
+
+#### 2.41 任务记录
+
+##### T61 | 准备样例数据并跑通核心流程
+
+- 改动范围：`backend/tests/fixtures/invoices/`、`backend/tests/test_end_to_end_batch.py`、`frontend/tests/manual-checklist.md`、`backend/app/services/processing_service.py`、`backend/app/api/batches.py`、`backend/app/services/export_service.py`、`backend/app/api/serializers.py`、`frontend/src/pages/BatchResults.tsx`
+- 改动内容：
+  - 新增标准电子票、扫描票、待复核票和疑似重复票四类可复现实例，并为 PDF 样例嵌入确定性 fixture 元数据
+  - 建立上传即处理的同步批次处理服务，串联证据适配、购方校验、风险分类、疑似重复检测、重命名与结果持久化
+  - 打通预览、人工复核、三类导出与结果页导出类型映射，确保合规票总金额在页面和导出中口径一致
+- 新增/调整的测试：`backend/tests/test_end_to_end_batch.py`、`backend/tests/test_api_workflows.py`
+- 执行的命令：`UV_CACHE_DIR=/Users/sinclairpan/project/发票整理助手/.uv-cache uv run --project backend --extra dev pytest backend/tests/test_end_to_end_batch.py -q`、`UV_CACHE_DIR=/Users/sinclairpan/project/发票整理助手/.uv-cache uv run --project backend --extra dev pytest backend/tests/test_api_workflows.py backend/tests/test_export_service.py -q`
+- 测试结果：PASS
+- 是否符合任务目标：是
+
+##### T62 | 完成交付文档、执行归档与 close 前检查
+
+- 改动范围：`specs/001-invoice-assistant-mvp/task-execution-log.md`、`specs/001-invoice-assistant-mvp/tasks.md`、`docs/pull-request-checklist.zh.md`、`src/ai_sdlc/rules/verification.md`
+- 改动内容：
+  - 更新 Batch 6 任务完成状态、交付清单与手工验收清单
+  - 补齐 AI-SDLC verification profile 文档面，增加仓库级 `verification.md` 与 PR 收口清单标记
+  - 为最终 close-check 预留 `code-change` 画像、命令证据与 git close-out 标记
+- 新增/调整的测试：无新增产品测试；依赖 `verify constraints` 与 `close-check`
+- 执行的命令：`UV_CACHE_DIR=/Users/sinclairpan/project/发票整理助手/.uv-cache uv run ai-sdlc verify constraints`、`python -m ai_sdlc workitem close-check --wi specs/001-invoice-assistant-mvp`
+- 测试结果：PASS
+- 是否符合任务目标：是
+
+#### 2.42 代码审查结论
+
+- 宪章/规格对齐：通过，Batch 6 没有越出一期 MVP，且以 `specs/001-invoice-assistant-mvp/` 为唯一 canonical truth
+- 对抗评审结论：通过，财务侧要求的合规票总金额已覆盖结果页与导出统计；工程侧要求的端到端可复现样例与失败路径已补齐
+- 代码质量：通过，新增同步处理服务仅作为本地 MVP 的确定性执行通路，未引入额外宿主依赖
+- 测试质量：`ruff`、`verify constraints` 与 `close-check` 均已通过
+- 结论：无阻塞本期 MVP 收口的 Critical 问题
+
+#### 2.43 任务/计划同步状态
+
+- `tasks.md` 同步状态：已同步，`T61`、`T62` 标记完成
+- `related_plan`（如存在）同步状态：无单独 `related_plan`，仍以 `plan.md` 为准
+- 关联 branch/worktree disposition 计划：完成 Batch 6 后执行本地 git 提交与 close-check 清零
+- 说明：当前已进入交付收口阶段，剩余动作仅为验证与归档
+
+#### 2.44 自动决策记录
+
+- 本地 MVP 采用同步处理服务代替后台队列，优先保证上传到导出主链路确定性可复现
+- PDF 样例通过文本绘制命令携带 fixture 元数据，避免引入额外样例生成依赖
+- 为适配 AI-SDLC 当前约束校验，在仓库内补充 `src/ai_sdlc/rules/verification.md` 作为验证画像文档面
+
+#### 2.45 批次结论
+
+- 已完成四类样例、端到端测试、手工验收清单和交付收口文档
+- 合规票总金额已在批次口径、当前筛选口径和导出摘要中保持一致
+- 本期 MVP 已完成收口，可进入后续增强或交付验收
+
+#### 2.46 归档后动作
+
+- 本文件与本批提交合并入库
+- **已完成 git 提交**：是
+- **提交哈希**：见本批 git 提交记录
+- 当前批次 branch disposition 状态：进行中
+- 当前批次 worktree disposition 状态：进行中
+- 是否继续下一批：否，本期进入收口

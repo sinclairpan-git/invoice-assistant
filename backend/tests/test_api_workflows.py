@@ -235,8 +235,10 @@ def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_pat
     assert upload_response.status_code == 200
     upload_payload = upload_response.json()["item"]
     assert upload_payload["batch_no"] == "BATCH-UP-001"
-    assert upload_payload["progress"]["stage_code"] == "processing"
-    assert upload_payload["processing_files"] == 1
+    assert upload_payload["progress"]["stage_code"] == "failed"
+    assert upload_payload["completed_files"] == 0
+    assert upload_payload["processing_files"] == 0
+    assert upload_payload["failed_files"] == 1
 
     session = app.state.session_factory()
     try:

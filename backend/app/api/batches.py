@@ -13,6 +13,7 @@ from backend.app.db.models import Batch
 from backend.app.services.batch_service import BatchService, IncomingFile
 from backend.app.services.config_service import ConfigService
 from backend.app.services.export_service import ExportService
+from backend.app.services.processing_service import ProcessingService
 from backend.app.services.progress_service import ProgressService
 from backend.app.services.storage_service import StorageError, StorageService
 
@@ -91,6 +92,10 @@ async def create_batch(
             created_by=created_by,
             batch_no=batch_no,
         )
+        ProcessingService(
+            session=session,
+            storage_root=get_storage_root(request),
+        ).process_batch(batch.id)
     except (StorageError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -99,13 +104,18 @@ async def create_batch(
 
 
 @router.post("/{batch_id}/exports")
-def create_export(batch_id: str, request: ExportRequest, session: Session = Depends(get_session)) -> dict[str, object]:
-    service = ExportService(session)
+def create_export(
+    batch_id: str,
+    request: Request,
+    payload: ExportRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, object]:
+    service = ExportService(session, storage_root=get_storage_root(request))
     try:
         result = service.create_export(
             batch_id=batch_id,
-            export_type=request.export_type,
-            created_by=request.created_by,
+            export_type=payload.export_type,
+            created_by=payload.created_by,
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

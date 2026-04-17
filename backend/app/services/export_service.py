@@ -290,7 +290,7 @@ class ExportService:
         path = Path(candidate)
         if path.is_absolute():
             return path
-        return PROJECT_ROOT / candidate
+        return (self.storage_root.parent / path).resolve()
 
     def _relative_output_path(self, output_file: Path) -> str:
         try:

@@ -1,0 +1,71 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 628 >>
+stream
+BT
+/F1 11 Tf
+72 780 Td
+16 TL
+(Duplicate Invoice Sample) Tj
+T*
+(Invoice Number: STD-001) Tj
+T*
+(Invoice Date: 2026-04-17) Tj
+T*
+(Invoice Amount: 128.50) Tj
+T*
+(Buyer: Shanghai Example Co) Tj
+T*
+(Buyer Tax No: 91310000X) Tj
+T*
+(Seller: Acme Supplies Ltd) Tj
+T*
+(INVOICE_ASSISTANT_FIXTURE_START) Tj
+T*
+(parse_mode=text) Tj
+T*
+(invoice_number=STD-001) Tj
+T*
+(invoice_date=2026-04-17) Tj
+T*
+(invoice_amount=128.50) Tj
+T*
+(buyer_name=Shanghai Example Co) Tj
+T*
+(buyer_tax_no=91310000X) Tj
+T*
+(seller_name=Acme Supplies Ltd) Tj
+T*
+(line_text=Office Supplies) Tj
+T*
+(overall_confidence=0.97) Tj
+T*
+(INVOICE_ASSISTANT_FIXTURE_END) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000919 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+989
+%%EOF

@@ -10,6 +10,7 @@ frontend/*.tsbuildinfo
 frontend/vite.config.js
 frontend/vite.config.d.ts
 .uv-cache/
+.uv-tools/
 backend/data/
 backend/*.egg-info/
 __pycache__/
