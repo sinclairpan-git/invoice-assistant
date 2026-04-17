@@ -13,7 +13,7 @@ adapter_support_tier: acknowledged_activation
 agent_target_source: ''
 adapter_activation_source: operator_cli
 adapter_activation_evidence: ai-sdlc adapter activate
-adapter_activated_at: '2026-04-17T18:23:35+00:00'
+adapter_activated_at: '2026-04-17T18:33:57+00:00'
 adapter_ingress_state: verified_loaded
 adapter_verification_result: verified
 adapter_canonical_path: AGENTS.md
