@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from collections import Counter
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -80,6 +82,45 @@ def get_invoice_detail(invoice_id: str, session: Session = Depends(get_session))
     if invoice is None:
         raise HTTPException(status_code=404, detail="Invoice not found.")
     return {"item": serialize_invoice_detail(invoice)}
+
+
+@router.get("/invoices/{invoice_id}/preview")
+def get_invoice_preview(
+    invoice_id: str,
+    request: Request,
+    session: Session = Depends(get_session),
+) -> FileResponse:
+    invoice = session.get(InvoiceRecord, invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=404, detail="Invoice not found.")
+
+    storage_path = invoice.storage_path_renamed or invoice.storage_path_original
+    if not storage_path:
+        raise HTTPException(status_code=404, detail="Preview file not found.")
+
+    storage_root = Path(request.app.state.storage_root).resolve()
+    storage_parent = storage_root.parent
+    storage_candidate = Path(storage_path)
+    if storage_candidate.is_absolute():
+        absolute_path = storage_candidate.resolve()
+    else:
+        absolute_path = (storage_parent / storage_candidate).resolve()
+
+    allowed_roots = (
+        storage_root,
+        storage_parent,
+    )
+    if not any(absolute_path.is_relative_to(root) for root in allowed_roots):
+        raise HTTPException(status_code=400, detail="Invalid preview path.")
+
+    if not absolute_path.is_file():
+        raise HTTPException(status_code=404, detail="Preview file not found.")
+
+    return FileResponse(
+        absolute_path,
+        media_type="application/pdf",
+        filename=Path(absolute_path).name,
+    )
 
 
 @router.post("/invoices/{invoice_id}/review-actions")

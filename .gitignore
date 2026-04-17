@@ -1,6 +1,16 @@
 .DS_Store
 .venv/
 backend/.venv/
+frontend/node_modules/
+frontend/dist/
+frontend/.corepack/
+frontend/.npm-cache/
+frontend/.pnpm-store/
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+.uv-cache/
+backend/data/
 backend/*.egg-info/
 __pycache__/
 *.pyc

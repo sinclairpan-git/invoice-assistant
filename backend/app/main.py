@@ -1,12 +1,21 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI
 
 from backend.app.api.batches import router as batches_router
 from backend.app.api.config import router as config_router
 from backend.app.api.invoices import router as invoices_router
-from backend.app.db.session import DEFAULT_DATABASE_URL, create_database_engine, create_session_factory, init_db
+from backend.app.db.session import BACKEND_ROOT, DEFAULT_DATABASE_URL, create_database_engine, create_session_factory, init_db
 from backend.app.core.logging import get_app_logger
+
+
+def resolve_storage_root(database_url: str) -> Path:
+    if database_url.startswith("sqlite:///") and database_url != "sqlite:///:memory:":
+        sqlite_path = Path(database_url.removeprefix("sqlite:///")).expanduser()
+        return sqlite_path.parent / "storage"
+    return BACKEND_ROOT / "data" / "storage"
 
 
 def create_app(database_url: str = DEFAULT_DATABASE_URL) -> FastAPI:
@@ -18,6 +27,7 @@ def create_app(database_url: str = DEFAULT_DATABASE_URL) -> FastAPI:
     app.state.engine = engine
     app.state.session_factory = session_factory
     app.state.logger = get_app_logger()
+    app.state.storage_root = resolve_storage_root(database_url)
 
     app.include_router(batches_router)
     app.include_router(invoices_router)

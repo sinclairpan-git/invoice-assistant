@@ -227,6 +227,29 @@ def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_pat
     versions = versions_response.json()["items"]
     assert [item["version_no"] for item in versions] == ["v2", "v1"]
 
+    upload_response = client.post(
+        "/api/batches",
+        data={"created_by": "uploader-a", "batch_no": "BATCH-UP-001"},
+        files=[("files", ("upload.pdf", b"%PDF-1.7\nupload fixture", "application/pdf"))],
+    )
+    assert upload_response.status_code == 200
+    upload_payload = upload_response.json()["item"]
+    assert upload_payload["batch_no"] == "BATCH-UP-001"
+    assert upload_payload["progress"]["stage_code"] == "processing"
+    assert upload_payload["processing_files"] == 1
+
+    session = app.state.session_factory()
+    try:
+        uploaded_batch = session.scalar(select(Batch).where(Batch.batch_no == "BATCH-UP-001"))
+        assert uploaded_batch is not None
+        uploaded_invoice = session.scalar(select(InvoiceRecord).where(InvoiceRecord.batch_id == uploaded_batch.id))
+        assert uploaded_invoice is not None
+        preview_response = client.get(f"/api/invoices/{uploaded_invoice.id}/preview")
+        assert preview_response.status_code == 200
+        assert preview_response.headers["content-type"].startswith("application/pdf")
+    finally:
+        session.close()
+
     missing_batch_response = client.get("/api/batches/missing-batch")
     assert missing_batch_response.status_code == 404
 

@@ -2,7 +2,7 @@
 
 **功能编号**：`001-invoice-assistant-mvp`  
 **创建日期**：2026-04-17  
-**状态**：Batch 3 解析链路与规则判定完成，execute 进行中
+**状态**：Batch 5 前端工作台、结果页与配置中心完成，execute 进行中
 
 ## 1. 归档规则
 
@@ -361,6 +361,115 @@
 - 后续可进入 Batch 5，开始前端工作台、结果页与配置中心交付
 
 #### 2.30 归档后动作
+
+- 本文件与本批提交合并入库
+- 提交哈希：见本批 git 提交记录
+- 当前批次 branch disposition 状态：进行中
+- 当前批次 worktree disposition 状态：进行中
+- 是否继续下一批：是
+
+### Batch 2026-04-17-005 | T51-T54
+
+#### 2.31 批次范围
+
+- 覆盖任务：`T51`、`T52`、`T53`、`T54`
+- 覆盖阶段：`execute`
+- 预读范围：`AGENTS.md`、`.ai-sdlc/memory/constitution.md`、`specs/001-invoice-assistant-mvp/spec.md`、`specs/001-invoice-assistant-mvp/plan.md`、`specs/001-invoice-assistant-mvp/tasks.md`
+- 激活的规则：前端首屏必须是工作台；合规票金额必须同时展示“批次总额”和“当前筛选总额”；人工复核只留痕，不覆盖系统判定
+
+#### 2.32 统一验证命令
+
+- `V1`
+  - 命令：`COREPACK_HOME=/Users/sinclairpan/project/发票整理助手/frontend/.corepack corepack pnpm run test`
+  - 结果：PASS
+- `V2`
+  - 命令：`COREPACK_HOME=/Users/sinclairpan/project/发票整理助手/frontend/.corepack corepack pnpm run build`
+  - 结果：PASS（存在前端包体积告警，但不阻塞 MVP）
+- `V3`
+  - 命令：`UV_CACHE_DIR=/Users/sinclairpan/project/发票整理助手/.uv-cache uv run --project backend --extra dev pytest backend/tests/test_api_workflows.py backend/tests/test_export_service.py backend/tests/test_progress_reporting.py -q`
+  - 结果：PASS
+- `V4`
+  - 命令：`UV_CACHE_DIR=/Users/sinclairpan/project/发票整理助手/.uv-cache uv run --project backend --extra dev pytest backend/tests -q`
+  - 结果：PASS
+
+#### 2.33 任务记录
+
+##### T51 | 建立前端工程骨架与路由
+
+- 改动范围：`frontend/package.json`、`frontend/tsconfig.json`、`frontend/tsconfig.node.json`、`frontend/vite.config.ts`、`frontend/src/main.tsx`、`frontend/src/app/router.tsx`、`frontend/src/app/providers.tsx`、`frontend/src/app/shell.tsx`、`frontend/src/styles.css`、`frontend/tests/app-shell.test.tsx`
+- 改动内容：
+  - 建立 Vite + React + Ant Design 前端工程骨架，并补齐 TypeScript、Vitest 与构建配置
+  - 建立工作台、结果页、配置中心三条基础路由，以及统一的应用外壳、消息提示和异步边界
+  - 建立基础 API 客户端与全局样式骨架，保证前端可直接对接 Batch 4 API
+- 新增/调整的测试：`frontend/tests/app-shell.test.tsx`
+- 执行的命令：`COREPACK_HOME=/Users/sinclairpan/project/发票整理助手/frontend/.corepack corepack pnpm run test`、`COREPACK_HOME=/Users/sinclairpan/project/发票整理助手/frontend/.corepack corepack pnpm run build`
+- 测试结果：PASS
+- 是否符合任务目标：是
+
+##### T52 | 交付批次工作台和进度展示
+
+- 改动范围：`frontend/src/pages/BatchWorkbench.tsx`、`frontend/src/components/batch/UploadPanel.tsx`、`frontend/src/components/batch/BatchList.tsx`、`frontend/src/app/api.ts`、`backend/app/api/batches.py`、`backend/app/main.py`、`backend/pyproject.toml`、`backend/tests/test_api_workflows.py`
+- 改动内容：
+  - 首页落地为批次工作台，支持输入操作者、可选批次号并上传 PDF 发票
+  - 最近批次列表展示总文件数、完成数、失败数、系统建议通过数、系统建议通过金额和实时阶段进度
+  - 后端补齐 multipart 上传支持，并将存储根目录绑定到当前应用实例的数据库目录，避免测试与本地运行互相污染
+- 新增/调整的测试：`backend/tests/test_api_workflows.py`
+- 执行的命令：`COREPACK_HOME=/Users/sinclairpan/project/发票整理助手/frontend/.corepack corepack pnpm run build`、`UV_CACHE_DIR=/Users/sinclairpan/project/发票整理助手/.uv-cache uv run --project backend --extra dev pytest backend/tests/test_api_workflows.py -q`
+- 测试结果：PASS
+- 是否符合任务目标：是
+
+##### T53 | 交付结果页、详情抽屉和金额汇总
+
+- 改动范围：`frontend/src/pages/BatchResults.tsx`、`frontend/src/components/results/ResultTable.tsx`、`frontend/src/components/results/InvoiceDrawer.tsx`、`frontend/src/components/common/AsyncBoundary.tsx`、`backend/app/api/invoices.py`、`backend/tests/test_api_workflows.py`
+- 改动内容：
+  - 结果页支持按显示状态筛选，表格展示风险标记、系统结论、人工复核状态和问题数
+  - 顶部同时展示“批次系统建议通过金额”和“当前筛选系统建议通过金额”，落实财务视角对合规票总金额的双口径要求
+  - 详情抽屉展示字段证据、校验结果、风险依据、疑似重复依据，并补齐 PDF 预览接口
+- 新增/调整的测试：`backend/tests/test_api_workflows.py`
+- 执行的命令：`COREPACK_HOME=/Users/sinclairpan/project/发票整理助手/frontend/.corepack corepack pnpm run build`、`UV_CACHE_DIR=/Users/sinclairpan/project/发票整理助手/.uv-cache uv run --project backend --extra dev pytest backend/tests/test_api_workflows.py -q`
+- 测试结果：PASS
+- 是否符合任务目标：是
+
+##### T54 | 交付配置中心和人工复核交互
+
+- 改动范围：`frontend/src/pages/Settings.tsx`、`frontend/src/components/settings/RuleVersionPanel.tsx`、`frontend/src/components/results/ReviewActions.tsx`、`frontend/src/app/operator-settings.tsx`、`frontend/src/app/types.ts`、`frontend/src/app/api.ts`
+- 改动内容：
+  - 配置中心支持维护税务档案、风险规则、命名模板和默认操作者名
+  - 规则版本面板展示当前生效版本、历史版本和变更摘要，前端可直接调用既有配置 API
+  - 详情抽屉内支持发起人工复核动作与备注，复核结果即时回刷列表和详情
+- 新增/调整的测试：`frontend/tests/app-shell.test.tsx`
+- 执行的命令：`COREPACK_HOME=/Users/sinclairpan/project/发票整理助手/frontend/.corepack corepack pnpm run test`、`COREPACK_HOME=/Users/sinclairpan/project/发票整理助手/frontend/.corepack corepack pnpm run build`
+- 测试结果：PASS
+- 是否符合任务目标：是
+
+#### 2.34 代码审查结论
+
+- 宪章/规格对齐：通过，Batch 5 已按 canonical spec 交付工作台、结果页、配置中心和人工复核主链路
+- 对抗评审结论：通过，财务复核要求保留合规票总金额双口径展示，工程复核要求修正上传/预览存储根目录隔离，两项均已落地
+- 代码质量：通过，前端状态、页面职责和 API 适配边界清晰；后端仅做前端所需的最小支撑修正
+- 测试质量：通过，前端 `test/build` 与后端定向/全量测试均通过
+- 结论：无阻塞 Batch 6 的 Critical 问题
+
+#### 2.35 任务/计划同步状态
+
+- `tasks.md` 同步状态：已同步，`T51`、`T52`、`T53`、`T54` 标记完成
+- `related_plan`（如存在）同步状态：无单独 `related_plan`，仍以 `plan.md` 为准
+- 关联 branch/worktree disposition 计划：继续在 `feature/001-invoice-assistant-mvp-dev` 上推进 Batch 6
+- 说明：当前前后端已具备上传、结果筛选、详情预览、配置维护和人工复核闭环
+
+#### 2.36 自动决策记录
+
+- 在中文路径与当前 Node/npm 组合下，前端依赖安装切换为 `corepack pnpm`，避免 `npm install` 触发 `esbuild` 安装失败
+- 将应用存储根目录绑定到 `create_app(database_url)` 所在目录，保证测试数据库与本地默认数据库各自隔离
+- 默认操作者名保留在前端本地设置中，不把纯操作偏好写进规则版本表
+
+#### 2.37 批次结论
+
+- 已完成 Batch 5 的前端工作台、结果页、配置中心和人工复核交互
+- 合规票总金额已按批次口径和当前筛选口径同时展示，满足财务复核要求
+- 后续进入 Batch 6，准备样例数据、端到端验证与交付收口
+
+#### 2.38 归档后动作
 
 - 本文件与本批提交合并入库
 - 提交哈希：见本批 git 提交记录

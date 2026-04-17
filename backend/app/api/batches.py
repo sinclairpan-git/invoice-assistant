@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -8,11 +10,18 @@ from sqlalchemy.orm import Session
 from backend.app.api.dependencies import get_session
 from backend.app.api.serializers import serialize_batch
 from backend.app.db.models import Batch
+from backend.app.services.batch_service import BatchService, IncomingFile
+from backend.app.services.config_service import ConfigService
 from backend.app.services.export_service import ExportService
 from backend.app.services.progress_service import ProgressService
+from backend.app.services.storage_service import StorageError, StorageService
 
 
 router = APIRouter(prefix="/api/batches", tags=["batches"])
+
+
+def get_storage_root(request: Request) -> Path:
+    return Path(request.app.state.storage_root)
 
 
 class ExportRequest(BaseModel):
@@ -48,6 +57,45 @@ def get_batch_progress(batch_id: str, session: Session = Depends(get_session)) -
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"item": progress.to_dict()}
+
+
+@router.post("")
+async def create_batch(
+    request: Request,
+    created_by: str = Form(...),
+    batch_no: str | None = Form(default=None),
+    files: list[UploadFile] = File(...),
+    session: Session = Depends(get_session),
+) -> dict[str, object]:
+    if not files:
+        raise HTTPException(status_code=400, detail="At least one file is required to create a batch.")
+
+    incoming_files: list[IncomingFile] = []
+    for uploaded_file in files:
+        filename = uploaded_file.filename or "unnamed.pdf"
+        incoming_files.append(
+            IncomingFile(
+                filename=filename,
+                content=await uploaded_file.read(),
+            )
+        )
+
+    service = BatchService(
+        session=session,
+        storage_service=StorageService(get_storage_root(request)),
+        config_service=ConfigService(session),
+    )
+    try:
+        batch = service.create_batch(
+            files=incoming_files,
+            created_by=created_by,
+            batch_no=batch_no,
+        )
+    except (StorageError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    progress = ProgressService(session).refresh_batch(batch.id, persist=True)
+    return {"item": serialize_batch(batch, progress=progress, include_snapshot=True)}
 
 
 @router.post("/{batch_id}/exports")
