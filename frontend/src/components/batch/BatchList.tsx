@@ -1,4 +1,4 @@
-import { Button, Progress, Space, Table, Tag, Typography } from "antd";
+import { Button, Progress, Space, Table, Tag, Typography } from "../../app/antd";
 import type { ColumnsType } from "antd/es/table";
 
 import type { Batch } from "../../app/types";

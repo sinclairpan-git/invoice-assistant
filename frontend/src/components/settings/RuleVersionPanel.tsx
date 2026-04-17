@@ -1,4 +1,4 @@
-import { App, Button, Form, Input, List, Space, Tag, Typography } from "antd";
+import { App, Button, Form, Input, List, Space, Tag, Typography } from "../../app/antd";
 import { useEffect, useState } from "react";
 
 import { createRuleVersion, getErrorMessage } from "../../app/api";

@@ -1,11 +1,28 @@
+import { Suspense, lazy } from "react";
 import { createHashRouter } from "react-router-dom";
+import type { ReactNode } from "react";
 import type { RouteObject } from "react-router-dom";
 
 import { AppShell } from "./shell";
-import { BatchWorkbench } from "../pages/BatchWorkbench";
-import { BatchResults } from "../pages/BatchResults";
-import { Settings } from "../pages/Settings";
 
+const BatchWorkbench = lazy(async () => {
+  const module = await import("../pages/BatchWorkbench");
+  return { default: module.BatchWorkbench };
+});
+
+const BatchResults = lazy(async () => {
+  const module = await import("../pages/BatchResults");
+  return { default: module.BatchResults };
+});
+
+const Settings = lazy(async () => {
+  const module = await import("../pages/Settings");
+  return { default: module.Settings };
+});
+
+function withRouteSuspense(element: ReactNode) {
+  return <Suspense fallback={<div>加载中...</div>}>{element}</Suspense>;
+}
 
 export const appRoutes: RouteObject[] = [
   {
@@ -14,22 +31,22 @@ export const appRoutes: RouteObject[] = [
     children: [
       {
         index: true,
-        element: <BatchWorkbench />,
+        element: withRouteSuspense(<BatchWorkbench />),
         handle: { title: "批次工作台" },
       },
       {
         path: "results",
-        element: <BatchResults />,
+        element: withRouteSuspense(<BatchResults />),
         handle: { title: "批次结果" },
       },
       {
         path: "results/:batchId",
-        element: <BatchResults />,
+        element: withRouteSuspense(<BatchResults />),
         handle: { title: "批次结果" },
       },
       {
         path: "settings",
-        element: <Settings />,
+        element: withRouteSuspense(<Settings />),
         handle: { title: "配置中心" },
       },
     ],

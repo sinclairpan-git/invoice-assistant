@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from logging import Logger
 from pathlib import Path
@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_app_logger, log_event
-from backend.app.db.models import Batch, ExtractedField, FieldCheck, InvoiceRecord
+from backend.app.db.models import Batch, ExtractedField, FieldCheck, InvoiceRecord, ProcessingAttempt, ProcessingJob
 from backend.app.services.naming_service import DEFAULT_NAMING_TEMPLATE, build_renamed_filename
 from backend.app.services.parsing.evidence_models import EvidenceAdapterError, StructuredParseError, UnifiedDocumentEvidence
 from backend.app.services.parsing.providers import (
@@ -26,7 +26,7 @@ from backend.app.services.parsing.providers import (
 from backend.app.services.rules.buyer_validation import BuyerValidationResult, validate_buyer_fields
 from backend.app.services.rules.duplicate_detector import detect_suspected_duplicate
 from backend.app.services.rules.risk_classifier import classify_risk
-from backend.app.services.status_service import derive_display_status
+from backend.app.services.status_service import derive_display_status, summarize_suggested_pass
 
 
 FIXTURE_START_MARKER = "INVOICE_ASSISTANT_FIXTURE_START"
@@ -45,6 +45,22 @@ SUPPORTED_NAMING_KEYS = {
     "{amount}": "{amount}",
     "{invoice_number}": "{invoice_number}",
     "{number}": "{invoice_number}",
+}
+STAGE_TEXTS = {
+    "queued": "等待处理",
+    "text_extraction": "文本抽取中",
+    "ocr_processing": "OCR 识别中",
+    "classification": "规则校验中",
+    "duplicate_check": "重复票检测中",
+    "finalization": "结果归档中",
+    "completed": "批次处理完成",
+    "failed": "批次处理失败",
+}
+TERMINAL_INVOICE_STATUSES = {"completed", "processing_failed"}
+RETRYABLE_ERROR_CODES = {
+    "pdf_text_extraction_failed",
+    "ocr_pdf_render_failed",
+    "ocr_no_invoice_fields",
 }
 
 
@@ -75,11 +91,17 @@ class ProcessingService:
         invoices = self.session.scalars(
             select(InvoiceRecord).where(InvoiceRecord.batch_id == batch_id).order_by(InvoiceRecord.original_filename.asc())
         ).all()
+        job = self._ensure_job(batch=batch, total_items=len(invoices))
+        history = self._build_history_from_completed_invoices(invoices)
 
-        history: list[dict[str, Any]] = []
         for invoice in invoices:
+            if invoice.processing_status in TERMINAL_INVOICE_STATUSES and invoice.last_attempt_id:
+                continue
+
+            attempt = self._start_attempt(batch=batch, invoice=invoice, job=job)
             try:
-                self._process_invoice(batch=batch, invoice=invoice, snapshot=snapshot, history=history)
+                self._process_invoice(batch=batch, invoice=invoice, snapshot=snapshot, history=history, attempt=attempt)
+                self._mark_attempt_succeeded(batch=batch, invoice=invoice, job=job, attempt=attempt)
                 self.session.commit()
                 history.append(
                     {
@@ -104,8 +126,9 @@ class ProcessingService:
                 )
             except Exception as exc:
                 self.session.rollback()
-                self._mark_invoice_failed(invoice_id=invoice.id, reason=str(exc))
+                self._mark_invoice_failed(invoice_id=invoice.id, attempt_id=attempt.id, job_id=job.id, reason=str(exc))
 
+        self._finalize_job(batch_id=batch_id, job_id=job.id)
         self.session.refresh(batch)
         return batch
 
@@ -116,22 +139,27 @@ class ProcessingService:
         invoice: InvoiceRecord,
         snapshot: dict[str, Any],
         history: list[dict[str, Any]],
+        attempt: ProcessingAttempt,
     ) -> None:
-        invoice.processing_status = "extracting"
-        invoice.failure_reason = None
-        invoice.duplicate_flag = False
-        invoice.duplicate_group_key = None
-        invoice.renamed_filename = None
-        invoice.storage_path_renamed = None
-        invoice.artifact_status = "original_only"
-        invoice.evidence_items.clear()
-        invoice.extracted_fields.clear()
-        invoice.field_checks.clear()
-
+        self._advance_stage(batch=batch, invoice=invoice, attempt=attempt, stage_code="text_extraction")
         source_path = self._resolve_storage_path(invoice.storage_path_original)
         parsed = self._parse_document(source_path.read_bytes())
         evidence = parsed.evidence
+        attempt.parse_source = evidence.source_type
+        attempt.provider_name = evidence.provider_name
+        attempt.provider_version = evidence.provider_version
+        attempt.diagnostic_json = json.dumps(
+            {
+                "provider_name": evidence.provider_name,
+                "provider_version": evidence.provider_version,
+                "provider_error_code": evidence.provider_error_code,
+                "confidence_summary": evidence.confidence_summary.model_dump(mode="json"),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
 
+        self._advance_stage(batch=batch, invoice=invoice, attempt=attempt, stage_code="classification")
         buyer_validation = validate_buyer_fields(
             evidence=evidence,
             tax_profile=self._snapshot_content(snapshot, "tax_profile"),
@@ -151,6 +179,7 @@ class ProcessingService:
         invoice.invoice_amount = self._candidate_amount(evidence, "invoice_amount")
         invoice.parse_source = evidence.source_type
 
+        self._advance_stage(batch=batch, invoice=invoice, attempt=attempt, stage_code="duplicate_check")
         duplicate_result = detect_suspected_duplicate(
             invoice_data={
                 "invoice_number": invoice.invoice_number,
@@ -164,11 +193,13 @@ class ProcessingService:
             history=history,
         )
 
+        self._advance_stage(batch=batch, invoice=invoice, attempt=attempt, stage_code="finalization")
         invoice.system_decision = duplicate_result.decision
         invoice.duplicate_flag = duplicate_result.duplicate_flag
         invoice.duplicate_group_key = duplicate_result.duplicate_group_key
         invoice.risk_flags = json.dumps(duplicate_result.risk_flags, ensure_ascii=False, sort_keys=True)
         invoice.processing_status = "completed"
+        invoice.processing_stage = "completed"
         invoice.review_status = "not_reviewed"
         invoice.display_status = derive_display_status(
             processing_status=invoice.processing_status,
@@ -180,11 +211,14 @@ class ProcessingService:
             buyer_validation=buyer_validation,
         )
 
-        self.session.add(evidence.to_record(invoice.id))
+        evidence_record = evidence.to_record(invoice.id)
+        evidence_record.attempt_id = attempt.id
+        self.session.add(evidence_record)
         for candidate in evidence.field_candidates:
             self.session.add(
                 ExtractedField(
                     invoice_id=invoice.id,
+                    attempt_id=attempt.id,
                     field_name=candidate.field_name,
                     extracted_value=candidate.value,
                     normalized_value=candidate.normalized_value,
@@ -199,6 +233,7 @@ class ProcessingService:
             self.session.add(
                 FieldCheck(
                     invoice_id=invoice.id,
+                    attempt_id=attempt.id,
                     field_name=check.field_name,
                     expected_value=check.expected_value,
                     actual_value=check.actual_value,
@@ -211,6 +246,7 @@ class ProcessingService:
             self.session.add(
                 FieldCheck(
                     invoice_id=invoice.id,
+                    attempt_id=attempt.id,
                     field_name="duplicate_group_key",
                     expected_value=invoice.duplicate_group_key,
                     actual_value=invoice.duplicate_group_key,
@@ -238,12 +274,15 @@ class ProcessingService:
 
         self.session.flush()
 
-    def _mark_invoice_failed(self, *, invoice_id: str, reason: str) -> None:
+    def _mark_invoice_failed(self, *, invoice_id: str, attempt_id: str, job_id: str, reason: str) -> None:
         invoice = self.session.get(InvoiceRecord, invoice_id)
+        attempt = self.session.get(ProcessingAttempt, attempt_id)
+        job = self.session.get(ProcessingJob, job_id)
         if invoice is None:
             return
 
         invoice.processing_status = "processing_failed"
+        invoice.processing_stage = "failed"
         invoice.system_decision = None
         invoice.parse_source = None
         invoice.renamed_filename = None
@@ -252,6 +291,11 @@ class ProcessingService:
         invoice.duplicate_flag = False
         invoice.duplicate_group_key = None
         invoice.risk_flags = "[]"
+        invoice.last_attempt_id = attempt_id
+        invoice.last_error_stage = attempt.stage if attempt is not None else "failed"
+        invoice.last_error_code = self._extract_error_code(reason)
+        invoice.last_error_message = reason
+        invoice.retryable = self._is_retryable_error(invoice.last_error_code)
         invoice.display_status = derive_display_status(
             processing_status=invoice.processing_status,
             system_decision=invoice.system_decision,
@@ -262,6 +306,24 @@ class ProcessingService:
         invoice.evidence_items.clear()
         invoice.extracted_fields.clear()
         invoice.field_checks.clear()
+        if attempt is not None:
+            attempt.status = "retryable_failed" if invoice.retryable else "failed"
+            attempt.error_code = invoice.last_error_code
+            attempt.error_message = reason
+            attempt.retryable = invoice.retryable
+            attempt.completed_at = datetime.now(UTC)
+            attempt.diagnostic_json = json.dumps(
+                {
+                    "error_code": invoice.last_error_code,
+                    "error_message": reason,
+                    "stage": attempt.stage,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        if job is not None:
+            job.current_stage = "failed"
+            job.last_heartbeat_at = datetime.now(UTC)
         self.session.commit()
 
         log_event(
@@ -271,6 +333,188 @@ class ProcessingService:
             original_filename=invoice.original_filename,
             reason=reason,
         )
+
+    def _ensure_job(self, *, batch: Batch, total_items: int) -> ProcessingJob:
+        existing_job = self._current_job(batch)
+        if existing_job is not None and existing_job.status in {"queued", "running"}:
+            return existing_job
+        if existing_job is not None and existing_job.status in {"completed", "completed_with_failures"}:
+            invoices = self.session.scalars(select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id)).all()
+            if invoices and all(invoice.processing_status in TERMINAL_INVOICE_STATUSES for invoice in invoices):
+                return existing_job
+
+        job = ProcessingJob(
+            batch_id=batch.id,
+            status="running",
+            current_stage="queued",
+            total_items=total_items,
+            completed_items=0,
+            failed_items=0,
+            started_at=datetime.now(UTC),
+            last_heartbeat_at=datetime.now(UTC),
+            recovery_token=f"{batch.batch_no}-{datetime.now(UTC).timestamp()}",
+        )
+        self.session.add(job)
+        self.session.flush()
+        batch.active_job_id = job.id
+        batch.status = "processing"
+        batch.last_stage_code = "queued"
+        batch.last_stage_text = STAGE_TEXTS["queued"]
+        self.session.commit()
+        self.session.refresh(job)
+        self.session.refresh(batch)
+        return job
+
+    def _start_attempt(self, *, batch: Batch, invoice: InvoiceRecord, job: ProcessingJob) -> ProcessingAttempt:
+        attempt_no = (
+            self.session.query(ProcessingAttempt)
+            .where(ProcessingAttempt.invoice_id == invoice.id)
+            .count()
+            + 1
+        )
+        attempt = ProcessingAttempt(
+            job_id=job.id,
+            invoice_id=invoice.id,
+            attempt_no=attempt_no,
+            status="running",
+            stage="queued",
+            retryable=False,
+            input_sha256=invoice.file_sha256,
+            started_at=datetime.now(UTC),
+        )
+        self.session.add(attempt)
+        self.session.flush()
+
+        invoice.processing_status = "processing"
+        invoice.processing_stage = "queued"
+        invoice.failure_reason = None
+        invoice.duplicate_flag = False
+        invoice.duplicate_group_key = None
+        invoice.renamed_filename = None
+        invoice.storage_path_renamed = None
+        invoice.artifact_status = "original_only"
+        invoice.last_attempt_id = attempt.id
+        invoice.last_error_stage = None
+        invoice.last_error_code = None
+        invoice.last_error_message = None
+        invoice.retryable = False
+        invoice.retry_count = max(attempt_no - 1, 0)
+        invoice.evidence_items.clear()
+        invoice.extracted_fields.clear()
+        invoice.field_checks.clear()
+
+        batch.active_job_id = job.id
+        batch.status = "processing"
+        self.session.commit()
+        self.session.refresh(attempt)
+        self.session.refresh(invoice)
+        self.session.refresh(batch)
+        return attempt
+
+    def _mark_attempt_succeeded(
+        self,
+        *,
+        batch: Batch,
+        invoice: InvoiceRecord,
+        job: ProcessingJob,
+        attempt: ProcessingAttempt,
+    ) -> None:
+        attempt.status = "succeeded"
+        attempt.stage = "completed"
+        attempt.retryable = False
+        attempt.completed_at = datetime.now(UTC)
+        job.last_heartbeat_at = datetime.now(UTC)
+        self._refresh_job_counters(job=job)
+
+    def _advance_stage(
+        self,
+        *,
+        batch: Batch,
+        invoice: InvoiceRecord,
+        attempt: ProcessingAttempt,
+        stage_code: str,
+    ) -> None:
+        attempt.stage = stage_code
+        invoice.processing_status = "processing"
+        invoice.processing_stage = stage_code
+        batch.last_stage_code = stage_code
+        batch.last_stage_text = STAGE_TEXTS.get(stage_code, stage_code)
+        current_job = self._current_job(batch)
+        if current_job is not None:
+            current_job.status = "running"
+            current_job.current_stage = stage_code
+            current_job.last_heartbeat_at = datetime.now(UTC)
+        self.session.flush()
+
+    def _refresh_job_counters(self, *, job: ProcessingJob) -> None:
+        attempts = self.session.scalars(
+            select(ProcessingAttempt).where(ProcessingAttempt.job_id == job.id)
+        ).all()
+        job.total_items = len(attempts) or job.total_items
+        job.completed_items = sum(1 for attempt in attempts if attempt.status == "succeeded")
+        job.failed_items = sum(1 for attempt in attempts if attempt.status in {"failed", "retryable_failed"})
+
+    def _finalize_job(self, *, batch_id: str, job_id: str) -> None:
+        batch = self.session.get(Batch, batch_id)
+        job = self.session.get(ProcessingJob, job_id)
+        if batch is None or job is None:
+            return
+        invoices = self.session.scalars(select(InvoiceRecord).where(InvoiceRecord.batch_id == batch_id)).all()
+        pass_summary = summarize_suggested_pass(invoices)
+        self._refresh_job_counters(job=job)
+        job.current_stage = "completed" if job.failed_items == 0 else "failed"
+        job.status = "completed" if job.failed_items == 0 else "completed_with_failures"
+        job.completed_at = datetime.now(UTC)
+        job.last_heartbeat_at = datetime.now(UTC)
+        batch.last_stage_code = "completed" if job.failed_items == 0 else "failed"
+        batch.last_stage_text = STAGE_TEXTS[batch.last_stage_code]
+        batch.total_files = len(invoices)
+        batch.completed_files = sum(1 for invoice in invoices if invoice.processing_status == "completed")
+        batch.failed_files = sum(1 for invoice in invoices if invoice.processing_status == "processing_failed")
+        batch.processing_files = max(batch.total_files - batch.completed_files - batch.failed_files, 0)
+        batch.suggested_pass_count = pass_summary.count
+        batch.suggested_pass_total_amount = pass_summary.total_amount
+        batch.status = "completed" if batch.failed_files == 0 else "processing" if batch.processing_files else "completed"
+        self.session.commit()
+
+    @staticmethod
+    def _current_job(batch: Batch) -> ProcessingJob | None:
+        for job in batch.processing_jobs:
+            if job.id == batch.active_job_id:
+                return job
+        return None
+
+    @staticmethod
+    def _build_history_from_completed_invoices(invoices: list[InvoiceRecord]) -> list[dict[str, Any]]:
+        history: list[dict[str, Any]] = []
+        for invoice in invoices:
+            if invoice.processing_status != "completed":
+                continue
+            history.append(
+                {
+                    "invoice_number": invoice.invoice_number,
+                    "invoice_code": invoice.invoice_code,
+                    "seller_name": invoice.seller_name,
+                    "invoice_date": invoice.invoice_date,
+                    "invoice_amount": invoice.invoice_amount,
+                    "system_decision": invoice.system_decision,
+                    "risk_flags": json.loads(invoice.risk_flags or "[]"),
+                }
+            )
+        return history
+
+    @staticmethod
+    def _extract_error_code(reason: str) -> str:
+        match = re.search(r"([a-z_]+)", reason)
+        if match is None:
+            return "processing_error"
+        return match.group(1)
+
+    @staticmethod
+    def _is_retryable_error(error_code: str | None) -> bool:
+        if error_code is None:
+            return False
+        return error_code in RETRYABLE_ERROR_CODES
 
     def _parse_document(self, content: bytes) -> ParsedDocument:
         text_error: StructuredParseError | None = None

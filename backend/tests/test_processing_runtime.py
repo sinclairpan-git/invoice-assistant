@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -44,6 +45,24 @@ def seed_active_rules(session) -> None:
         change_summary="seed naming rules",
         change_reason="runtime fixture",
     )
+
+
+def wait_for_batch_stage(client: TestClient, batch_id: str, expected_stage: str, *, timeout: float = 5.0) -> dict[str, object]:
+    deadline = time.monotonic() + timeout
+    last_payload: dict[str, object] | None = None
+    while time.monotonic() < deadline:
+        response = client.get(f"/api/batches/{batch_id}/progress")
+        assert response.status_code == 200
+        last_payload = response.json()["item"]
+        is_terminal = (
+            last_payload["total_files"] > 0
+            and last_payload["processing_files"] == 0
+            and last_payload["completed_files"] + last_payload["failed_files"] == last_payload["total_files"]
+        )
+        if last_payload["stage_code"] == expected_stage and is_terminal:
+            return last_payload
+        time.sleep(0.05)
+    raise AssertionError(f"Timed out waiting for batch {batch_id} to reach stage {expected_stage!r}: {last_payload!r}")
 
 
 def test_parse_document_uses_real_pdf_text_provider_for_electronic_fixture(tmp_path):
@@ -102,10 +121,13 @@ def test_low_confidence_ocr_fixture_is_review_required(tmp_path):
 
     assert response.status_code == 200
     payload = response.json()["item"]
-    assert payload["progress"]["stage_code"] == "completed"
-    assert payload["completed_files"] == 1
-    assert payload["failed_files"] == 0
-    assert payload["suggested_pass_total_amount"] == "0.00"
+    assert payload["batch_no"] == "BATCH-RUNTIME-LOW-001"
+    batch_id = payload["id"]
+
+    final_progress = wait_for_batch_stage(client, batch_id, "completed")
+    assert final_progress["completed_files"] == 1
+    assert final_progress["failed_files"] == 0
+    assert final_progress["suggested_pass_total_amount"] == "0.00"
 
     session = app.state.session_factory()
     try:
@@ -146,9 +168,12 @@ def test_invalid_pdf_records_structured_failure_reason(tmp_path):
 
     assert response.status_code == 200
     payload = response.json()["item"]
-    assert payload["progress"]["stage_code"] == "failed"
-    assert payload["failed_files"] == 1
-    assert payload["completed_files"] == 0
+    assert payload["batch_no"] == "BATCH-RUNTIME-FAIL-001"
+    batch_id = payload["id"]
+
+    final_progress = wait_for_batch_stage(client, batch_id, "failed")
+    assert final_progress["failed_files"] == 1
+    assert final_progress["completed_files"] == 0
 
     session = app.state.session_factory()
     try:

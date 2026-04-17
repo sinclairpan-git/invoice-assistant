@@ -1,4 +1,4 @@
-import { Alert, Empty, Spin } from "antd";
+import { Alert, Empty, Spin } from "../../app/antd";
 import type { PropsWithChildren } from "react";
 
 

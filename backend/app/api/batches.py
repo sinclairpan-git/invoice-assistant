@@ -13,8 +13,8 @@ from backend.app.db.models import Batch
 from backend.app.services.batch_service import BatchService, IncomingFile
 from backend.app.services.config_service import ConfigService
 from backend.app.services.export_service import ExportService
-from backend.app.services.processing_service import ProcessingService
 from backend.app.services.progress_service import ProgressService
+from backend.app.services.retry_service import RetryService
 from backend.app.services.storage_service import StorageError, StorageService
 
 
@@ -92,10 +92,7 @@ async def create_batch(
             created_by=created_by,
             batch_no=batch_no,
         )
-        ProcessingService(
-            session=session,
-            storage_root=get_storage_root(request),
-        ).process_batch(batch.id)
+        request.app.state.processing_runner.enqueue(batch.id)
     except (StorageError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -129,5 +126,28 @@ def create_export(
             "status": result.status,
             "output_path": result.output_path,
             "summary": result.summary,
+        }
+    }
+
+
+@router.post("/{batch_id}/retry-failures")
+def retry_batch_failures(
+    batch_id: str,
+    request: Request,
+    session: Session = Depends(get_session),
+) -> dict[str, object]:
+    service = RetryService(
+        session=session,
+        processing_runner=request.app.state.processing_runner,
+    )
+    try:
+        retried_invoice_ids = service.retry_batch_failures(batch_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return {
+        "item": {
+            "batch_id": batch_id,
+            "retried_invoice_ids": retried_invoice_ids,
         }
     }

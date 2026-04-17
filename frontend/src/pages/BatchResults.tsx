@@ -1,8 +1,8 @@
-import { App, Button, Select, Space, Statistic, Tag } from "antd";
+import { App, Button, Select, Space, Statistic, Tag, Typography } from "../app/antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { createExport, getBatch, getErrorMessage, listBatchInvoices, listBatches } from "../app/api";
+import { createBatchRetry, createExport, getBatch, getErrorMessage, listBatchInvoices, listBatches } from "../app/api";
 import { useOperatorSettings } from "../app/operator-settings";
 import type { Batch, BatchInvoiceListing } from "../app/types";
 import { AsyncBoundary } from "../components/common/AsyncBoundary";
@@ -108,6 +108,9 @@ export function BatchResults() {
   }, [loadResults, resolvedBatchId, selectedFilter]);
 
   const counts = invoiceState.data?.status_counts ?? {};
+  const recentFailures = batchDetail?.progress?.recent_failures ?? [];
+  const retryableFailures = recentFailures.filter((item) => item.retryable !== false);
+  const failedCount = counts["处理失败"] ?? batchDetail?.failed_files ?? 0;
 
   return (
     <div className="page-stack">
@@ -146,6 +149,39 @@ export function BatchResults() {
                   <Tag key={status}>{`${status} ${counts[status] ?? 0}`}</Tag>
                 ))}
               </Space>
+              {failedCount > 0 ? (
+                <Space direction="vertical" size={8} className="full-width">
+                  <Space wrap>
+                    <Typography.Text strong>失败摘要</Typography.Text>
+                    <Typography.Text type="secondary">{`失败 ${failedCount} 张`}</Typography.Text>
+                    <Button
+                      onClick={async () => {
+                        if (!resolvedBatchId) {
+                          return;
+                        }
+                        try {
+                          const result = await createBatchRetry({ batchId: resolvedBatchId });
+                          message.success(`已重新入队 ${result.retried_invoice_ids.length} 张失败票`);
+                          await loadResults(resolvedBatchId, selectedFilter);
+                          await loadBatches();
+                        } catch (error) {
+                          message.error(getErrorMessage(error));
+                        }
+                      }}
+                      disabled={recentFailures.length > 0 && retryableFailures.length === 0}
+                    >
+                      重试失败票
+                    </Button>
+                  </Space>
+                  {recentFailures.slice(0, 3).map((failure) => (
+                    <Space key={failure.invoice_id} wrap>
+                      <Typography.Text>{failure.original_filename}</Typography.Text>
+                      {failure.error_code ? <Tag color="red">{failure.error_code}</Tag> : null}
+                      <Typography.Text type="secondary">{failure.failure_reason || "处理失败"}</Typography.Text>
+                    </Space>
+                  ))}
+                </Space>
+              ) : null}
               <Space wrap>
                 <Button
                   onClick={async () => {

@@ -1,8 +1,8 @@
-import { Button, Empty, Progress, Space, Tag, Typography } from "antd";
+import { App, Button, Empty, Progress, Space, Tag, Typography } from "../app/antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { getErrorMessage, listBatches } from "../app/api";
+import { createBatchRetry, getErrorMessage, listBatches } from "../app/api";
 import type { Batch } from "../app/types";
 import { BatchList } from "../components/batch/BatchList";
 import { UploadPanel } from "../components/batch/UploadPanel";
@@ -17,12 +17,14 @@ interface BatchListState {
 }
 
 export function BatchWorkbench() {
+  const { message } = App.useApp();
   const navigate = useNavigate();
   const [state, setState] = useState<BatchListState>({
     loading: true,
     error: null,
     items: [],
   });
+  const [retryingBatch, setRetryingBatch] = useState(false);
 
   const loadBatches = useCallback(async () => {
     setState((current) => ({
@@ -56,6 +58,9 @@ export function BatchWorkbench() {
       return stageCode === "processing" || stageCode === "queued";
     }) ?? null;
   }, [state.items]);
+
+  const activeFailures = activeBatch?.progress?.recent_failures ?? [];
+  const retryableFailures = activeFailures.filter((item) => item.retryable !== false);
 
   useEffect(() => {
     if (!activeBatch) {
@@ -98,6 +103,45 @@ export function BatchWorkbench() {
                 <Typography.Text type="secondary">{`失败 ${activeBatch.failed_files}`}</Typography.Text>
               </Space>
             </div>
+            {activeFailures.length > 0 ? (
+              <div className="full-width">
+                <Space direction="vertical" size={4} className="full-width">
+                  <Space wrap>
+                    <Typography.Text strong>最近失败</Typography.Text>
+                    <Typography.Text type="secondary">{`${activeFailures.length} 张`}</Typography.Text>
+                  </Space>
+                  {activeFailures.slice(0, 3).map((failure) => (
+                    <Space key={failure.invoice_id} wrap>
+                      <Typography.Text>{failure.original_filename}</Typography.Text>
+                      {failure.parse_source ? <Tag>{failure.parse_source}</Tag> : null}
+                      {failure.error_code ? <Tag color="red">{failure.error_code}</Tag> : null}
+                      <Typography.Text type="secondary">{failure.failure_reason || "处理失败"}</Typography.Text>
+                    </Space>
+                  ))}
+                  <Button
+                    onClick={async () => {
+                      if (!activeBatch) {
+                        return;
+                      }
+                      setRetryingBatch(true);
+                      try {
+                        const result = await createBatchRetry({ batchId: activeBatch.id });
+                        message.success(`已重新入队 ${result.retried_invoice_ids.length} 张失败票`);
+                        await loadBatches();
+                      } catch (error) {
+                        message.error(getErrorMessage(error));
+                      } finally {
+                        setRetryingBatch(false);
+                      }
+                    }}
+                    loading={retryingBatch}
+                    disabled={retryableFailures.length === 0}
+                  >
+                    重试失败票
+                  </Button>
+                </Space>
+              </div>
+            ) : null}
             <div className="active-batch-metrics">
               <div>
                 <Typography.Text type="secondary">系统建议通过</Typography.Text>

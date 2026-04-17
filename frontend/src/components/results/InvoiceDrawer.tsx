@@ -1,7 +1,7 @@
-import { Alert, Descriptions, Drawer, List, Space, Table, Tabs, Tag, Typography } from "antd";
+import { Alert, App, Button, Descriptions, Drawer, List, Space, Table, Tabs, Tag, Typography } from "../../app/antd";
 import { useCallback, useEffect, useState } from "react";
 
-import { getErrorMessage, getInvoiceDetail, getInvoicePreviewUrl } from "../../app/api";
+import { createInvoiceRetry, getErrorMessage, getInvoiceDetail, getInvoicePreviewUrl } from "../../app/api";
 import type { ExtractedField, FieldCheck, InvoiceDetail } from "../../app/types";
 import { AsyncBoundary } from "../common/AsyncBoundary";
 import { ReviewActions } from "./ReviewActions";
@@ -87,9 +87,11 @@ function renderStatusTag(status: string) {
 }
 
 export function InvoiceDrawer({ invoiceId, open, onClose, onChanged }: InvoiceDrawerProps) {
+  const { message } = App.useApp();
   const [invoice, setInvoice] = useState<InvoiceDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
 
   const loadInvoice = useCallback(async () => {
     if (!invoiceId) {
@@ -136,6 +138,38 @@ export function InvoiceDrawer({ invoiceId, open, onClose, onChanged }: InvoiceDr
               <Descriptions.Item label="发票号码">{invoice.invoice_number || "--"}</Descriptions.Item>
               <Descriptions.Item label="问题数">{invoice.problem_count}</Descriptions.Item>
             </Descriptions>
+            <Descriptions bordered size="small" column={2} className="description-block">
+              <Descriptions.Item label="解析来源">{invoice.parse_source || "--"}</Descriptions.Item>
+              <Descriptions.Item label="失败阶段">{invoice.last_error_stage || "--"}</Descriptions.Item>
+              <Descriptions.Item label="错误码">{invoice.last_error_code || "--"}</Descriptions.Item>
+              <Descriptions.Item label="可重试">{invoice.retryable ? "是" : "否"}</Descriptions.Item>
+              <Descriptions.Item label="Provider">{invoice.provider_diagnostic.provider_name || "--"}</Descriptions.Item>
+              <Descriptions.Item label="Provider 版本">{invoice.provider_diagnostic.provider_version || "--"}</Descriptions.Item>
+              <Descriptions.Item label="Provider 错误">{invoice.provider_diagnostic.provider_error_code || "--"}</Descriptions.Item>
+              <Descriptions.Item label="失败信息">{invoice.last_error_message || invoice.failure_reason || "--"}</Descriptions.Item>
+            </Descriptions>
+            {invoice.retryable ? (
+              <Space>
+                <Button
+                  onClick={async () => {
+                    setRetrying(true);
+                    try {
+                      await createInvoiceRetry({ invoiceId: invoice.id });
+                      message.success("当前票已重新入队");
+                      await loadInvoice();
+                      await onChanged();
+                    } catch (nextError) {
+                      message.error(getErrorMessage(nextError));
+                    } finally {
+                      setRetrying(false);
+                    }
+                  }}
+                  loading={retrying}
+                >
+                  重试当前票
+                </Button>
+              </Space>
+            ) : null}
             <Tabs
               items={[
                 {

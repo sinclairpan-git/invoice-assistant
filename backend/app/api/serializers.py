@@ -106,11 +106,25 @@ def serialize_invoice_summary(invoice: InvoiceRecord) -> dict[str, object]:
 
 def serialize_invoice_detail(invoice: InvoiceRecord) -> dict[str, object]:
     payload = serialize_invoice_summary(invoice)
+    payload["last_error_stage"] = invoice.last_error_stage
+    payload["last_error_code"] = invoice.last_error_code
+    payload["last_error_message"] = invoice.last_error_message
+    payload["retryable"] = invoice.retryable
+    payload["provider_diagnostic"] = _latest_attempt_diagnostic(invoice)
     payload["evidence_items"] = [serialize_document_evidence(item) for item in invoice.evidence_items]
     payload["extracted_fields"] = [serialize_extracted_field(item) for item in invoice.extracted_fields]
     payload["field_checks"] = [serialize_field_check(item) for item in invoice.field_checks]
     payload["review_actions"] = [serialize_review_action(item) for item in invoice.review_actions]
     return payload
+
+
+def _latest_attempt_diagnostic(invoice: InvoiceRecord) -> dict[str, object]:
+    if not invoice.last_attempt_id:
+        return {}
+    for attempt in invoice.processing_attempts:
+        if attempt.id == invoice.last_attempt_id:
+            return _json_load(attempt.diagnostic_json, {})
+    return {}
 
 
 def serialize_document_evidence(evidence: DocumentEvidence) -> dict[str, object]:

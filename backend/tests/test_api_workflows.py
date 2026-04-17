@@ -1,12 +1,18 @@
 import json
+import threading
+import time
 from decimal import Decimal
+from pathlib import Path
 
 from sqlalchemy import select
 from starlette.testclient import TestClient
 
-from backend.app.db.models import Batch, DocumentEvidence, ExtractedField, FieldCheck, InvoiceRecord
+from backend.app.db.models import Batch, DocumentEvidence, ExtractedField, FieldCheck, InvoiceRecord, ProcessingAttempt, ProcessingJob
 from backend.app.main import create_app
+from backend.app.services.batch_service import BatchService, IncomingFile
 from backend.app.services.config_service import ConfigService
+from backend.app.services.processing_service import ProcessingService
+from backend.app.services.storage_service import StorageService
 from backend.app.services.status_service import DISPLAY_STATUS_DUPLICATE, DISPLAY_STATUS_PASS
 
 
@@ -137,6 +143,122 @@ def seed_batch_fixture(app):
     return {"batch_id": batch_id, "review_invoice_id": review_invoice_id}
 
 
+def seed_failure_diagnostic_fixture(app):
+    session = app.state.session_factory()
+    snapshot = seed_active_rules(session)
+
+    batch = Batch(
+        batch_no="BATCH-API-DIAG-001",
+        created_by="tester",
+        snapshot_json=json.dumps(snapshot, ensure_ascii=False, sort_keys=True),
+        status="failed",
+        total_files=1,
+        completed_files=0,
+        processing_files=0,
+        failed_files=1,
+    )
+    session.add(batch)
+    session.flush()
+
+    invoice = InvoiceRecord(
+        batch_id=batch.id,
+        original_filename="broken.pdf",
+        storage_path_original="storage/originals/BATCH-API-DIAG-001/broken.pdf",
+        file_sha256="broken-sha",
+        parse_source="ocr",
+        processing_status="processing_failed",
+        processing_stage="failed",
+        review_status="not_reviewed",
+        artifact_status="original_only",
+        duplicate_flag=False,
+        risk_flags="[]",
+        failure_reason="OCR timed out",
+        last_error_stage="ocr_processing",
+        last_error_code="ocr_timeout",
+        last_error_message="OCR timed out",
+        retryable=True,
+    )
+    session.add(invoice)
+    session.flush()
+
+    job = ProcessingJob(
+        batch_id=batch.id,
+        status="completed_with_failures",
+        current_stage="failed",
+        total_items=1,
+        completed_items=0,
+        failed_items=1,
+        summary_json=json.dumps({"failure_count": 1}, ensure_ascii=False, sort_keys=True),
+    )
+    session.add(job)
+    session.flush()
+
+    attempt = ProcessingAttempt(
+        job_id=job.id,
+        invoice_id=invoice.id,
+        attempt_no=1,
+        status="retryable_failed",
+        stage="ocr_processing",
+        parse_source="ocr",
+        provider_name="rapidocr-onnxruntime",
+        provider_version="1.3.24",
+        error_code="ocr_timeout",
+        error_message="OCR timed out",
+        retryable=True,
+        diagnostic_json=json.dumps(
+            {
+                "provider_name": "rapidocr-onnxruntime",
+                "provider_version": "1.3.24",
+                "provider_error_code": "ocr_timeout",
+                "confidence_summary": {"overall": 0.0},
+                "stage": "ocr_processing",
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
+    )
+    session.add(attempt)
+    session.flush()
+
+    batch.active_job_id = job.id
+    batch.last_stage_code = "failed"
+    batch.last_stage_text = "批次处理失败"
+    invoice.last_attempt_id = attempt.id
+    session.commit()
+    fixture = {"batch_id": batch.id, "invoice_id": invoice.id}
+    session.close()
+    return fixture
+
+
+def wait_for_batch_stage(client: TestClient, batch_id: str, expected_stage: str, *, timeout: float = 5.0) -> dict[str, object]:
+    deadline = time.monotonic() + timeout
+    last_payload: dict[str, object] | None = None
+    while time.monotonic() < deadline:
+        response = client.get(f"/api/batches/{batch_id}/progress")
+        assert response.status_code == 200
+        last_payload = response.json()["item"]
+        is_terminal = (
+            last_payload["total_files"] > 0
+            and last_payload["processing_files"] == 0
+            and last_payload["completed_files"] + last_payload["failed_files"] == last_payload["total_files"]
+        )
+        if last_payload["stage_code"] == expected_stage and is_terminal:
+            return last_payload
+        time.sleep(0.05)
+    raise AssertionError(f"Timed out waiting for batch {batch_id} to reach stage {expected_stage!r}: {last_payload!r}")
+
+
+class StubProcessingRunner:
+    def __init__(self) -> None:
+        self.enqueued_batch_ids: list[str] = []
+
+    def enqueue(self, batch_id: str) -> bool:
+        if batch_id in self.enqueued_batch_ids:
+            return False
+        self.enqueued_batch_ids.append(batch_id)
+        return True
+
+
 def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_path):
     app = create_app(f"sqlite:///{tmp_path / 'api.db'}")
     fixture = seed_batch_fixture(app)
@@ -235,10 +357,10 @@ def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_pat
     assert upload_response.status_code == 200
     upload_payload = upload_response.json()["item"]
     assert upload_payload["batch_no"] == "BATCH-UP-001"
-    assert upload_payload["progress"]["stage_code"] == "failed"
-    assert upload_payload["completed_files"] == 0
-    assert upload_payload["processing_files"] == 0
-    assert upload_payload["failed_files"] == 1
+    failed_progress = wait_for_batch_stage(client, upload_payload["id"], "failed")
+    assert failed_progress["completed_files"] == 0
+    assert failed_progress["processing_files"] == 0
+    assert failed_progress["failed_files"] == 1
 
     session = app.state.session_factory()
     try:
@@ -269,3 +391,213 @@ def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_pat
         assert stored_batch.suggested_pass_total_amount == Decimal("0.00")
     finally:
         session.close()
+
+
+def test_create_batch_returns_without_waiting_for_processing_completion(tmp_path, monkeypatch):
+    app = create_app(f"sqlite:///{tmp_path / 'api-async.db'}")
+    session = app.state.session_factory()
+    seed_active_rules(session)
+    session.close()
+
+    processing_started = threading.Event()
+    release_processing = threading.Event()
+    original_process_batch = ProcessingService.process_batch
+
+    def blocked_process_batch(self, batch_id: str):
+        processing_started.set()
+        assert release_processing.wait(timeout=2.0)
+        return original_process_batch(self, batch_id)
+
+    monkeypatch.setattr(ProcessingService, "process_batch", blocked_process_batch)
+
+    with TestClient(app) as client:
+        response_holder: dict[str, object] = {}
+
+        def send_request() -> None:
+            response_holder["response"] = client.post(
+                "/api/batches",
+                data={"created_by": "async-uploader", "batch_no": "BATCH-ASYNC-001"},
+                files=[("files", ("upload.pdf", b"%PDF-1.7\nupload fixture", "application/pdf"))],
+            )
+
+        request_thread = threading.Thread(target=send_request)
+        request_thread.start()
+
+        assert processing_started.wait(timeout=1.0)
+        request_thread.join(timeout=0.2)
+        assert not request_thread.is_alive()
+
+        response = response_holder["response"]
+        assert response.status_code == 200
+        payload = response.json()["item"]
+        assert payload["batch_no"] == "BATCH-ASYNC-001"
+        assert payload["progress"]["stage_code"] in {"queued", "processing"}
+
+        session = app.state.session_factory()
+        try:
+            batch = session.scalar(select(Batch).where(Batch.batch_no == "BATCH-ASYNC-001"))
+            assert batch is not None
+            assert batch.status in {"queued", "processing"}
+        finally:
+            session.close()
+
+        release_processing.set()
+        final_progress = wait_for_batch_stage(client, payload["id"], "failed")
+        assert final_progress["failed_files"] == 1
+
+
+def test_progress_and_invoice_detail_expose_failure_diagnostics(tmp_path):
+    app = create_app(f"sqlite:///{tmp_path / 'api-diagnostics.db'}")
+    fixture = seed_failure_diagnostic_fixture(app)
+    client = TestClient(app)
+
+    progress_response = client.get(f"/api/batches/{fixture['batch_id']}/progress")
+    assert progress_response.status_code == 200
+    progress_item = progress_response.json()["item"]
+    assert progress_item["stage_code"] == "failed"
+    assert progress_item["recent_failures"] == [
+        {
+            "invoice_id": fixture["invoice_id"],
+            "original_filename": "broken.pdf",
+            "failure_reason": "OCR timed out",
+            "failure_stage": "ocr_processing",
+            "error_code": "ocr_timeout",
+            "retryable": True,
+            "parse_source": "ocr",
+            "provider_diagnostic": {
+                "provider_name": "rapidocr-onnxruntime",
+                "provider_version": "1.3.24",
+                "provider_error_code": "ocr_timeout",
+                "confidence_summary": {"overall": 0.0},
+                "stage": "ocr_processing",
+            },
+        }
+    ]
+
+    detail_response = client.get(f"/api/invoices/{fixture['invoice_id']}")
+    assert detail_response.status_code == 200
+    detail_item = detail_response.json()["item"]
+    assert detail_item["parse_source"] == "ocr"
+    assert detail_item["last_error_stage"] == "ocr_processing"
+    assert detail_item["last_error_code"] == "ocr_timeout"
+    assert detail_item["last_error_message"] == "OCR timed out"
+    assert detail_item["retryable"] is True
+    assert detail_item["provider_diagnostic"] == {
+        "provider_name": "rapidocr-onnxruntime",
+        "provider_version": "1.3.24",
+        "provider_error_code": "ocr_timeout",
+        "confidence_summary": {"overall": 0.0},
+        "stage": "ocr_processing",
+    }
+
+
+def test_batch_retry_endpoint_retries_failed_subset_idempotently(tmp_path):
+    app = create_app(f"sqlite:///{tmp_path / 'api-batch-retry.db'}")
+    session = app.state.session_factory()
+    seed_active_rules(session)
+
+    batch = BatchService(
+        session=session,
+        storage_service=StorageService(app.state.storage_root),
+        config_service=ConfigService(session),
+    ).create_batch(
+        files=[
+            IncomingFile(
+                filename="01-standard-electronic.pdf",
+                content=(Path(__file__).parent / "fixtures" / "invoices" / "01-standard-electronic.pdf").read_bytes(),
+            ),
+            IncomingFile(
+                filename="broken.pdf",
+                content=b"%PDF-1.7\nbroken fixture",
+            ),
+        ],
+        created_by="tester",
+        batch_no="BATCH-API-RETRY-001",
+    )
+    ProcessingService(session=session, storage_root=app.state.storage_root).process_batch(batch.id)
+
+    completed_invoice = session.scalar(
+        select(InvoiceRecord)
+        .where(InvoiceRecord.batch_id == batch.id, InvoiceRecord.processing_status == "completed")
+        .order_by(InvoiceRecord.original_filename.asc())
+    )
+    failed_invoice = session.scalar(
+        select(InvoiceRecord)
+        .where(InvoiceRecord.batch_id == batch.id, InvoiceRecord.processing_status == "processing_failed")
+        .order_by(InvoiceRecord.original_filename.asc())
+    )
+    assert completed_invoice is not None
+    assert failed_invoice is not None
+    completed_attempt_id = completed_invoice.last_attempt_id
+    session.close()
+
+    app.state.processing_runner = StubProcessingRunner()
+    client = TestClient(app)
+
+    retry_response = client.post(f"/api/batches/{batch.id}/retry-failures")
+    assert retry_response.status_code == 200
+    assert retry_response.json()["item"] == {
+        "batch_id": batch.id,
+        "retried_invoice_ids": [failed_invoice.id],
+    }
+
+    verify_session = app.state.session_factory()
+    try:
+        refreshed_completed = verify_session.get(InvoiceRecord, completed_invoice.id)
+        refreshed_failed = verify_session.get(InvoiceRecord, failed_invoice.id)
+        assert refreshed_completed is not None
+        assert refreshed_failed is not None
+        assert refreshed_completed.last_attempt_id == completed_attempt_id
+        assert refreshed_failed.processing_status == "queued"
+        assert refreshed_failed.processing_stage == "queued"
+        assert refreshed_failed.failure_reason is None
+    finally:
+        verify_session.close()
+
+    repeat_response = client.post(f"/api/batches/{batch.id}/retry-failures")
+    assert repeat_response.status_code == 200
+    assert repeat_response.json()["item"] == {
+        "batch_id": batch.id,
+        "retried_invoice_ids": [],
+    }
+    assert app.state.processing_runner.enqueued_batch_ids == [batch.id]
+
+
+def test_invoice_retry_endpoint_is_idempotent_for_already_requeued_invoice(tmp_path):
+    app = create_app(f"sqlite:///{tmp_path / 'api-invoice-retry.db'}")
+    session = app.state.session_factory()
+    seed_active_rules(session)
+
+    batch = BatchService(
+        session=session,
+        storage_service=StorageService(app.state.storage_root),
+        config_service=ConfigService(session),
+    ).create_batch(
+        files=[IncomingFile(filename="broken.pdf", content=b"%PDF-1.7\nbroken fixture")],
+        created_by="tester",
+        batch_no="BATCH-API-RETRY-002",
+    )
+    ProcessingService(session=session, storage_root=app.state.storage_root).process_batch(batch.id)
+    failed_invoice = session.scalar(select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id))
+    assert failed_invoice is not None
+    session.close()
+
+    app.state.processing_runner = StubProcessingRunner()
+    client = TestClient(app)
+
+    retry_response = client.post(f"/api/invoices/{failed_invoice.id}/retry")
+    assert retry_response.status_code == 200
+    assert retry_response.json()["item"] == {
+        "invoice_id": failed_invoice.id,
+        "batch_id": batch.id,
+        "retried": True,
+    }
+
+    repeat_response = client.post(f"/api/invoices/{failed_invoice.id}/retry")
+    assert repeat_response.status_code == 200
+    assert repeat_response.json()["item"] == {
+        "invoice_id": failed_invoice.id,
+        "batch_id": batch.id,
+        "retried": False,
+    }
+    assert app.state.processing_runner.enqueued_batch_ids == [batch.id]

@@ -117,8 +117,8 @@ Batch 5: 回归验证、导出一致性与收口
 ## Batch 3：持久化作业、异步执行与恢复
 
 - [x] T31 建立作业与尝试数据模型
-- [ ] T32 实现后台 worker、阶段推进与幂等性
-- [ ] T33 实现恢复与重试服务
+- [x] T32 实现后台 worker、阶段推进与幂等性
+- [x] T33 实现恢复与重试服务
 
 ### Task 3.1 建立作业与尝试数据模型
 
@@ -161,9 +161,9 @@ Batch 5: 回归验证、导出一致性与收口
 
 ## Batch 4：API 诊断、失败重试与前端接入
 
-- [ ] T41 扩展进度与失败诊断 API
-- [ ] T42 暴露单票 / 批次重试接口
-- [ ] T43 前端接入阶段文案、失败详情与重试入口
+- [x] T41 扩展进度与失败诊断 API
+- [x] T42 暴露单票 / 批次重试接口
+- [x] T43 前端接入阶段文案、失败详情与重试入口
 
 ### Task 4.1 扩展进度与失败诊断 API
 
@@ -206,22 +206,22 @@ Batch 5: 回归验证、导出一致性与收口
 
 ## Batch 5：回归验证、导出一致性与收口
 
-- [ ] T51 完成真实样本、恢复与重试端到端回归
-- [ ] T52 验证导出和合规金额统计不回退
-- [ ] T53 更新执行归档并完成 close-out
+- [x] T51 完成真实样本、恢复与重试端到端回归
+- [x] T52 验证导出和合规金额统计不回退
+- [x] T53 更新执行归档并完成 close-out
 
 ### Task 5.1 完成真实样本、恢复与重试端到端回归
 
 - **任务编号**：T51
 - **优先级**：P0
 - **依赖**：T43
-- **文件**：`backend/tests/test_processing_runtime.py`、`backend/tests/test_processing_recovery.py`、`backend/tests/test_api_runtime.py`
+- **文件**：`backend/tests/test_processing_runtime.py`、`backend/tests/test_processing_recovery.py`、`backend/tests/test_api_workflows.py`
 - **可并行**：否
 - **验收标准**：
   1. 电子票、扫描票、损坏票和重试路径全部跑通。
   2. 重启恢复验证通过。
   3. 无永久卡住的运行态记录。
-- **验证**：`uv run --project backend --extra dev pytest backend/tests/test_processing_runtime.py backend/tests/test_processing_recovery.py backend/tests/test_api_runtime.py -q`
+- **验证**：`uv run --project backend --extra dev pytest backend/tests/test_processing_runtime.py backend/tests/test_processing_recovery.py backend/tests/test_api_workflows.py -q`
 
 ### Task 5.2 验证导出和合规金额统计不回退
 

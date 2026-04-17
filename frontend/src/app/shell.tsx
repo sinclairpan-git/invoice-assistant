@@ -1,5 +1,5 @@
-import { FileSearchOutlined, InboxOutlined, SettingOutlined } from "@ant-design/icons";
-import { Layout, Menu, Space, Tag, Typography } from "antd";
+import { Layout, Menu, Space, Tag, Typography } from "./antd";
+import { FileSearchOutlined, InboxOutlined, SettingOutlined } from "./icons";
 import { Outlet, useLocation, useMatches, useNavigate } from "react-router-dom";
 
 import { useOperatorSettings } from "./operator-settings";

@@ -1,4 +1,6 @@
+import json
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from sqlalchemy import inspect, text
@@ -7,12 +9,48 @@ from sqlalchemy.exc import IntegrityError
 from backend.app.db.models import Batch, InvoiceRecord, ProcessingAttempt, ProcessingJob
 from backend.app.db.session import create_database_engine, create_session_factory, init_db
 from backend.app.main import create_app
+from backend.app.services.batch_service import BatchService, IncomingFile
+from backend.app.services.config_service import ConfigService
+from backend.app.services.processing_service import ProcessingService
+from backend.app.services.storage_service import StorageService
 
 
 def build_session(tmp_path, name: str = "processing-jobs.db"):
     engine = create_database_engine(f"sqlite:///{tmp_path / name}")
     init_db(engine)
     return create_session_factory(engine)()
+
+
+FIXTURE_DIR = Path(__file__).parent / "fixtures" / "invoices"
+
+
+def seed_active_rules(session) -> None:
+    service = ConfigService(session)
+    service.create_version(
+        kind="tax_profile",
+        content={"buyer_name": "Shanghai Example Co", "buyer_tax_no": "91310000X"},
+        changed_by="fin-admin",
+        change_summary="seed tax profile",
+        change_reason="processing job fixture",
+    )
+    service.create_version(
+        kind="business_rules",
+        content={
+            "minimum_confidence": 0.75,
+            "seller_whitelist": ["Acme Supplies Ltd", "Scan Services Co"],
+            "review_keywords": ["DETAIL LIST ATTACHED"],
+        },
+        changed_by="ops-admin",
+        change_summary="seed business rules",
+        change_reason="processing job fixture",
+    )
+    service.create_version(
+        kind="naming_rules",
+        content={"pattern": "{date}_{amount}_{number}"},
+        changed_by="ops-admin",
+        change_summary="seed naming rules",
+        change_reason="processing job fixture",
+    )
 
 
 def test_processing_job_schema_is_created_and_runtime_columns_are_present(tmp_path):
@@ -308,3 +346,75 @@ def test_init_db_adds_runtime_columns_to_legacy_sqlite_schema(tmp_path):
     assert row.processing_stage == "queued"
     assert row.retry_count == 0
     assert row.retryable == 0
+
+
+def test_process_batch_persists_job_attempts_and_is_idempotent_for_completed_invoices(tmp_path):
+    app = create_app(f"sqlite:///{tmp_path / 'processing-runtime.db'}")
+    session = app.state.session_factory()
+    seed_active_rules(session)
+
+    batch = BatchService(
+        session=session,
+        storage_service=StorageService(app.state.storage_root),
+        config_service=ConfigService(session),
+    ).create_batch(
+        files=[
+            IncomingFile(
+                filename="01-standard-electronic.pdf",
+                content=(FIXTURE_DIR / "01-standard-electronic.pdf").read_bytes(),
+            )
+        ],
+        created_by="tester",
+        batch_no="BATCH-JOB-RUNTIME-001",
+    )
+
+    service = ProcessingService(session, storage_root=app.state.storage_root)
+    service.process_batch(batch.id)
+
+    session.refresh(batch)
+    invoice = batch.invoices[0]
+
+    assert batch.active_job_id is not None
+    assert invoice.last_attempt_id is not None
+    assert invoice.processing_status == "completed"
+    assert invoice.processing_stage == "completed"
+
+    job = session.get(ProcessingJob, batch.active_job_id)
+    assert job is not None
+    assert job.status == "completed"
+    assert job.current_stage == "completed"
+    assert job.total_items == 1
+    assert job.completed_items == 1
+    assert job.failed_items == 0
+
+    attempts = session.query(ProcessingAttempt).where(ProcessingAttempt.invoice_id == invoice.id).all()
+    assert len(attempts) == 1
+    assert attempts[0].status == "succeeded"
+    assert attempts[0].stage == "completed"
+    assert attempts[0].parse_source == "text"
+    assert json.loads(attempts[0].diagnostic_json)["provider_name"] == "pypdf"
+
+    evidence_attempt_ids = {item.attempt_id for item in invoice.evidence_items}
+    extracted_attempt_ids = {item.attempt_id for item in invoice.extracted_fields}
+    check_attempt_ids = {item.attempt_id for item in invoice.field_checks}
+    assert evidence_attempt_ids == {invoice.last_attempt_id}
+    assert extracted_attempt_ids == {invoice.last_attempt_id}
+    assert check_attempt_ids == {invoice.last_attempt_id}
+
+    first_counts = (
+        len(invoice.evidence_items),
+        len(invoice.extracted_fields),
+        len(invoice.field_checks),
+    )
+
+    service.process_batch(batch.id)
+    session.refresh(batch)
+    session.refresh(invoice)
+
+    attempts_after_rerun = session.query(ProcessingAttempt).where(ProcessingAttempt.invoice_id == invoice.id).all()
+    assert len(attempts_after_rerun) == 1
+    assert (
+        len(invoice.evidence_items),
+        len(invoice.extracted_fields),
+        len(invoice.field_checks),
+    ) == first_counts

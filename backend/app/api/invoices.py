@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from backend.app.api.dependencies import get_session
 from backend.app.api.serializers import serialize_invoice_detail, serialize_invoice_summary, serialize_review_action
 from backend.app.db.models import Batch, InvoiceRecord, ReviewAction
+from backend.app.services.retry_service import RetryService
 from backend.app.services.status_service import DISPLAY_STATUS_DUPLICATE, DISPLAY_STATUS_REVIEW, summarize_suggested_pass
 
 
@@ -121,6 +122,44 @@ def get_invoice_preview(
         media_type="application/pdf",
         filename=Path(absolute_path).name,
     )
+
+
+@router.post("/invoices/{invoice_id}/retry")
+def retry_invoice(
+    invoice_id: str,
+    request: Request,
+    session: Session = Depends(get_session),
+) -> dict[str, object]:
+    invoice = session.get(InvoiceRecord, invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=404, detail="Invoice not found.")
+    if invoice.processing_status != "processing_failed":
+        return {
+            "item": {
+                "invoice_id": invoice.id,
+                "batch_id": invoice.batch_id,
+                "retried": False,
+            }
+        }
+
+    service = RetryService(
+        session=session,
+        processing_runner=request.app.state.processing_runner,
+    )
+    try:
+        service.retry_invoice(invoice_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "item": {
+            "invoice_id": invoice.id,
+            "batch_id": invoice.batch_id,
+            "retried": True,
+        }
+    }
 
 
 @router.post("/invoices/{invoice_id}/review-actions")

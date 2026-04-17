@@ -1,4 +1,4 @@
-import { Space, Typography } from "antd";
+import { Space, Typography } from "../../app/antd";
 import type { ReactNode } from "react";
 
 

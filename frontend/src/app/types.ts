@@ -1,5 +1,23 @@
 export type RuleKind = "tax_profile" | "business_rules" | "naming_rules";
 
+export interface ProviderDiagnostic {
+  provider_name?: string | null;
+  provider_version?: string | null;
+  provider_error_code?: string | null;
+  [key: string]: unknown;
+}
+
+export interface RecentFailure {
+  invoice_id: string;
+  original_filename: string;
+  failure_reason: string | null;
+  failure_stage?: string | null;
+  error_code?: string | null;
+  retryable?: boolean;
+  parse_source?: string | null;
+  provider_diagnostic?: ProviderDiagnostic;
+}
+
 export interface BatchProgress {
   batch_id: string;
   batch_no: string;
@@ -12,11 +30,7 @@ export interface BatchProgress {
   failed_files: number;
   suggested_pass_count: number;
   suggested_pass_total_amount: string;
-  recent_failures: Array<{
-    invoice_id: string;
-    original_filename: string;
-    failure_reason: string | null;
-  }>;
+  recent_failures: RecentFailure[];
 }
 
 export interface ExportJob {
@@ -73,6 +87,7 @@ export interface InvoiceSummary {
   buyer_tax_no: string | null;
   invoice_date: string | null;
   invoice_amount: string | null;
+  parse_source?: string | null;
   processing_status: string | null;
   system_decision: string | null;
   review_status: string | null;
@@ -129,10 +144,26 @@ export interface ReviewAction {
 }
 
 export interface InvoiceDetail extends InvoiceSummary {
+  last_error_stage: string | null;
+  last_error_code: string | null;
+  last_error_message: string | null;
+  retryable: boolean;
+  provider_diagnostic: ProviderDiagnostic;
   evidence_items: DocumentEvidence[];
   extracted_fields: ExtractedField[];
   field_checks: FieldCheck[];
   review_actions: ReviewAction[];
+}
+
+export interface BatchRetryResult {
+  batch_id: string;
+  retried_invoice_ids: string[];
+}
+
+export interface InvoiceRetryResult {
+  invoice_id: string;
+  batch_id: string;
+  retried: boolean;
 }
 
 export interface BatchInvoiceListing {

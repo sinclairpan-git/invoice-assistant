@@ -2,7 +2,9 @@ import type {
   ActiveConfigPayload,
   Batch,
   BatchInvoiceListing,
+  BatchRetryResult,
   InvoiceDetail,
+  InvoiceRetryResult,
   InvoiceSummary,
   ReviewAction,
   RuleKind,
@@ -113,6 +115,24 @@ export async function createReviewAction(params: {
       }),
     },
   );
+}
+
+export async function createBatchRetry(params: {
+  batchId: string;
+}): Promise<BatchRetryResult> {
+  const payload = await requestJson<{ item: BatchRetryResult }>(`/api/batches/${params.batchId}/retry-failures`, {
+    method: "POST",
+  });
+  return payload.item;
+}
+
+export async function createInvoiceRetry(params: {
+  invoiceId: string;
+}): Promise<InvoiceRetryResult> {
+  const payload = await requestJson<{ item: InvoiceRetryResult }>(`/api/invoices/${params.invoiceId}/retry`, {
+    method: "POST",
+  });
+  return payload.item;
 }
 
 export async function getActiveConfig(): Promise<ActiveConfigPayload> {

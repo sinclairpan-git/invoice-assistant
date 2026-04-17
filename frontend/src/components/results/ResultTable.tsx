@@ -1,4 +1,4 @@
-import { Button, Space, Table, Tag, Typography } from "antd";
+import { Button, Space, Table, Tag, Typography } from "../../app/antd";
 import type { ColumnsType } from "antd/es/table";
 
 import type { InvoiceSummary } from "../../app/types";

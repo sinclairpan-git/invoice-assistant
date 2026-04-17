@@ -1,6 +1,6 @@
-import { InboxOutlined } from "@ant-design/icons";
-import { App, Button, Form, Input, Space, Typography, Upload } from "antd";
-import type { UploadFile } from "antd";
+import { App, Button, Form, Input, Space, Typography, Upload } from "../../app/antd";
+import type { UploadFile } from "../../app/antd";
+import { InboxOutlined } from "../../app/icons";
 import { useEffect, useState } from "react";
 
 import { createBatch, getErrorMessage } from "../../app/api";

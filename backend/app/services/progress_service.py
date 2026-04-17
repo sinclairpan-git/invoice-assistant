@@ -3,17 +3,28 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 from logging import Logger
+import json
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_app_logger, log_event
-from backend.app.db.models import Batch, InvoiceRecord
+from backend.app.db.models import Batch, InvoiceRecord, ProcessingAttempt, ProcessingJob
 from backend.app.services.status_service import summarize_suggested_pass
 
 
 PROCESSING_ACTIVE_STATUSES = {"queued", "extracting", "classifying", "processing"}
 PROCESSING_FAILED_STATUSES = {"failed", "processing_failed"}
+STAGE_TEXTS = {
+    "queued": "等待处理",
+    "text_extraction": "文本抽取中",
+    "ocr_processing": "OCR 识别中",
+    "classification": "规则校验中",
+    "duplicate_check": "重复票检测中",
+    "finalization": "结果归档中",
+    "completed": "批次处理完成",
+    "failed": "批次处理失败",
+}
 
 
 @dataclass(frozen=True)
@@ -29,7 +40,7 @@ class BatchProgressSnapshot:
     failed_files: int
     suggested_pass_count: int
     suggested_pass_total_amount: Decimal
-    recent_failures: list[dict[str, str | None]]
+    recent_failures: list[dict[str, object]]
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -121,9 +132,17 @@ class ProgressService:
         else:
             progress_percent = round(((batch.completed_files + batch.failed_files) / batch.total_files) * 100, 2)
 
+        active_job = self.session.get(ProcessingJob, batch.active_job_id) if batch.active_job_id else None
         if batch.status == "processing":
-            stage_code = "processing"
-            stage_text = "解析与规则处理中"
+            if batch.last_stage_code:
+                stage_code = batch.last_stage_code
+                stage_text = batch.last_stage_text or STAGE_TEXTS.get(stage_code, stage_code)
+            elif active_job is not None and active_job.current_stage:
+                stage_code = active_job.current_stage
+                stage_text = STAGE_TEXTS.get(stage_code, stage_code)
+            else:
+                stage_code = "processing"
+                stage_text = "解析与规则处理中"
         elif batch.status == "completed":
             stage_code = "completed"
             stage_text = "批次处理完成"
@@ -135,11 +154,7 @@ class ProgressService:
             stage_text = "等待处理"
 
         recent_failures = [
-            {
-                "invoice_id": invoice.id,
-                "original_filename": invoice.original_filename,
-                "failure_reason": invoice.failure_reason,
-            }
+            self._serialize_recent_failure(invoice)
             for invoice in invoices
             if invoice.processing_status in PROCESSING_FAILED_STATUSES
         ]
@@ -158,3 +173,27 @@ class ProgressService:
             suggested_pass_total_amount=batch.suggested_pass_total_amount,
             recent_failures=recent_failures,
         )
+
+    def _serialize_recent_failure(self, invoice: InvoiceRecord) -> dict[str, object]:
+        attempt = self.session.get(ProcessingAttempt, invoice.last_attempt_id) if invoice.last_attempt_id else None
+        provider_diagnostic = self._load_json(attempt.diagnostic_json, {}) if attempt is not None else {}
+        return {
+            "invoice_id": invoice.id,
+            "original_filename": invoice.original_filename,
+            "failure_reason": invoice.failure_reason,
+            "failure_stage": invoice.last_error_stage,
+            "error_code": invoice.last_error_code,
+            "retryable": invoice.retryable,
+            "parse_source": invoice.parse_source,
+            "provider_diagnostic": provider_diagnostic,
+        }
+
+    @staticmethod
+    def _load_json(value: str | None, fallback: dict[str, object]) -> dict[str, object]:
+        if not value:
+            return fallback
+        try:
+            payload = json.loads(value)
+        except json.JSONDecodeError:
+            return fallback
+        return payload if isinstance(payload, dict) else fallback

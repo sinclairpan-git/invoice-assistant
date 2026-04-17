@@ -1,4 +1,4 @@
-import { App as AntdApp, ConfigProvider } from "antd";
+import { App as AntdApp, ConfigProvider } from "./antd";
 import type { PropsWithChildren } from "react";
 
 import { OperatorSettingsProvider } from "./operator-settings";

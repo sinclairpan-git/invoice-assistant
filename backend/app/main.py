@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -9,6 +10,8 @@ from backend.app.api.config import router as config_router
 from backend.app.api.invoices import router as invoices_router
 from backend.app.db.session import BACKEND_ROOT, DEFAULT_DATABASE_URL, create_database_engine, create_session_factory, init_db
 from backend.app.core.logging import get_app_logger
+from backend.app.services.processing_runner import InProcessBatchRunner
+from backend.app.services.recovery_service import RecoveryService
 
 
 def resolve_storage_root(database_url: str) -> Path:
@@ -23,11 +26,31 @@ def create_app(database_url: str = DEFAULT_DATABASE_URL) -> FastAPI:
     init_db(engine)
     session_factory = create_session_factory(engine)
 
-    app = FastAPI(title="Invoice Assistant API", version="0.1.0")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        session = session_factory()
+        try:
+            RecoveryService(
+                session=session,
+                processing_runner=app.state.processing_runner,
+            ).recover_stale_jobs()
+        finally:
+            session.close()
+
+        try:
+            yield
+        finally:
+            app.state.processing_runner.shutdown()
+
+    app = FastAPI(title="Invoice Assistant API", version="0.1.0", lifespan=lifespan)
     app.state.engine = engine
     app.state.session_factory = session_factory
     app.state.logger = get_app_logger()
     app.state.storage_root = resolve_storage_root(database_url)
+    app.state.processing_runner = InProcessBatchRunner(
+        session_factory=session_factory,
+        storage_root=app.state.storage_root,
+    )
 
     app.include_router(batches_router)
     app.include_router(invoices_router)

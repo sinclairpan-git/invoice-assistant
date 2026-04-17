@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -60,6 +61,24 @@ def load_fixture_uploads() -> list[tuple[str, tuple[str, bytes, str]]]:
     return uploads
 
 
+def wait_for_batch_stage(client: TestClient, batch_id: str, expected_stage: str, *, timeout: float = 5.0) -> dict[str, object]:
+    deadline = time.monotonic() + timeout
+    last_payload: dict[str, object] | None = None
+    while time.monotonic() < deadline:
+        response = client.get(f"/api/batches/{batch_id}/progress")
+        assert response.status_code == 200
+        last_payload = response.json()["item"]
+        is_terminal = (
+            last_payload["total_files"] > 0
+            and last_payload["processing_files"] == 0
+            and last_payload["completed_files"] + last_payload["failed_files"] == last_payload["total_files"]
+        )
+        if last_payload["stage_code"] == expected_stage and is_terminal:
+            return last_payload
+        time.sleep(0.05)
+    raise AssertionError(f"Timed out waiting for batch {batch_id} to reach stage {expected_stage!r}: {last_payload!r}")
+
+
 def test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent(tmp_path):
     app = create_app(f"sqlite:///{tmp_path / 'e2e.db'}")
     session = app.state.session_factory()
@@ -77,14 +96,13 @@ def test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent(tmp
     upload_payload = upload_response.json()["item"]
     batch_id = upload_payload["id"]
     assert upload_payload["batch_no"] == "BATCH-E2E-001"
-    assert upload_payload["progress"]["stage_code"] == "completed"
-    assert upload_payload["completed_files"] == 4
-    assert upload_payload["processing_files"] == 0
-    assert upload_payload["failed_files"] == 0
-    assert upload_payload["suggested_pass_count"] == 2
-    assert upload_payload["suggested_pass_total_amount"] == "384.50"
-    assert upload_payload["progress"]["suggested_pass_count"] == 2
-    assert upload_payload["progress"]["suggested_pass_total_amount"] == "384.50"
+
+    final_progress = wait_for_batch_stage(client, batch_id, "completed")
+    assert final_progress["completed_files"] == 4
+    assert final_progress["processing_files"] == 0
+    assert final_progress["failed_files"] == 0
+    assert final_progress["suggested_pass_count"] == 2
+    assert final_progress["suggested_pass_total_amount"] == "384.50"
 
     batch_list_response = client.get("/api/batches")
     assert batch_list_response.status_code == 200
