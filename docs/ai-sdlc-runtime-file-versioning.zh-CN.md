@@ -119,6 +119,7 @@
 2. 将 `project-config.yaml` 从 Git 跟踪集合移除，但保留本地文件供 AI-SDLC 继续读写
 3. 执行 `python -m ai_sdlc run --dry-run`，确认仓库约定未被破坏
 4. 核对 `specs/002-invoice-assistant-runtime-hardening/execution-log.md` 与 `task-execution-log.md` 一致，确认遗留镜像未发生漂移
+5. 新增 `workspace_tools/version_control_policy.py` 与 `backend/tests/test_git_tracked_policy.py`，把运行态文件版本控制边界固化为自动回归守卫
 
 ## 后续约束
 
@@ -133,3 +134,4 @@
 6. 在没有新的上游证据前，不扩展到 `.ai-sdlc/project/config/project-state.yaml` 之外的更多 project 配置文件。
 7. `specs/` 下如需追加或修改 formal work item 归档，优先更新 `task-execution-log.md`；若仓库内已存在同目录 `execution-log.md`，仅在保持与前者同步时被动保留，禁止把两者当作两个独立文档面维护。
 8. `.ai-sdlc/work-items/` 运行态文件只作为恢复执行上下文使用，不作为 close、verify、traceability 的最终审阅依据；最终真值以 `specs/` 下 formal 文档为准。
+9. 任何新提交若试图重新纳入 `project-config.yaml`、`.ai-sdlc/work-items/` 运行态文件或新的 `specs/**/execution-log.md`，都应先更新自动策略守卫与审计文档，再解释为何要突破当前边界。
