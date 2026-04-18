@@ -342,6 +342,11 @@ describe("runtime UI", () => {
           duplicate_group_key: null,
           risk_flags: [],
           display_status: "处理失败",
+          basic_compliance_status: "不通过",
+          business_compliance_status: "不通过",
+          final_decision: "处理失败",
+          decision_reasons: ["OCR timed out"],
+          suggested_actions: ["修复失败原因后重试"],
           problem_count: 1,
           failure_reason: "OCR timed out",
           preview_path: null,
@@ -400,6 +405,11 @@ describe("runtime UI", () => {
       duplicate_group_key: null,
       risk_flags: [],
       display_status: "处理失败",
+      basic_compliance_status: "不通过",
+      business_compliance_status: "不通过",
+      final_decision: "处理失败",
+      decision_reasons: ["OCR timed out"],
+      suggested_actions: ["修复失败原因后重试"],
       problem_count: 1,
       failure_reason: "OCR timed out",
       preview_path: null,
@@ -425,6 +435,8 @@ describe("runtime UI", () => {
 
     expect(await screen.findByText("rapidocr-onnxruntime")).toBeInTheDocument();
     expect(screen.getAllByText("ocr_timeout").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("处理失败").length).toBeGreaterThan(0);
+    expect(screen.getByText("修复失败原因后重试")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "重试当前票" }));
 

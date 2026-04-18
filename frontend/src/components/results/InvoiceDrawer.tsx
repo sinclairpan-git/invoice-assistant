@@ -139,6 +139,17 @@ export function InvoiceDrawer({ invoiceId, open, onClose, onChanged }: InvoiceDr
               <Descriptions.Item label="问题数">{invoice.problem_count}</Descriptions.Item>
             </Descriptions>
             <Descriptions bordered size="small" column={2} className="description-block">
+              <Descriptions.Item label="基础合规">{invoice.basic_compliance_status || "--"}</Descriptions.Item>
+              <Descriptions.Item label="业务合规">{invoice.business_compliance_status || "--"}</Descriptions.Item>
+              <Descriptions.Item label="最终结论">{invoice.final_decision || "--"}</Descriptions.Item>
+              <Descriptions.Item label="建议动作">
+                {invoice.suggested_actions.length > 0 ? invoice.suggested_actions.join("，") : "--"}
+              </Descriptions.Item>
+              <Descriptions.Item label="结论原因" span={2}>
+                {invoice.decision_reasons.length > 0 ? invoice.decision_reasons.join("，") : "--"}
+              </Descriptions.Item>
+            </Descriptions>
+            <Descriptions bordered size="small" column={2} className="description-block">
               <Descriptions.Item label="解析来源">{invoice.parse_source || "--"}</Descriptions.Item>
               <Descriptions.Item label="失败阶段">{invoice.last_error_stage || "--"}</Descriptions.Item>
               <Descriptions.Item label="错误码">{invoice.last_error_code || "--"}</Descriptions.Item>

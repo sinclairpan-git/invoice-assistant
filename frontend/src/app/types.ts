@@ -102,6 +102,11 @@ export interface InvoiceSummary {
   duplicate_group_key: string | null;
   risk_flags: string[];
   display_status: string;
+  basic_compliance_status: string;
+  business_compliance_status: string;
+  final_decision: string;
+  decision_reasons: string[];
+  suggested_actions: string[];
   problem_count: number;
   failure_reason: string | null;
   preview_path: string | null;
