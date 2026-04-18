@@ -13,6 +13,7 @@ frontend/vite.config.d.ts
 .uv-tools/
 backend/data/
 backend/*.egg-info/
+*.egg-info/
 __pycache__/
 *.pyc
 *.db

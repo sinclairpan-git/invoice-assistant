@@ -5,7 +5,7 @@
 ```json
 {
   "release_gate_evidence": {
-    "overall_verdict": "WARN",
+    "overall_verdict": "PASS",
     "checks": [
       {
         "name": "recoverability",
@@ -15,9 +15,9 @@
       },
       {
         "name": "portability",
-        "verdict": "WARN",
-        "evidence_source": "specs/003-runtime-state-recovery/task-execution-log.md",
-        "reason": "当前仓库根环境未直接暴露 pytest 与 ruff 裸入口，close-out 需要使用 backend scoped fallback 命令，说明环境可移植性仍依赖本地约定。"
+        "verdict": "PASS",
+        "evidence_source": "pyproject.toml; workspace_tools/cli.py; backend/tests/test_workspace_cli.py; specs/003-runtime-state-recovery/task-execution-log.md",
+        "reason": "仓库根环境现在直接提供 `uv run pytest -q` 与 `uv run ruff check` 入口，通过 repo-level wrapper 统一委派到 backend dev 环境和 repo-local uvx ruff 工具目录，不再依赖本地 PATH 或手工 fallback。"
       },
       {
         "name": "multi_ide",

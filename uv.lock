@@ -1,0 +1,23 @@
+version = 1
+revision = 3
+requires-python = ">=3.11"
+
+[[package]]
+name = "ai-sdlc"
+version = "0.6.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/da/68/e2548681ed187321613d03808aa94bf098f3bd54b62e108be9ddda9d39bc/ai_sdlc-0.6.3.tar.gz", hash = "sha256:f43e58c24a1b4fa34de9a747c08aa0f885c2b2017700ec701971446f851d5613", size = 616945, upload-time = "2025-06-04T16:31:01.435Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/87/a6/27c87988a6855120740ae7ccf17d4dffaee83282287ebeba80354c1e5350/ai_sdlc-0.6.3-py3-none-any.whl", hash = "sha256:68e8fa1a740e26c55639cddc3a694f1291fb8bf0fcf3308953e33b4876cbefac", size = 92807, upload-time = "2025-06-04T16:30:59.316Z" },
+]
+
+[[package]]
+name = "invoice-assistant-workspace"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "ai-sdlc" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "ai-sdlc", specifier = ">=0.6.0,<0.7.0" }]

@@ -225,3 +225,88 @@
 - 当前批次 branch disposition 状态：不合并，保留为已完成 work item 的历史证据
 - 当前批次 worktree disposition 状态：本批相关文档与 formal artifact 已提交入库
 - 是否继续下一批：否
+
+### Batch 2026-04-18-003 | root tooling portability resolution
+
+#### 2.1 批次范围
+
+- 覆盖任务：`close-out portability remediation`
+- 覆盖阶段：`close`
+- 预读范围：`AGENTS.md`、`.ai-sdlc/memory/constitution.md`、`specs/003-runtime-state-recovery/release-gate-evidence.md`、`specs/003-runtime-state-recovery/task-execution-log.md`
+- 激活的规则：先修复根因再更新 gate；新增仓库级工具入口必须带定向验证；保持当前分支不合并
+
+#### 2.2 统一验证命令
+
+- **验证画像**：code-change
+- **改动范围**：`.gitignore`、`pyproject.toml`、`uv.lock`、`workspace_tools/__init__.py`、`workspace_tools/cli.py`、`backend/tests/test_workspace_cli.py`、`specs/003-runtime-state-recovery/release-gate-evidence.md`、`specs/003-runtime-state-recovery/task-execution-log.md`
+- `R1`
+  - 命令：`UV_CACHE_DIR=.uv-cache uv run --project backend --extra dev python -m pytest backend/tests/test_workspace_cli.py -q`
+  - 结果：FAIL，初始状态缺少 `workspace_tools` 包，红灯准确暴露根级命令包装器尚未落地。
+- `R2`
+  - 命令：`UV_CACHE_DIR=.uv-cache uv run --project backend --extra dev python -m pytest backend/tests/test_workspace_cli.py -q`
+  - 结果：FAIL，`ruff` 包装器未注入 `UV_TOOL_DIR`，uvx 仍尝试落到用户目录工具缓存，暴露权限 / 可移植性缺口。
+- `V1`
+  - 命令：`UV_CACHE_DIR=.uv-cache uv run --project backend --extra dev python -m pytest backend/tests/test_workspace_cli.py -q`
+  - 结果：PASS，`2 passed in 0.01s`，包装器命令委派与 repo-local uv 目录注入均正确。
+- `V2`
+  - 命令：`UV_CACHE_DIR=.uv-cache uv run pytest -q`
+  - 结果：PASS，`49 passed in 8.30s`，仓库根级 `pytest` 入口可直接使用；`VIRTUAL_ENV=.venv` mismatch 仅为 uv 提示，不影响退出码。
+- `V3`
+  - 命令：`UV_CACHE_DIR=.uv-cache uv run ruff check`
+  - 结果：PASS，`All checks passed!`，仓库根级 `ruff` 入口可直接使用。
+- `V4`
+  - 命令：`UV_CACHE_DIR=.uv-cache uv run ai-sdlc verify constraints`
+  - 结果：PASS，`verify constraints: no BLOCKERs.`
+
+#### 2.3 任务记录
+
+##### close-out portability remediation | 让仓库根级 pytest / ruff 成为正式可用入口
+
+- 改动范围：`.gitignore`、`pyproject.toml`、`uv.lock`、`workspace_tools/__init__.py`、`workspace_tools/cli.py`、`backend/tests/test_workspace_cli.py`、`specs/003-runtime-state-recovery/release-gate-evidence.md`、`specs/003-runtime-state-recovery/task-execution-log.md`
+- 改动内容：
+  - 新增仓库根级轻量 Python project，只承载 workspace tooling，不把 backend OCR 依赖提升到根环境。
+  - 通过 `project.scripts` 暴露 `pytest` 与 `ruff` 两个根级入口。
+  - `pytest` 包装器统一委派到 `backend` 的 `dev` 环境，`ruff` 包装器统一委派到 repo-local `uvx` 工具环境。
+  - 为两类包装器注入 `.uv-cache` 与 `.uv-tools`，避免写入用户目录造成权限漂移。
+  - 新增定向测试，锁定包装器命令、工作目录与环境变量注入行为。
+  - 将 003 release gate 的 portability 与 overall verdict 从 `WARN` 更新为 `PASS`。
+- 新增/调整的测试：
+  - 新增 `backend/tests/test_workspace_cli.py`，覆盖根级 `pytest` / `ruff` 包装器的命令委派与环境注入。
+  - 复跑仓库根级 `uv run pytest -q` 与 `uv run ruff check`，确认用户面入口真实可用。
+- 执行的命令：`R1`、`R2`、`V1`、`V2`、`V3`、`V4`
+- 测试结果：PASS
+- 是否符合任务目标：是
+
+#### 2.4 代码审查结论（Mandatory）
+
+- 宪章/规格对齐：通过；本批只修复 003 close-out 中记录的工具可移植性问题，没有扩展产品范围。
+- 代码质量：通过；根级工具入口以薄包装器方式实现，保持 backend 依赖边界不外溢。
+- 测试质量：通过；先红灯锁定缺口，再以定向测试和真实根级命令双重验证修复。
+- 结论：003 release gate 中的 portability 风险已解除，可去掉 overall `WARN`。
+
+#### 2.5 任务/计划同步状态（Mandatory）
+
+- `tasks.md` 同步状态：无需变更，003 产品任务仍已完成。
+- `related_plan`（如存在）同步状态：无额外 external plan。
+- 关联 branch/worktree disposition 计划：继续保留当前 `codex/004-controlled-review-export` 分支，不合并。
+- 说明：本批只解决仓库级开发工具入口可用性，不改变 003 产品行为。
+
+#### 2.6 自动决策记录（如有）
+
+- 选择“根级轻量包装器”而非“根级直接依赖 backend”；原因是后者会把 OCR / 推理链路依赖带入 workspace tooling，导致 `ai-sdlc`、`pytest`、`ruff` 这类 close-out 命令变重且不稳定。
+- 选择 repo-local `.uv-cache` 与 `.uv-tools`；原因是要消除对用户目录写权限和本地 PATH 的隐式依赖。
+- 保持当前 `codex/004-controlled-review-export` 分支不合并；原因是用户已明确要求“不合并”。
+
+#### 2.7 批次结论
+
+- 仓库根级 `uv run pytest -q` 与 `uv run ruff check` 已成为正式可用入口。
+- 003 release gate 的 portability 与 overall verdict 可从 `WARN` 收敛为 `PASS`。
+- 当前剩余动作只包括本批提交和提交后 close-check 复核。
+
+#### 2.8 归档后动作
+
+- **已完成 git 提交**：是（以本批统一提交为准）
+- **提交哈希**：以当前 `HEAD` 为准
+- 当前批次 branch disposition 状态：不合并，保留当前开发分支继续承载剩余需求
+- 当前批次 worktree disposition 状态：本批代码 / 文档将随统一提交入库
+- 是否继续下一批：否

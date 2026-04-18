@@ -1,0 +1,18 @@
+[project]
+name = "invoice-assistant-workspace"
+version = "0.1.0"
+description = "Workspace tooling for the invoice assistant repository."
+requires-python = ">=3.11"
+dependencies = [
+    "ai-sdlc>=0.6.0,<0.7.0",
+]
+[project.scripts]
+pytest = "workspace_tools.cli:pytest_main"
+ruff = "workspace_tools.cli:ruff_main"
+
+[build-system]
+requires = ["setuptools>=68.0.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["workspace_tools*"]
