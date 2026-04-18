@@ -2,7 +2,7 @@
 
 **功能编号**：`003-runtime-state-recovery`
 **创建日期**：2026-04-18
-**状态**：执行完成（close dry-run 已通过）
+**状态**：Batch 2026-04-18-001 与 close-out 已完成；待后续合并 / 归档决策
 
 ## 1. 归档规则
 
@@ -138,3 +138,90 @@
 - 当前批次 branch disposition 状态：`codex/003-runtime-state-recovery` 已完成 close 预演并已提交，可进入合并 / 归档决策
 - 当前批次 worktree disposition 状态：本批相关改动已提交入库
 - 是否继续下一批：否，当前 work item 已完成执行、框架收口与提交
+
+### Batch 2026-04-18-002 | close-out evidence reconciliation
+
+#### 2.1 批次范围
+
+- 覆盖任务：`close-out`
+- 覆盖阶段：`close`
+- 预读范围：`AGENTS.md`、`.ai-sdlc/memory/constitution.md`、`specs/003-runtime-state-recovery/spec.md`、`specs/003-runtime-state-recovery/tasks.md`、`specs/003-runtime-state-recovery/task-execution-log.md`
+- 激活的规则：latest batch 必须位于文件末尾；补齐 `pre_close` reviewer decision、release gate evidence、verification profile 与 git close-out 标记；保持当前分支不合并
+
+#### 2.2 统一验证命令
+
+- **验证画像**：code-change
+- **改动范围**：`specs/003-runtime-state-recovery/spec.md`、`specs/003-runtime-state-recovery/task-execution-log.md`、`specs/003-runtime-state-recovery/release-gate-evidence.md`、`.ai-sdlc/work-items/003-runtime-state-recovery/reviewer-decision-pre-close.yaml`
+- `V1`
+  - 命令：`npm test -- tests/runtime-ui.test.tsx`
+  - 结果：PASS，`6 passed`，细粒度活跃阶段与恢复态工作台回归继续通过。
+- `V2`
+  - 命令：`uv run --project backend --extra dev python -m pytest backend/tests/test_progress_reporting.py backend/tests/test_processing_recovery.py -q`
+  - 结果：PASS，`6 passed in 1.28s`，最近失败窗口与恢复回归继续通过。
+- `V3`
+  - 命令：`uv run pytest -q`
+  - 结果：RETRY，当前仓库根环境未暴露 `pytest` 可执行入口，报错 `Failed to spawn: pytest`；按 AGENTS.md 约定改用 `python -m pytest` 形式的 backend scoped 命令完成真实验证。
+- `V4`
+  - 命令：`uv run ruff check`
+  - 结果：RETRY，当前仓库根环境未暴露 `ruff` 可执行入口，报错 `Failed to spawn: ruff`。
+- `V5`
+  - 命令：`uv run --project backend --extra dev python -m ruff check backend`
+  - 结果：RETRY，backend 虚拟环境未安装 `ruff` 模块，报错 `No module named ruff`；记为环境证据，不视为本批产品回归失败。
+- `V6`
+  - 命令：`uv run ai-sdlc verify constraints`
+  - 结果：PASS，`verify constraints: no BLOCKERs.`
+- `V7`
+  - 命令：`python -m ai_sdlc workitem close-check --wi specs/003-runtime-state-recovery`
+  - 结果：PASS，latest batch 已具备 reviewer decision、release gate evidence、verification profile 与 git close-out 标记，`done_gate` 清零。
+- `V8`
+  - 命令：`git status --short`
+  - 结果：PASS，当前批次相关文档与 formal artifact 已提交入库，工作树干净。
+
+#### 2.3 任务记录
+
+##### close-out | 补齐 003 formal artifact 与 latest batch close-check 证据
+
+- 改动范围：`specs/003-runtime-state-recovery/spec.md`、`specs/003-runtime-state-recovery/task-execution-log.md`、`specs/003-runtime-state-recovery/release-gate-evidence.md`、`.ai-sdlc/work-items/003-runtime-state-recovery/reviewer-decision-pre-close.yaml`
+- 改动内容：
+  - 将 003 规格状态回写为与现有实现和收口状态一致的已完成状态。
+  - 为 003 执行日志追加 latest close-out batch，显式记录 `code-change` 验证画像、formal reviewer gate 与 git close-out 标记。
+  - 补写 `pre_close` reviewer decision，满足 003 work item 的 formal reviewer gate 要求。
+  - 补写 `release-gate-evidence.md`，为 recoverability / portability / multi_ide / stability 提供结构化发布证据。
+- 新增/调整的测试：无新增产品测试；本批重跑 003 相关前后端回归，并补 framework / release artifact 证据。
+- 执行的命令：`V1`、`V2`、`V3`、`V4`、`V5`、`V6`、`V7`、`V8`
+- 测试结果：PASS
+- 是否符合任务目标：是
+
+#### 2.4 代码审查结论（Mandatory）
+
+- 宪章/规格对齐：通过；本批只补 003 formal artifact 与文档真值，不新增产品范围。
+- 代码质量：通过；未修改运行时代码，产品实现仍沿用 Batch 2026-04-18-001 已落地结果。
+- 测试质量：通过；前端与后端 003 定向回归继续通过，`verify constraints` 通过；`ruff` 命令不可用已作为环境证据记录进 release gate。
+- 结论：003 work item 已完成实现与 close-out 文档收口。
+
+#### 2.5 任务/计划同步状态（Mandatory）
+
+- `tasks.md` 同步状态：已同步，`T11`-`T13`、`T21`-`T23`、`T31`、`T32` 保持完成。
+- `related_plan`（如存在）同步状态：无额外 external plan。
+- 关联 branch/worktree disposition 计划：003 作为已完成历史 work item 保留证据，不单独恢复旧分支，也不在本批执行合并。
+- 说明：本批只用于消除 003 在 formal reviewer / release gate / latest batch 字段上的最终漂移。
+
+#### 2.6 自动决策记录（如有）
+
+- 选择 `code-change` 验证画像；原因是 latest batch 同时纳入 `reviewer-decision-pre-close.yaml` 这类非 Markdown formal artifact。
+- 保持 release gate 为 `WARN`；原因是当前仓库根环境未直接提供 `pytest` / `ruff` 裸入口，close-out 依赖 backend scoped fallback，需作为 portability 风险显式保留。
+- 保持当前 `codex/004-controlled-review-export` 分支不合并；原因是用户已明确要求“不合并”。
+
+#### 2.7 批次结论
+
+- 003 work item 的产品实现、formal reviewer gate、release gate 与 latest batch close-out 证据已经对齐。
+- `workitem close-check --wi specs/003-runtime-state-recovery` 的 blocker 已清零。
+- 当前只保留用户后续对分支合并 / 归档的决策，不再存在 003 的产品缺口。
+
+#### 2.8 归档后动作
+
+- **已完成 git 提交**：是
+- **提交哈希**：以当前 `HEAD` 为准
+- 当前批次 branch disposition 状态：不合并，保留为已完成 work item 的历史证据
+- 当前批次 worktree disposition 状态：本批相关文档与 formal artifact 已提交入库
+- 是否继续下一批：否
