@@ -34,12 +34,16 @@ class StorageService:
         self.storage_root = Path(storage_root)
         self.storage_root.mkdir(parents=True, exist_ok=True)
 
-    def save_original(self, batch_no: str, filename: str, content: bytes) -> StoredOriginal:
+    def save_original(
+        self, batch_no: str, filename: str, content: bytes
+    ) -> StoredOriginal:
         safe_name = Path(filename).name
         if safe_name != filename or safe_name in {"", ".", ".."}:
             raise InvalidFileNameError(f"Unsafe original filename: {filename!r}")
         if Path(filename).suffix.lower() != ".pdf":
-            raise InvalidFileTypeError(f"Unsupported file type for {filename!r}; only PDF is allowed.")
+            raise InvalidFileTypeError(
+                f"Unsupported file type for {filename!r}; only PDF is allowed."
+            )
 
         batch_dir = self.storage_root / "originals" / batch_no
         batch_dir.mkdir(parents=True, exist_ok=True)

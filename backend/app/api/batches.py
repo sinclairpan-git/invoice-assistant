@@ -7,7 +7,12 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.dependencies import assert_actor_has_role, get_session, get_trusted_actor, resolve_actor
+from backend.app.api.dependencies import (
+    assert_actor_has_role,
+    get_session,
+    get_trusted_actor,
+    resolve_actor,
+)
 from backend.app.api.serializers import serialize_batch
 from backend.app.db.models import Batch
 from backend.app.services.batch_service import BatchService, IncomingFile
@@ -35,24 +40,34 @@ def list_batches(session: Session = Depends(get_session)) -> dict[str, object]:
     batches = session.scalars(select(Batch).order_by(Batch.created_at.desc())).all()
     progress_service = ProgressService(session)
     items = [
-        serialize_batch(batch, progress=progress_service.refresh_batch(batch.id, persist=False))
+        serialize_batch(
+            batch, progress=progress_service.refresh_batch(batch.id, persist=False)
+        )
         for batch in batches
     ]
     return {"items": items}
 
 
 @router.get("/{batch_id}")
-def get_batch(batch_id: str, session: Session = Depends(get_session)) -> dict[str, object]:
+def get_batch(
+    batch_id: str, session: Session = Depends(get_session)
+) -> dict[str, object]:
     batch = session.get(Batch, batch_id)
     if batch is None:
         raise HTTPException(status_code=404, detail="Batch not found.")
 
     progress = ProgressService(session).refresh_batch(batch_id, persist=False)
-    return {"item": serialize_batch(batch, progress=progress, include_snapshot=True, include_exports=True)}
+    return {
+        "item": serialize_batch(
+            batch, progress=progress, include_snapshot=True, include_exports=True
+        )
+    }
 
 
 @router.get("/{batch_id}/progress")
-def get_batch_progress(batch_id: str, session: Session = Depends(get_session)) -> dict[str, object]:
+def get_batch_progress(
+    batch_id: str, session: Session = Depends(get_session)
+) -> dict[str, object]:
     try:
         progress = ProgressService(session).refresh_batch(batch_id, persist=False)
     except LookupError as exc:
@@ -70,7 +85,9 @@ async def create_batch(
     trusted_actor=Depends(get_trusted_actor),
 ) -> dict[str, object]:
     if not files:
-        raise HTTPException(status_code=400, detail="At least one file is required to create a batch.")
+        raise HTTPException(
+            status_code=400, detail="At least one file is required to create a batch."
+        )
 
     incoming_files: list[IncomingFile] = []
     for uploaded_file in files:

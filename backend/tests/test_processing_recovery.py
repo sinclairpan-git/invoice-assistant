@@ -71,7 +71,9 @@ def wait_for_batch_state(
         finally:
             session.close()
         time.sleep(0.05)
-    raise AssertionError(f"Timed out waiting for batch {batch_id!r} to become {expected_status!r}: {last_batch!r}")
+    raise AssertionError(
+        f"Timed out waiting for batch {batch_id!r} to become {expected_status!r}: {last_batch!r}"
+    )
 
 
 def test_recovery_service_requeues_stale_running_jobs_on_startup(tmp_path):
@@ -93,7 +95,9 @@ def test_recovery_service_requeues_stale_running_jobs_on_startup(tmp_path):
         created_by="tester",
         batch_no="BATCH-RECOVERY-001",
     )
-    invoice = session.scalar(select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id))
+    invoice = session.scalar(
+        select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id)
+    )
     assert invoice is not None
     batch_id = batch.id
     invoice_id = invoice.id
@@ -131,7 +135,9 @@ def test_recovery_service_requeues_stale_running_jobs_on_startup(tmp_path):
     session.close()
 
     with TestClient(app):
-        recovered = wait_for_batch_state(app.state.session_factory, batch_id, "completed")
+        recovered = wait_for_batch_state(
+            app.state.session_factory, batch_id, "completed"
+        )
 
     session = app.state.session_factory()
     try:
@@ -143,14 +149,20 @@ def test_recovery_service_requeues_stale_running_jobs_on_startup(tmp_path):
         assert refreshed_batch.last_recovered_at is not None
         assert refreshed_invoice.processing_status == "completed"
         assert refreshed_invoice.retry_count == 1
-        attempts = session.query(ProcessingAttempt).where(ProcessingAttempt.invoice_id == invoice_id).all()
+        attempts = (
+            session.query(ProcessingAttempt)
+            .where(ProcessingAttempt.invoice_id == invoice_id)
+            .all()
+        )
         assert len(attempts) == 2
         assert any(attempt.status == "succeeded" for attempt in attempts)
     finally:
         session.close()
 
 
-def test_retry_service_retries_only_failed_invoices_without_touching_completed_results(tmp_path):
+def test_retry_service_retries_only_failed_invoices_without_touching_completed_results(
+    tmp_path,
+):
     app = create_app(f"sqlite:///{tmp_path / 'processing-retry.db'}")
     session = app.state.session_factory()
     seed_active_rules(session)
@@ -173,16 +185,24 @@ def test_retry_service_retries_only_failed_invoices_without_touching_completed_r
         created_by="tester",
         batch_no="BATCH-RETRY-001",
     )
-    ProcessingService(session=session, storage_root=app.state.storage_root).process_batch(batch.id)
+    ProcessingService(
+        session=session, storage_root=app.state.storage_root
+    ).process_batch(batch.id)
 
     completed_invoice = session.scalar(
         select(InvoiceRecord)
-        .where(InvoiceRecord.batch_id == batch.id, InvoiceRecord.processing_status == "completed")
+        .where(
+            InvoiceRecord.batch_id == batch.id,
+            InvoiceRecord.processing_status == "completed",
+        )
         .order_by(InvoiceRecord.original_filename.asc())
     )
     failed_invoice = session.scalar(
         select(InvoiceRecord)
-        .where(InvoiceRecord.batch_id == batch.id, InvoiceRecord.processing_status == "processing_failed")
+        .where(
+            InvoiceRecord.batch_id == batch.id,
+            InvoiceRecord.processing_status == "processing_failed",
+        )
         .order_by(InvoiceRecord.original_filename.asc())
     )
     assert completed_invoice is not None
@@ -215,7 +235,11 @@ def test_retry_service_retries_only_failed_invoices_without_touching_completed_r
 
         assert refreshed_failed.processing_status == "processing_failed"
         assert refreshed_failed.retry_count == 1
-        attempts = verify_session.query(ProcessingAttempt).where(ProcessingAttempt.invoice_id == failed_invoice.id).all()
+        attempts = (
+            verify_session.query(ProcessingAttempt)
+            .where(ProcessingAttempt.invoice_id == failed_invoice.id)
+            .all()
+        )
         assert len(attempts) == 2
         assert attempts[-1].attempt_no == 2
     finally:
@@ -241,7 +265,9 @@ def test_recovery_service_marks_stale_attempts_before_requeue(tmp_path):
         created_by="tester",
         batch_no="BATCH-RECOVERY-002",
     )
-    invoice = session.scalar(select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id))
+    invoice = session.scalar(
+        select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id)
+    )
     assert invoice is not None
     batch_id = batch.id
     stale_attempt_id = None

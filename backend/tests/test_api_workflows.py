@@ -23,7 +23,10 @@ from backend.app.services.batch_service import BatchService, IncomingFile
 from backend.app.services.config_service import ConfigService
 from backend.app.services.processing_service import ProcessingService
 from backend.app.services.storage_service import StorageService
-from backend.app.services.status_service import DISPLAY_STATUS_DUPLICATE, DISPLAY_STATUS_PASS
+from backend.app.services.status_service import (
+    DISPLAY_STATUS_DUPLICATE,
+    DISPLAY_STATUS_PASS,
+)
 
 
 def seed_active_rules(session) -> dict[str, dict[str, object] | None]:
@@ -134,10 +137,20 @@ def seed_batch_fixture(app):
             source_type="ocr",
             raw_text="Invoice No: DUP-001",
             pages_json=json.dumps([{"page_no": 1}], ensure_ascii=False),
-            text_blocks_json=json.dumps([{"page_no": 1, "text": "Invoice No: DUP-001"}], ensure_ascii=False),
-            table_lines_json=json.dumps([{"row_no": 1, "text": "Consulting Service"}], ensure_ascii=False),
+            text_blocks_json=json.dumps(
+                [{"page_no": 1, "text": "Invoice No: DUP-001"}], ensure_ascii=False
+            ),
+            table_lines_json=json.dumps(
+                [{"row_no": 1, "text": "Consulting Service"}], ensure_ascii=False
+            ),
             field_candidates_json=json.dumps(
-                [{"field_name": "invoice_number", "value": "DUP-001", "confidence": 0.88}],
+                [
+                    {
+                        "field_name": "invoice_number",
+                        "value": "DUP-001",
+                        "confidence": 0.88,
+                    }
+                ],
                 ensure_ascii=False,
             ),
             confidence_summary_json=json.dumps({"overall": 0.88}, ensure_ascii=False),
@@ -220,7 +233,9 @@ def seed_failure_diagnostic_fixture(app):
         total_items=1,
         completed_items=0,
         failed_items=1,
-        summary_json=json.dumps({"failure_count": 1}, ensure_ascii=False, sort_keys=True),
+        summary_json=json.dumps(
+            {"failure_count": 1}, ensure_ascii=False, sort_keys=True
+        ),
     )
     session.add(job)
     session.flush()
@@ -276,7 +291,9 @@ def set_trusted_actor(
     }
 
 
-def wait_for_batch_stage(client: TestClient, batch_id: str, expected_stage: str, *, timeout: float = 5.0) -> dict[str, object]:
+def wait_for_batch_stage(
+    client: TestClient, batch_id: str, expected_stage: str, *, timeout: float = 5.0
+) -> dict[str, object]:
     deadline = time.monotonic() + timeout
     last_payload: dict[str, object] | None = None
     while time.monotonic() < deadline:
@@ -286,12 +303,15 @@ def wait_for_batch_stage(client: TestClient, batch_id: str, expected_stage: str,
         is_terminal = (
             last_payload["total_files"] > 0
             and last_payload["processing_files"] == 0
-            and last_payload["completed_files"] + last_payload["failed_files"] == last_payload["total_files"]
+            and last_payload["completed_files"] + last_payload["failed_files"]
+            == last_payload["total_files"]
         )
         if last_payload["stage_code"] == expected_stage and is_terminal:
             return last_payload
         time.sleep(0.05)
-    raise AssertionError(f"Timed out waiting for batch {batch_id} to reach stage {expected_stage!r}: {last_payload!r}")
+    raise AssertionError(
+        f"Timed out waiting for batch {batch_id} to reach stage {expected_stage!r}: {last_payload!r}"
+    )
 
 
 class StubProcessingRunner:
@@ -310,7 +330,9 @@ def test_controlled_identity_comes_from_backend_actor_context(tmp_path):
     session = app.state.session_factory()
     seed_active_rules(session)
     session.close()
-    set_trusted_actor(app, display_name="财务复核员", roles=["config_admin", "reviewer", "exporter"])
+    set_trusted_actor(
+        app, display_name="财务复核员", roles=["config_admin", "reviewer", "exporter"]
+    )
     client = TestClient(app)
 
     actor_response = client.get("/api/me")
@@ -324,7 +346,9 @@ def test_controlled_identity_comes_from_backend_actor_context(tmp_path):
     upload_response = client.post(
         "/api/batches",
         data={"created_by": "前端伪造姓名", "batch_no": "BATCH-ACTOR-001"},
-        files=[("files", ("upload.pdf", b"%PDF-1.7\nupload fixture", "application/pdf"))],
+        files=[
+            ("files", ("upload.pdf", b"%PDF-1.7\nupload fixture", "application/pdf"))
+        ],
     )
     assert upload_response.status_code == 200
     assert upload_response.json()["item"]["created_by"] == "财务复核员"
@@ -332,7 +356,10 @@ def test_controlled_identity_comes_from_backend_actor_context(tmp_path):
     create_version_response = client.post(
         "/api/config/tax_profile/versions",
         json={
-            "content": {"buyer_name": "Shanghai Example Co", "buyer_tax_no": "91310000Y"},
+            "content": {
+                "buyer_name": "Shanghai Example Co",
+                "buyer_tax_no": "91310000Y",
+            },
             "changed_by": "前端伪造姓名",
             "change_summary": "adjust profile",
             "change_reason": "test upgrade",
@@ -354,7 +381,10 @@ def test_rule_version_requires_config_admin_and_records_denied_audit(tmp_path):
     response = client.post(
         "/api/config/tax_profile/versions",
         json={
-            "content": {"buyer_name": "Shanghai Example Co", "buyer_tax_no": "91310000Y"},
+            "content": {
+                "buyer_name": "Shanghai Example Co",
+                "buyer_tax_no": "91310000Y",
+            },
             "change_summary": "adjust profile",
             "change_reason": "test upgrade",
             "activate": True,
@@ -367,7 +397,10 @@ def test_rule_version_requires_config_admin_and_records_denied_audit(tmp_path):
     try:
         audits = session.scalars(
             select(AuditLog)
-            .where(AuditLog.entity_type == "rule_version", AuditLog.action == "create_denied")
+            .where(
+                AuditLog.entity_type == "rule_version",
+                AuditLog.action == "create_denied",
+            )
             .order_by(AuditLog.changed_at.desc())
         ).all()
         assert len(audits) == 1
@@ -393,7 +426,10 @@ def test_review_action_requires_reviewer_and_records_denied_audit(tmp_path):
     try:
         audits = session.scalars(
             select(AuditLog)
-            .where(AuditLog.entity_type == "invoice_review", AuditLog.action == "review_denied")
+            .where(
+                AuditLog.entity_type == "invoice_review",
+                AuditLog.action == "review_denied",
+            )
             .order_by(AuditLog.changed_at.desc())
         ).all()
         assert len(audits) == 1
@@ -420,7 +456,9 @@ def test_export_requires_exporter_and_records_denied_audit(tmp_path):
     try:
         audits = session.scalars(
             select(AuditLog)
-            .where(AuditLog.entity_type == "export_job", AuditLog.action == "export_denied")
+            .where(
+                AuditLog.entity_type == "export_job", AuditLog.action == "export_denied"
+            )
             .order_by(AuditLog.changed_at.desc())
         ).all()
         assert len(audits) == 1
@@ -467,25 +505,39 @@ def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_pat
     assert filtered_payload["status_counts"][DISPLAY_STATUS_PASS] == 1
     assert filtered_payload["status_counts"][DISPLAY_STATUS_DUPLICATE] == 1
     assert filtered_payload["batch_summary"] == {"count": 1, "total_amount": "100.00"}
-    assert filtered_payload["filtered_summary"] == {"count": 1, "total_amount": "100.00"}
+    assert filtered_payload["filtered_summary"] == {
+        "count": 1,
+        "total_amount": "100.00",
+    }
 
-    invoice_detail_response = client.get(f"/api/invoices/{fixture['review_invoice_id']}")
+    invoice_detail_response = client.get(
+        f"/api/invoices/{fixture['review_invoice_id']}"
+    )
     assert invoice_detail_response.status_code == 200
     invoice_detail = invoice_detail_response.json()["item"]
     assert invoice_detail["display_status"] == DISPLAY_STATUS_DUPLICATE
     assert invoice_detail["duplicate_flag"] is True
     assert len(invoice_detail["attachments"]) == 1
-    assert invoice_detail["attachments"][0]["original_filename"] == "duplicate-销货清单.pdf"
+    assert (
+        invoice_detail["attachments"][0]["original_filename"]
+        == "duplicate-销货清单.pdf"
+    )
     assert invoice_detail["attachments"][0]["attachment_status"] == "consumed"
     assert invoice_detail["attachments"][0]["attachment_status_label"] == "已消费"
-    assert "reclassified the invoice" in invoice_detail["attachments"][0]["match_reason"]
+    assert (
+        "reclassified the invoice" in invoice_detail["attachments"][0]["match_reason"]
+    )
     assert len(invoice_detail["evidence_items"]) == 1
     assert len(invoice_detail["field_checks"]) == 1
     assert invoice_detail["risk_flags"] == ["suspected_duplicate"]
 
     review_response = client.post(
         f"/api/invoices/{fixture['review_invoice_id']}/review-actions",
-        json={"review_action": "approve", "review_note": "manual ok", "reviewed_by": "reviewer-a"},
+        json={
+            "review_action": "approve",
+            "review_note": "manual ok",
+            "reviewed_by": "reviewer-a",
+        },
     )
     assert review_response.status_code == 200
     review_payload = review_response.json()
@@ -495,25 +547,39 @@ def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_pat
 
     invalid_review_response = client.post(
         f"/api/invoices/{fixture['review_invoice_id']}/review-actions",
-        json={"review_action": "unsupported", "review_note": None, "reviewed_by": "reviewer-a"},
+        json={
+            "review_action": "unsupported",
+            "review_note": None,
+            "reviewed_by": "reviewer-a",
+        },
     )
     assert invalid_review_response.status_code == 400
 
     non_reviewable_response = client.post(
         f"/api/invoices/{filtered_payload['items'][0]['id']}/review-actions",
-        json={"review_action": "approve", "review_note": "should fail", "reviewed_by": "reviewer-a"},
+        json={
+            "review_action": "approve",
+            "review_note": "should fail",
+            "reviewed_by": "reviewer-a",
+        },
     )
     assert non_reviewable_response.status_code == 400
 
     config_response = client.get("/api/config")
     assert config_response.status_code == 200
     config_payload = config_response.json()
-    assert config_payload["active_snapshot"]["tax_profile"]["content"]["buyer_tax_no"] == "91310000X"
+    assert (
+        config_payload["active_snapshot"]["tax_profile"]["content"]["buyer_tax_no"]
+        == "91310000X"
+    )
 
     create_version_response = client.post(
         "/api/config/tax_profile/versions",
         json={
-            "content": {"buyer_name": "Shanghai Example Co", "buyer_tax_no": "91310000Y"},
+            "content": {
+                "buyer_name": "Shanghai Example Co",
+                "buyer_tax_no": "91310000Y",
+            },
             "changed_by": "fin-admin",
             "change_summary": "adjust profile",
             "change_reason": "test upgrade",
@@ -531,7 +597,9 @@ def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_pat
     upload_response = client.post(
         "/api/batches",
         data={"created_by": "uploader-a", "batch_no": "BATCH-UP-001"},
-        files=[("files", ("upload.pdf", b"%PDF-1.7\nupload fixture", "application/pdf"))],
+        files=[
+            ("files", ("upload.pdf", b"%PDF-1.7\nupload fixture", "application/pdf"))
+        ],
     )
     assert upload_response.status_code == 200
     upload_payload = upload_response.json()["item"]
@@ -543,9 +611,13 @@ def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_pat
 
     session = app.state.session_factory()
     try:
-        uploaded_batch = session.scalar(select(Batch).where(Batch.batch_no == "BATCH-UP-001"))
+        uploaded_batch = session.scalar(
+            select(Batch).where(Batch.batch_no == "BATCH-UP-001")
+        )
         assert uploaded_batch is not None
-        uploaded_invoice = session.scalar(select(InvoiceRecord).where(InvoiceRecord.batch_id == uploaded_batch.id))
+        uploaded_invoice = session.scalar(
+            select(InvoiceRecord).where(InvoiceRecord.batch_id == uploaded_batch.id)
+        )
         assert uploaded_invoice is not None
         preview_response = client.get(f"/api/invoices/{uploaded_invoice.id}/preview")
         assert preview_response.status_code == 200
@@ -564,7 +636,9 @@ def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_pat
 
     session = app.state.session_factory()
     try:
-        stored_batch = session.scalar(select(Batch).where(Batch.id == fixture["batch_id"]))
+        stored_batch = session.scalar(
+            select(Batch).where(Batch.id == fixture["batch_id"])
+        )
         assert stored_batch is not None
         assert stored_batch.total_files == 0
         assert stored_batch.suggested_pass_total_amount == Decimal("0.00")
@@ -572,7 +646,9 @@ def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_pat
         session.close()
 
 
-def test_create_batch_returns_without_waiting_for_processing_completion(tmp_path, monkeypatch):
+def test_create_batch_returns_without_waiting_for_processing_completion(
+    tmp_path, monkeypatch
+):
     app = create_app(f"sqlite:///{tmp_path / 'api-async.db'}")
     session = app.state.session_factory()
     seed_active_rules(session)
@@ -597,8 +673,18 @@ def test_create_batch_returns_without_waiting_for_processing_completion(tmp_path
                 "/api/batches",
                 data={"created_by": "async-uploader", "batch_no": "BATCH-ASYNC-001"},
                 files=[
-                    ("files", ("upload.pdf", b"%PDF-1.7\nupload fixture", "application/pdf")),
-                    ("files", ("upload-销货清单.pdf", b"%PDF-1.7\nattachment fixture", "application/pdf")),
+                    (
+                        "files",
+                        ("upload.pdf", b"%PDF-1.7\nupload fixture", "application/pdf"),
+                    ),
+                    (
+                        "files",
+                        (
+                            "upload-销货清单.pdf",
+                            b"%PDF-1.7\nattachment fixture",
+                            "application/pdf",
+                        ),
+                    ),
                 ],
             )
 
@@ -620,7 +706,9 @@ def test_create_batch_returns_without_waiting_for_processing_completion(tmp_path
 
         session = app.state.session_factory()
         try:
-            batch = session.scalar(select(Batch).where(Batch.batch_no == "BATCH-ASYNC-001"))
+            batch = session.scalar(
+                select(Batch).where(Batch.batch_no == "BATCH-ASYNC-001")
+            )
             assert batch is not None
             assert batch.status in {"queued", "processing"}
             assert batch.total_files == 1
@@ -690,7 +778,12 @@ def test_batch_retry_endpoint_retries_failed_subset_idempotently(tmp_path):
         files=[
             IncomingFile(
                 filename="01-standard-electronic.pdf",
-                content=(Path(__file__).parent / "fixtures" / "invoices" / "01-standard-electronic.pdf").read_bytes(),
+                content=(
+                    Path(__file__).parent
+                    / "fixtures"
+                    / "invoices"
+                    / "01-standard-electronic.pdf"
+                ).read_bytes(),
             ),
             IncomingFile(
                 filename="broken.pdf",
@@ -700,16 +793,24 @@ def test_batch_retry_endpoint_retries_failed_subset_idempotently(tmp_path):
         created_by="tester",
         batch_no="BATCH-API-RETRY-001",
     )
-    ProcessingService(session=session, storage_root=app.state.storage_root).process_batch(batch.id)
+    ProcessingService(
+        session=session, storage_root=app.state.storage_root
+    ).process_batch(batch.id)
 
     completed_invoice = session.scalar(
         select(InvoiceRecord)
-        .where(InvoiceRecord.batch_id == batch.id, InvoiceRecord.processing_status == "completed")
+        .where(
+            InvoiceRecord.batch_id == batch.id,
+            InvoiceRecord.processing_status == "completed",
+        )
         .order_by(InvoiceRecord.original_filename.asc())
     )
     failed_invoice = session.scalar(
         select(InvoiceRecord)
-        .where(InvoiceRecord.batch_id == batch.id, InvoiceRecord.processing_status == "processing_failed")
+        .where(
+            InvoiceRecord.batch_id == batch.id,
+            InvoiceRecord.processing_status == "processing_failed",
+        )
         .order_by(InvoiceRecord.original_filename.asc())
     )
     assert completed_invoice is not None
@@ -759,12 +860,18 @@ def test_invoice_retry_endpoint_is_idempotent_for_already_requeued_invoice(tmp_p
         storage_service=StorageService(app.state.storage_root),
         config_service=ConfigService(session),
     ).create_batch(
-        files=[IncomingFile(filename="broken.pdf", content=b"%PDF-1.7\nbroken fixture")],
+        files=[
+            IncomingFile(filename="broken.pdf", content=b"%PDF-1.7\nbroken fixture")
+        ],
         created_by="tester",
         batch_no="BATCH-API-RETRY-002",
     )
-    ProcessingService(session=session, storage_root=app.state.storage_root).process_batch(batch.id)
-    failed_invoice = session.scalar(select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id))
+    ProcessingService(
+        session=session, storage_root=app.state.storage_root
+    ).process_batch(batch.id)
+    failed_invoice = session.scalar(
+        select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id)
+    )
     assert failed_invoice is not None
     session.close()
 

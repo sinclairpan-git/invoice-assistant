@@ -71,7 +71,9 @@ def _apply_sqlite_additive_migrations(engine: Engine) -> None:
         for table_name, columns in SQLITE_ADDITIVE_COLUMNS.items():
             existing_columns = {
                 row[1]
-                for row in conn.exec_driver_sql(f"PRAGMA table_info('{table_name}')").fetchall()
+                for row in conn.exec_driver_sql(
+                    f"PRAGMA table_info('{table_name}')"
+                ).fetchall()
             }
             if not existing_columns:
                 continue
@@ -86,7 +88,9 @@ def _apply_sqlite_additive_migrations(engine: Engine) -> None:
             conn.exec_driver_sql(ddl)
 
 
-def get_db_session(session_factory: sessionmaker[Session]) -> Generator[Session, None, None]:
+def get_db_session(
+    session_factory: sessionmaker[Session],
+) -> Generator[Session, None, None]:
     session = session_factory()
     try:
         yield session

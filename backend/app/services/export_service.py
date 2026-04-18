@@ -13,8 +13,17 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_app_logger, log_event
-from backend.app.db.models import AttachmentDocument, AuditLog, Batch, ExportJob, InvoiceRecord
-from backend.app.services.compliance_service import build_invoice_compliance_summary, summarize_archiveable_pass
+from backend.app.db.models import (
+    AttachmentDocument,
+    AuditLog,
+    Batch,
+    ExportJob,
+    InvoiceRecord,
+)
+from backend.app.services.compliance_service import (
+    build_invoice_compliance_summary,
+    summarize_archiveable_pass,
+)
 from backend.app.services.status_service import derive_display_status
 
 
@@ -69,10 +78,14 @@ class ExportService:
             raise LookupError(f"Batch {batch_id!r} not found.")
 
         invoices = self.session.scalars(
-            select(InvoiceRecord).where(InvoiceRecord.batch_id == batch_id).order_by(InvoiceRecord.original_filename.asc())
+            select(InvoiceRecord)
+            .where(InvoiceRecord.batch_id == batch_id)
+            .order_by(InvoiceRecord.original_filename.asc())
         ).all()
 
-        gate_failure = self._validate_export_gate(batch=batch, invoices=invoices, export_type=export_type)
+        gate_failure = self._validate_export_gate(
+            batch=batch, invoices=invoices, export_type=export_type
+        )
         if gate_failure is not None:
             self._record_audit(
                 entity_id=batch.id,
@@ -93,7 +106,11 @@ class ExportService:
                 ),
             )
             self.session.commit()
-            raise ValueError(self._gate_failure_message(export_type=export_type, gate_failure=gate_failure))
+            raise ValueError(
+                self._gate_failure_message(
+                    export_type=export_type, gate_failure=gate_failure
+                )
+            )
 
         timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
         export_dir = self.storage_root / "exports" / batch.batch_no
@@ -104,7 +121,9 @@ class ExportService:
         else:
             output_file = export_dir / f"{export_type}_{timestamp}.zip"
 
-        selected_invoices = self._select_invoices(export_type=export_type, invoices=invoices)
+        selected_invoices = self._select_invoices(
+            export_type=export_type, invoices=invoices
+        )
 
         try:
             if export_type == "excel_manifest":
@@ -112,7 +131,11 @@ class ExportService:
             else:
                 self._write_zip(output_file, invoices=selected_invoices)
 
-            summary = self._build_summary(export_type=export_type, selected_invoices=selected_invoices, all_invoices=invoices)
+            summary = self._build_summary(
+                export_type=export_type,
+                selected_invoices=selected_invoices,
+                all_invoices=invoices,
+            )
             relative_output = self._relative_output_path(output_file)
             job = ExportJob(
                 batch_id=batch.id,
@@ -177,7 +200,9 @@ class ExportService:
                 status="failed",
                 output_path=None,
                 created_by=created_by,
-                summary_json=json.dumps({"error": str(exc)}, ensure_ascii=False, sort_keys=True),
+                summary_json=json.dumps(
+                    {"error": str(exc)}, ensure_ascii=False, sort_keys=True
+                ),
             )
             self.session.add(job)
             self.session.flush()
@@ -212,7 +237,9 @@ class ExportService:
             raise
 
     @staticmethod
-    def _select_invoices(*, export_type: str, invoices: list[InvoiceRecord]) -> list[InvoiceRecord]:
+    def _select_invoices(
+        *, export_type: str, invoices: list[InvoiceRecord]
+    ) -> list[InvoiceRecord]:
         if export_type == "suggested_pass_zip":
             return [
                 invoice
@@ -264,7 +291,9 @@ class ExportService:
                 archive_name = invoice.renamed_filename or invoice.original_filename
                 archive.write(source_path, arcname=archive_name)
 
-    def _write_excel_manifest(self, output_file: Path, *, batch: Batch, invoices: list[InvoiceRecord]) -> None:
+    def _write_excel_manifest(
+        self, output_file: Path, *, batch: Batch, invoices: list[InvoiceRecord]
+    ) -> None:
         headers = [
             "批次号",
             "原文件名",
@@ -310,21 +339,34 @@ class ExportService:
                     compliance.final_decision,
                     "；".join(compliance.decision_reasons),
                     "；".join(compliance.suggested_actions),
-                    "" if invoice.invoice_amount is None else f"{Decimal(str(invoice.invoice_amount)):.2f}",
+                    ""
+                    if invoice.invoice_amount is None
+                    else f"{Decimal(str(invoice.invoice_amount)):.2f}",
                     invoice.invoice_number or "",
                     invoice.buyer_name or "",
                     ",".join(json.loads(invoice.risk_flags or "[]")),
                     invoice.failure_reason or "",
-                    "；".join(attachment.original_filename for attachment in attachments),
-                    "；".join(ATTACHMENT_STATUS_LABELS.get(attachment.attachment_status, attachment.attachment_status) for attachment in attachments),
-                    "；".join(attachment.match_reason or "" for attachment in attachments),
+                    "；".join(
+                        attachment.original_filename for attachment in attachments
+                    ),
+                    "；".join(
+                        ATTACHMENT_STATUS_LABELS.get(
+                            attachment.attachment_status, attachment.attachment_status
+                        )
+                        for attachment in attachments
+                    ),
+                    "；".join(
+                        attachment.match_reason or "" for attachment in attachments
+                    ),
                 ]
             )
 
         self._write_simple_xlsx(output_file, sheet_name="批次台账", rows=rows)
 
     @staticmethod
-    def _group_attachments_by_invoice(batch: Batch) -> dict[str, list[AttachmentDocument]]:
+    def _group_attachments_by_invoice(
+        batch: Batch,
+    ) -> dict[str, list[AttachmentDocument]]:
         grouped: dict[str, list[AttachmentDocument]] = {}
         for attachment in batch.attachment_documents:
             if not attachment.matched_invoice_id:
@@ -334,7 +376,9 @@ class ExportService:
             items.sort(key=lambda item: item.original_filename)
         return grouped
 
-    def _write_simple_xlsx(self, output_file: Path, *, sheet_name: str, rows: list[list[str]]) -> None:
+    def _write_simple_xlsx(
+        self, output_file: Path, *, sheet_name: str, rows: list[list[str]]
+    ) -> None:
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
         sheet_rows = []
@@ -343,13 +387,15 @@ class ExportService:
             for col_index, value in enumerate(row, start=1):
                 cell_ref = f"{self._column_letter(col_index)}{row_index}"
                 text = escape(value or "")
-                cells.append(f'<c r="{cell_ref}" t="inlineStr"><is><t>{text}</t></is></c>')
+                cells.append(
+                    f'<c r="{cell_ref}" t="inlineStr"><is><t>{text}</t></is></c>'
+                )
             sheet_rows.append(f'<row r="{row_index}">{"".join(cells)}</row>')
 
         sheet_xml = (
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-            f'<sheetData>{"".join(sheet_rows)}</sheetData>'
+            f"<sheetData>{''.join(sheet_rows)}</sheetData>"
             "</worksheet>"
         )
         workbook_xml = (
@@ -407,7 +453,9 @@ class ExportService:
         except ValueError:
             return str(output_file)
 
-    def _validate_export_gate(self, *, batch: Batch, invoices: list[InvoiceRecord], export_type: str) -> str | None:
+    def _validate_export_gate(
+        self, *, batch: Batch, invoices: list[InvoiceRecord], export_type: str
+    ) -> str | None:
         is_terminal = (
             batch.status in TERMINAL_BATCH_STATUSES
             and batch.total_files > 0
@@ -418,7 +466,8 @@ class ExportService:
             return "batch_not_terminal"
 
         if export_type == "suggested_pass_zip" and any(
-            build_invoice_compliance_summary(invoice).pending_review_gate for invoice in invoices
+            build_invoice_compliance_summary(invoice).pending_review_gate
+            for invoice in invoices
         ):
             return "pending_manual_review"
 
@@ -428,7 +477,10 @@ class ExportService:
     def _gate_failure_message(*, export_type: str, gate_failure: str) -> str:
         if gate_failure == "batch_not_terminal":
             return "当前批次尚未处理完成，暂不允许导出。"
-        if gate_failure == "pending_manual_review" and export_type == "suggested_pass_zip":
+        if (
+            gate_failure == "pending_manual_review"
+            and export_type == "suggested_pass_zip"
+        ):
             return "当前批次仍有待复核票据，无法导出建议通过 ZIP。"
         return "当前导出请求未通过门槛校验。"
 
@@ -455,7 +507,9 @@ class ExportService:
         )
 
     @staticmethod
-    def _with_actor_roles(actor_roles: tuple[str, ...] | list[str], payload: dict[str, object]) -> dict[str, object]:
+    def _with_actor_roles(
+        actor_roles: tuple[str, ...] | list[str], payload: dict[str, object]
+    ) -> dict[str, object]:
         if actor_roles:
             payload = dict(payload)
             payload["actor_roles"] = list(actor_roles)

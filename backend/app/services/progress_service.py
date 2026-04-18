@@ -65,18 +65,28 @@ class ProgressService:
         self.session = session
         self.logger = logger or get_app_logger("progress")
 
-    def refresh_batch(self, batch_id: str, *, persist: bool = True) -> BatchProgressSnapshot:
+    def refresh_batch(
+        self, batch_id: str, *, persist: bool = True
+    ) -> BatchProgressSnapshot:
         batch = self.session.get(Batch, batch_id)
         if batch is None:
             raise LookupError(f"Batch {batch_id!r} not found.")
 
         invoices = self.session.scalars(
-            select(InvoiceRecord).where(InvoiceRecord.batch_id == batch_id).order_by(InvoiceRecord.original_filename.asc())
+            select(InvoiceRecord)
+            .where(InvoiceRecord.batch_id == batch_id)
+            .order_by(InvoiceRecord.original_filename.asc())
         ).all()
 
         total_files = len(invoices)
-        completed_files = sum(1 for invoice in invoices if invoice.processing_status == "completed")
-        failed_files = sum(1 for invoice in invoices if invoice.processing_status in PROCESSING_FAILED_STATUSES)
+        completed_files = sum(
+            1 for invoice in invoices if invoice.processing_status == "completed"
+        )
+        failed_files = sum(
+            1
+            for invoice in invoices
+            if invoice.processing_status in PROCESSING_FAILED_STATUSES
+        )
         processing_files = max(total_files - completed_files - failed_files, 0)
         pass_summary = summarize_suggested_pass(invoices)
 
@@ -127,17 +137,29 @@ class ProgressService:
             return "completed"
         return "queued"
 
-    def _build_snapshot(self, batch: Batch, invoices: list[InvoiceRecord]) -> BatchProgressSnapshot:
+    def _build_snapshot(
+        self, batch: Batch, invoices: list[InvoiceRecord]
+    ) -> BatchProgressSnapshot:
         if batch.total_files == 0:
             progress_percent = 0.0
         else:
-            progress_percent = round(((batch.completed_files + batch.failed_files) / batch.total_files) * 100, 2)
+            progress_percent = round(
+                ((batch.completed_files + batch.failed_files) / batch.total_files)
+                * 100,
+                2,
+            )
 
-        active_job = self.session.get(ProcessingJob, batch.active_job_id) if batch.active_job_id else None
+        active_job = (
+            self.session.get(ProcessingJob, batch.active_job_id)
+            if batch.active_job_id
+            else None
+        )
         if batch.status == "processing":
             if batch.last_stage_code:
                 stage_code = batch.last_stage_code
-                stage_text = batch.last_stage_text or STAGE_TEXTS.get(stage_code, stage_code)
+                stage_text = batch.last_stage_text or STAGE_TEXTS.get(
+                    stage_code, stage_code
+                )
             elif active_job is not None and active_job.current_stage:
                 stage_code = active_job.current_stage
                 stage_text = STAGE_TEXTS.get(stage_code, stage_code)
@@ -154,7 +176,10 @@ class ProgressService:
             stage_code = "queued"
             stage_text = "等待处理"
 
-        recent_failures = [self._serialize_recent_failure(invoice) for invoice in self._recent_failures(invoices)]
+        recent_failures = [
+            self._serialize_recent_failure(invoice)
+            for invoice in self._recent_failures(invoices)
+        ]
 
         return BatchProgressSnapshot(
             batch_id=batch.id,
@@ -173,7 +198,9 @@ class ProgressService:
 
     def _serialize_recent_failure(self, invoice: InvoiceRecord) -> dict[str, object]:
         attempt = self._last_attempt(invoice)
-        provider_diagnostic = self._load_json(attempt.diagnostic_json, {}) if attempt is not None else {}
+        provider_diagnostic = (
+            self._load_json(attempt.diagnostic_json, {}) if attempt is not None else {}
+        )
         return {
             "invoice_id": invoice.id,
             "original_filename": invoice.original_filename,
@@ -186,22 +213,36 @@ class ProgressService:
         }
 
     def _recent_failures(self, invoices: list[InvoiceRecord]) -> list[InvoiceRecord]:
-        failed_invoices = [invoice for invoice in invoices if invoice.processing_status in PROCESSING_FAILED_STATUSES]
-        return sorted(failed_invoices, key=self._recent_failure_sort_key, reverse=True)[:MAX_RECENT_FAILURES]
+        failed_invoices = [
+            invoice
+            for invoice in invoices
+            if invoice.processing_status in PROCESSING_FAILED_STATUSES
+        ]
+        return sorted(failed_invoices, key=self._recent_failure_sort_key, reverse=True)[
+            :MAX_RECENT_FAILURES
+        ]
 
-    def _recent_failure_sort_key(self, invoice: InvoiceRecord) -> tuple[float, int, str]:
+    def _recent_failure_sort_key(
+        self, invoice: InvoiceRecord
+    ) -> tuple[float, int, str]:
         attempt = self._last_attempt(invoice)
         failure_time = attempt.completed_at if attempt is not None else None
         if failure_time is None and attempt is not None:
             failure_time = attempt.started_at
-        failure_timestamp = failure_time.timestamp() if isinstance(failure_time, datetime) else datetime.min.replace(
-            tzinfo=UTC
-        ).timestamp()
+        failure_timestamp = (
+            failure_time.timestamp()
+            if isinstance(failure_time, datetime)
+            else datetime.min.replace(tzinfo=UTC).timestamp()
+        )
         attempt_no = attempt.attempt_no if attempt is not None else -1
         return (failure_timestamp, attempt_no, invoice.original_filename)
 
     def _last_attempt(self, invoice: InvoiceRecord) -> ProcessingAttempt | None:
-        return self.session.get(ProcessingAttempt, invoice.last_attempt_id) if invoice.last_attempt_id else None
+        return (
+            self.session.get(ProcessingAttempt, invoice.last_attempt_id)
+            if invoice.last_attempt_id
+            else None
+        )
 
     @staticmethod
     def _load_json(value: str | None, fallback: dict[str, object]) -> dict[str, object]:

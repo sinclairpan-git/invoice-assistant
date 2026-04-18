@@ -2,7 +2,11 @@ from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 
-from backend.app.services.parsing.evidence_models import ConfidenceSummary, FieldCandidate, UnifiedDocumentEvidence
+from backend.app.services.parsing.evidence_models import (
+    ConfidenceSummary,
+    FieldCandidate,
+    UnifiedDocumentEvidence,
+)
 from backend.app.services.rules.buyer_validation import validate_buyer_fields
 from backend.app.services.rules.duplicate_detector import detect_suspected_duplicate
 from backend.app.services.rules.risk_classifier import classify_risk
@@ -15,7 +19,9 @@ def build_evidence(*, field_candidates, table_lines=None, overall=0.95, flags=No
         raw_text="invoice",
         field_candidates=field_candidates,
         table_lines=table_lines or [],
-        confidence_summary=ConfidenceSummary(overall=overall, fields={}, flags=flags or []),
+        confidence_summary=ConfidenceSummary(
+            overall=overall, fields={}, flags=flags or []
+        ),
         provider_name="fixture",
         provider_version="1.0",
     )
@@ -24,8 +30,18 @@ def build_evidence(*, field_candidates, table_lines=None, overall=0.95, flags=No
 def test_high_confidence_buyer_mismatch_rejects_invoice():
     evidence = build_evidence(
         field_candidates=[
-            FieldCandidate(field_name="buyer_name", value="Wrong Buyer", normalized_value="WrongBuyer", confidence=0.98),
-            FieldCandidate(field_name="buyer_tax_no", value="91310000X", normalized_value="91310000X", confidence=0.96),
+            FieldCandidate(
+                field_name="buyer_name",
+                value="Wrong Buyer",
+                normalized_value="WrongBuyer",
+                confidence=0.98,
+            ),
+            FieldCandidate(
+                field_name="buyer_tax_no",
+                value="91310000X",
+                normalized_value="91310000X",
+                confidence=0.96,
+            ),
         ]
     )
 
@@ -45,8 +61,18 @@ def test_high_confidence_buyer_mismatch_rejects_invoice():
 def test_fuzzy_or_low_confidence_invoice_is_routed_to_review():
     evidence = build_evidence(
         field_candidates=[
-            FieldCandidate(field_name="seller_name", value="Trusted Seller", normalized_value="TrustedSeller", confidence=0.90),
-            FieldCandidate(field_name="invoice_amount", value="100.00", normalized_value="100.00", confidence=0.55),
+            FieldCandidate(
+                field_name="seller_name",
+                value="Trusted Seller",
+                normalized_value="TrustedSeller",
+                confidence=0.90,
+            ),
+            FieldCandidate(
+                field_name="invoice_amount",
+                value="100.00",
+                normalized_value="100.00",
+                confidence=0.55,
+            ),
         ],
         table_lines=[{"text": "详见销货清单", "fuzzy": True}],
         overall=0.62,
@@ -70,15 +96,30 @@ def test_fuzzy_or_low_confidence_invoice_is_routed_to_review():
 def test_trusted_attachment_line_items_can_replace_review_keyword_for_classification():
     evidence = build_evidence(
         field_candidates=[
-            FieldCandidate(field_name="seller_name", value="Trusted Seller", normalized_value="TrustedSeller", confidence=0.95),
-            FieldCandidate(field_name="invoice_amount", value="100.00", normalized_value="100.00", confidence=0.93),
+            FieldCandidate(
+                field_name="seller_name",
+                value="Trusted Seller",
+                normalized_value="TrustedSeller",
+                confidence=0.95,
+            ),
+            FieldCandidate(
+                field_name="invoice_amount",
+                value="100.00",
+                normalized_value="100.00",
+                confidence=0.93,
+            ),
         ],
         table_lines=[{"text": "详见销货清单"}],
         overall=0.96,
     )
     attachment_evidence = build_evidence(
         field_candidates=[
-            FieldCandidate(field_name="seller_name", value="Trusted Seller", normalized_value="TrustedSeller", confidence=0.95),
+            FieldCandidate(
+                field_name="seller_name",
+                value="Trusted Seller",
+                normalized_value="TrustedSeller",
+                confidence=0.95,
+            ),
         ],
         table_lines=[{"text": "Office Supplies"}],
         overall=0.97,
@@ -102,8 +143,18 @@ def test_trusted_attachment_line_items_can_replace_review_keyword_for_classifica
 def test_attachment_evidence_does_not_override_low_confidence_review():
     evidence = build_evidence(
         field_candidates=[
-            FieldCandidate(field_name="seller_name", value="Trusted Seller", normalized_value="TrustedSeller", confidence=0.90),
-            FieldCandidate(field_name="invoice_amount", value="100.00", normalized_value="100.00", confidence=0.55),
+            FieldCandidate(
+                field_name="seller_name",
+                value="Trusted Seller",
+                normalized_value="TrustedSeller",
+                confidence=0.90,
+            ),
+            FieldCandidate(
+                field_name="invoice_amount",
+                value="100.00",
+                normalized_value="100.00",
+                confidence=0.55,
+            ),
         ],
         table_lines=[{"text": "详见销货清单"}],
         overall=0.62,
@@ -111,7 +162,12 @@ def test_attachment_evidence_does_not_override_low_confidence_review():
     )
     attachment_evidence = build_evidence(
         field_candidates=[
-            FieldCandidate(field_name="seller_name", value="Trusted Seller", normalized_value="TrustedSeller", confidence=0.97),
+            FieldCandidate(
+                field_name="seller_name",
+                value="Trusted Seller",
+                normalized_value="TrustedSeller",
+                confidence=0.97,
+            ),
         ],
         table_lines=[{"text": "Office Supplies"}],
         overall=0.97,
@@ -134,14 +190,24 @@ def test_attachment_evidence_does_not_override_low_confidence_review():
 def test_attachment_evidence_is_ignored_without_review_keyword_trigger():
     evidence = build_evidence(
         field_candidates=[
-            FieldCandidate(field_name="seller_name", value="Neutral Seller", normalized_value="NeutralSeller", confidence=0.95),
+            FieldCandidate(
+                field_name="seller_name",
+                value="Neutral Seller",
+                normalized_value="NeutralSeller",
+                confidence=0.95,
+            ),
         ],
         table_lines=[{"text": "Regular Line"}],
         overall=0.96,
     )
     attachment_evidence = build_evidence(
         field_candidates=[
-            FieldCandidate(field_name="seller_name", value="Neutral Seller", normalized_value="NeutralSeller", confidence=0.97),
+            FieldCandidate(
+                field_name="seller_name",
+                value="Neutral Seller",
+                normalized_value="NeutralSeller",
+                confidence=0.97,
+            ),
         ],
         table_lines=[{"text": "Office Supplies"}],
         overall=0.97,

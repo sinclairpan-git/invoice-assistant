@@ -9,12 +9,24 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.dependencies import assert_actor_has_role, get_session, get_trusted_actor, resolve_actor
-from backend.app.api.serializers import serialize_invoice_detail, serialize_invoice_summary, serialize_review_action
+from backend.app.api.dependencies import (
+    assert_actor_has_role,
+    get_session,
+    get_trusted_actor,
+    resolve_actor,
+)
+from backend.app.api.serializers import (
+    serialize_invoice_detail,
+    serialize_invoice_summary,
+    serialize_review_action,
+)
 from backend.app.db.models import Batch, InvoiceRecord, ReviewAction
 from backend.app.services.compliance_service import summarize_archiveable_pass
 from backend.app.services.retry_service import RetryService
-from backend.app.services.status_service import DISPLAY_STATUS_DUPLICATE, DISPLAY_STATUS_REVIEW
+from backend.app.services.status_service import (
+    DISPLAY_STATUS_DUPLICATE,
+    DISPLAY_STATUS_REVIEW,
+)
 
 
 router = APIRouter(prefix="/api", tags=["invoices"])
@@ -44,14 +56,18 @@ def list_batch_invoices(
         raise HTTPException(status_code=404, detail="Batch not found.")
 
     invoices = session.scalars(
-        select(InvoiceRecord).where(InvoiceRecord.batch_id == batch_id).order_by(InvoiceRecord.original_filename.asc())
+        select(InvoiceRecord)
+        .where(InvoiceRecord.batch_id == batch_id)
+        .order_by(InvoiceRecord.original_filename.asc())
     ).all()
 
     all_items = [serialize_invoice_summary(invoice) for invoice in invoices]
     if display_status in {None, "", "全部"}:
         filtered_items = all_items
     else:
-        filtered_items = [item for item in all_items if item["display_status"] == display_status]
+        filtered_items = [
+            item for item in all_items if item["display_status"] == display_status
+        ]
 
     status_counts = dict(Counter(item["display_status"] for item in all_items))
     batch_summary = summarize_archiveable_pass(invoices)
@@ -79,7 +95,9 @@ def list_batch_invoices(
 
 
 @router.get("/invoices/{invoice_id}")
-def get_invoice_detail(invoice_id: str, session: Session = Depends(get_session)) -> dict[str, object]:
+def get_invoice_detail(
+    invoice_id: str, session: Session = Depends(get_session)
+) -> dict[str, object]:
     invoice = session.get(InvoiceRecord, invoice_id)
     if invoice is None:
         raise HTTPException(status_code=404, detail="Invoice not found.")
@@ -196,7 +214,10 @@ def create_review_action(
 
     display_status = serialize_invoice_summary(invoice)["display_status"]
     if display_status not in {DISPLAY_STATUS_REVIEW, DISPLAY_STATUS_DUPLICATE}:
-        raise HTTPException(status_code=400, detail="Only review-required or duplicate invoices can be manually reviewed.")
+        raise HTTPException(
+            status_code=400,
+            detail="Only review-required or duplicate invoices can be manually reviewed.",
+        )
 
     review = ReviewAction(
         invoice_id=invoice.id,

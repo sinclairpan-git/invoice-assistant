@@ -51,7 +51,10 @@ def summarize_suggested_pass(
             system_decision=getattr(record, "system_decision", None),
             duplicate_flag=bool(getattr(record, "duplicate_flag", False)),
         )
-        if filter_display_status is not None and display_status != filter_display_status:
+        if (
+            filter_display_status is not None
+            and display_status != filter_display_status
+        ):
             continue
         if getattr(record, "system_decision", None) != "suggested_pass":
             continue
@@ -63,4 +66,6 @@ def summarize_suggested_pass(
         if amount not in (None, ""):
             total_amount += Decimal(str(amount)).quantize(Decimal("0.01"))
 
-    return SuggestedPassSummary(count=count, total_amount=total_amount.quantize(Decimal("0.01")))
+    return SuggestedPassSummary(
+        count=count, total_amount=total_amount.quantize(Decimal("0.01"))
+    )

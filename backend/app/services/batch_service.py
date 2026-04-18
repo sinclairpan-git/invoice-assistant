@@ -10,7 +10,10 @@ from sqlalchemy.orm import Session
 
 from backend.app.db.models import AttachmentDocument, Batch, InvoiceRecord
 from backend.app.services.config_service import ConfigService
-from backend.app.services.storage_service import DuplicateOriginalFileError, StorageService
+from backend.app.services.storage_service import (
+    DuplicateOriginalFileError,
+    StorageService,
+)
 
 
 @dataclass(frozen=True)
@@ -20,7 +23,13 @@ class IncomingFile:
 
 
 class BatchService:
-    def __init__(self, *, session: Session, storage_service: StorageService, config_service: ConfigService | None = None):
+    def __init__(
+        self,
+        *,
+        session: Session,
+        storage_service: StorageService,
+        config_service: ConfigService | None = None,
+    ):
         self.session = session
         self.storage_service = storage_service
         self.config_service = config_service or ConfigService(session)
@@ -38,7 +47,9 @@ class BatchService:
         batch_number = batch_no or self._generate_batch_no()
         self._assert_batch_import_is_allowed(batch_number=batch_number, files=files)
         snapshot = self.config_service.get_active_snapshot()
-        invoice_file_count = sum(0 if self._looks_like_attachment(item.filename) else 1 for item in files)
+        invoice_file_count = sum(
+            0 if self._looks_like_attachment(item.filename) else 1 for item in files
+        )
         batch = Batch(
             batch_no=batch_number,
             created_by=created_by,
@@ -48,7 +59,9 @@ class BatchService:
             processing_files=0,
             failed_files=0,
             tax_profile_version_id=self._snapshot_version_id(snapshot, "tax_profile"),
-            business_rule_version_id=self._snapshot_version_id(snapshot, "business_rules"),
+            business_rule_version_id=self._snapshot_version_id(
+                snapshot, "business_rules"
+            ),
             naming_rule_version_id=self._snapshot_version_id(snapshot, "naming_rules"),
             snapshot_json=json.dumps(snapshot, sort_keys=True),
         )
@@ -58,7 +71,9 @@ class BatchService:
             self.session.flush()
 
             for incoming_file in files:
-                stored = self.storage_service.save_original(batch_number, incoming_file.filename, incoming_file.content)
+                stored = self.storage_service.save_original(
+                    batch_number, incoming_file.filename, incoming_file.content
+                )
                 if self._looks_like_attachment(incoming_file.filename):
                     attachment = AttachmentDocument(
                         batch_id=batch.id,
@@ -87,20 +102,28 @@ class BatchService:
             self.session.rollback()
             raise
 
-    def _assert_batch_import_is_allowed(self, *, batch_number: str, files: list[IncomingFile]) -> None:
-        existing_batch = self.session.scalar(select(Batch).where(Batch.batch_no == batch_number))
+    def _assert_batch_import_is_allowed(
+        self, *, batch_number: str, files: list[IncomingFile]
+    ) -> None:
+        existing_batch = self.session.scalar(
+            select(Batch).where(Batch.batch_no == batch_number)
+        )
         if existing_batch is None:
             return
 
         existing_names = {
             name
             for name in self.session.scalars(
-                select(InvoiceRecord.original_filename).where(InvoiceRecord.batch_id == existing_batch.id)
+                select(InvoiceRecord.original_filename).where(
+                    InvoiceRecord.batch_id == existing_batch.id
+                )
             ).all()
         }
         existing_names.update(
             self.session.scalars(
-                select(AttachmentDocument.original_filename).where(AttachmentDocument.batch_id == existing_batch.id)
+                select(AttachmentDocument.original_filename).where(
+                    AttachmentDocument.batch_id == existing_batch.id
+                )
             ).all()
         )
         incoming_names = {incoming_file.filename for incoming_file in files}
@@ -113,7 +136,9 @@ class BatchService:
         raise ValueError(f"Batch number {batch_number!r} already exists.")
 
     @staticmethod
-    def _snapshot_version_id(snapshot: dict[str, dict[str, object] | None], kind: str) -> str | None:
+    def _snapshot_version_id(
+        snapshot: dict[str, dict[str, object] | None], kind: str
+    ) -> str | None:
         version = snapshot.get(kind)
         if version is None:
             return None

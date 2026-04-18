@@ -6,10 +6,23 @@ from zipfile import ZipFile
 from sqlalchemy import select
 import pytest
 
-from backend.app.db.models import AttachmentDocument, AuditLog, Batch, ExportJob, InvoiceRecord
-from backend.app.db.session import create_database_engine, create_session_factory, init_db
+from backend.app.db.models import (
+    AttachmentDocument,
+    AuditLog,
+    Batch,
+    ExportJob,
+    InvoiceRecord,
+)
+from backend.app.db.session import (
+    create_database_engine,
+    create_session_factory,
+    init_db,
+)
 from backend.app.services.export_service import ExportService
-from backend.app.services.status_service import DISPLAY_STATUS_DUPLICATE, DISPLAY_STATUS_PASS
+from backend.app.services.status_service import (
+    DISPLAY_STATUS_DUPLICATE,
+    DISPLAY_STATUS_PASS,
+)
 
 
 def build_session(tmp_path):
@@ -23,7 +36,9 @@ def write_pdf(path: Path) -> None:
     path.write_bytes(b"%PDF-1.7\nfixture")
 
 
-def test_export_service_generates_zip_and_excel_outputs_with_consistent_summary(tmp_path):
+def test_export_service_generates_zip_and_excel_outputs_with_consistent_summary(
+    tmp_path,
+):
     session = build_session(tmp_path)
 
     pass_file = tmp_path / "pass.pdf"
@@ -124,7 +139,11 @@ def test_export_service_generates_zip_and_excel_outputs_with_consistent_summary(
 
     jobs = session.scalars(select(ExportJob).order_by(ExportJob.created_at.asc())).all()
     assert len(jobs) == 3
-    assert [job.export_type for job in jobs] == ["suggested_pass_zip", "issue_zip", "excel_manifest"]
+    assert [job.export_type for job in jobs] == [
+        "suggested_pass_zip",
+        "issue_zip",
+        "excel_manifest",
+    ]
 
     session.refresh(batch)
     assert batch.export_manifest_path == excel_result.output_path
@@ -181,7 +200,9 @@ def test_export_service_cleans_partial_file_on_failure(tmp_path, monkeypatch):
             created_by="tester",
         )
 
-    failed_job = session.scalars(select(ExportJob).where(ExportJob.batch_id == batch.id)).all()
+    failed_job = session.scalars(
+        select(ExportJob).where(ExportJob.batch_id == batch.id)
+    ).all()
     assert len(failed_job) == 1
     assert failed_job[0].status == "failed"
     assert failed_job[0].output_path is None
@@ -191,7 +212,9 @@ def test_export_service_cleans_partial_file_on_failure(tmp_path, monkeypatch):
     assert batch.export_manifest_path is None
 
 
-def test_export_service_blocks_non_terminal_batch_exports_and_records_denied_audit(tmp_path):
+def test_export_service_blocks_non_terminal_batch_exports_and_records_denied_audit(
+    tmp_path,
+):
     session = build_session(tmp_path)
 
     pass_file = tmp_path / "pass.pdf"
@@ -234,12 +257,18 @@ def test_export_service_blocks_non_terminal_batch_exports_and_records_denied_aud
             created_by="tester",
         )
 
-    jobs = session.scalars(select(ExportJob).where(ExportJob.batch_id == batch.id)).all()
+    jobs = session.scalars(
+        select(ExportJob).where(ExportJob.batch_id == batch.id)
+    ).all()
     assert jobs == []
 
     denied_audits = session.scalars(
         select(AuditLog)
-        .where(AuditLog.entity_type == "export_job", AuditLog.entity_id == batch.id, AuditLog.action == "export_denied")
+        .where(
+            AuditLog.entity_type == "export_job",
+            AuditLog.entity_id == batch.id,
+            AuditLog.action == "export_denied",
+        )
         .order_by(AuditLog.changed_at.asc())
     ).all()
     assert len(denied_audits) == 1
@@ -256,7 +285,9 @@ def test_export_service_blocks_non_terminal_batch_exports_and_records_denied_aud
     }
 
 
-def test_export_service_blocks_pending_review_pass_export_and_success_manifest_includes_compliance_fields(tmp_path):
+def test_export_service_blocks_pending_review_pass_export_and_success_manifest_includes_compliance_fields(
+    tmp_path,
+):
     session = build_session(tmp_path)
 
     pass_file = tmp_path / "pass.pdf"
@@ -326,7 +357,11 @@ def test_export_service_blocks_pending_review_pass_export_and_success_manifest_i
 
     denied_audits = session.scalars(
         select(AuditLog)
-        .where(AuditLog.entity_type == "export_job", AuditLog.entity_id == batch.id, AuditLog.action == "export_denied")
+        .where(
+            AuditLog.entity_type == "export_job",
+            AuditLog.entity_id == batch.id,
+            AuditLog.action == "export_denied",
+        )
         .order_by(AuditLog.changed_at.asc())
     ).all()
     assert len(denied_audits) == 1
@@ -341,7 +376,10 @@ def test_export_service_blocks_pending_review_pass_export_and_success_manifest_i
     }
 
     review_invoice = session.scalar(
-        select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id, InvoiceRecord.original_filename == "review.pdf")
+        select(InvoiceRecord).where(
+            InvoiceRecord.batch_id == batch.id,
+            InvoiceRecord.original_filename == "review.pdf",
+        )
     )
     assert review_invoice is not None
     session.add(
@@ -395,18 +433,21 @@ def test_export_service_blocks_pending_review_pass_export_and_success_manifest_i
 
     completed_audits = session.scalars(
         select(AuditLog)
-        .where(AuditLog.entity_type == "export_job", AuditLog.action == "export_completed")
+        .where(
+            AuditLog.entity_type == "export_job", AuditLog.action == "export_completed"
+        )
         .order_by(AuditLog.changed_at.asc())
     ).all()
     assert len(completed_audits) == 2
-    assert [audit.entity_id for audit in completed_audits] == [pass_result.job_id, excel_result.job_id]
+    assert [audit.entity_id for audit in completed_audits] == [
+        pass_result.job_id,
+        excel_result.job_id,
+    ]
     assert [audit.change_summary for audit in completed_audits] == [
         "export_type=suggested_pass_zip",
         "export_type=excel_manifest",
     ]
-    assert [
-        json.loads(audit.payload_json)["gate"] for audit in completed_audits
-    ] == [
+    assert [json.loads(audit.payload_json)["gate"] for audit in completed_audits] == [
         {"allowed": True, "reasons": []},
         {"allowed": True, "reasons": []},
     ]

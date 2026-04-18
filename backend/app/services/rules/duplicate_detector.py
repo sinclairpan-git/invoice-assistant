@@ -30,7 +30,11 @@ def detect_suspected_duplicate(
             matched_keys=[],
         )
 
-    matched_keys = [history_key for item in history if (history_key := build_duplicate_group_key(item)) == current_key]
+    matched_keys = [
+        history_key
+        for item in history
+        if (history_key := build_duplicate_group_key(item)) == current_key
+    ]
     if not matched_keys:
         return DuplicateDetectionResult(
             duplicate_flag=False,
@@ -69,7 +73,9 @@ def build_duplicate_group_key(invoice_data: dict[str, Any]) -> str | None:
         return None
 
     code_segment = invoice_code or "-"
-    return "|".join([invoice_number, code_segment, invoice_date, invoice_amount, seller_name])
+    return "|".join(
+        [invoice_number, code_segment, invoice_date, invoice_amount, seller_name]
+    )
 
 
 def _normalize_text(value: object) -> str:

@@ -3,10 +3,18 @@ import json
 import pytest
 
 from backend.app.db.models import AttachmentDocument, Batch, InvoiceRecord
-from backend.app.db.session import create_database_engine, create_session_factory, init_db
+from backend.app.db.session import (
+    create_database_engine,
+    create_session_factory,
+    init_db,
+)
 from backend.app.services.batch_service import BatchService, IncomingFile
 from backend.app.services.config_service import ConfigService
-from backend.app.services.storage_service import DuplicateOriginalFileError, InvalidFileTypeError, StorageService
+from backend.app.services.storage_service import (
+    DuplicateOriginalFileError,
+    InvalidFileTypeError,
+    StorageService,
+)
 
 
 def build_session(tmp_path):
@@ -45,7 +53,9 @@ def test_batch_service_stores_original_files_and_rule_snapshot(tmp_path):
     config_service = ConfigService(session)
     seed_active_rules(config_service)
     storage_service = StorageService(tmp_path / "storage")
-    batch_service = BatchService(session=session, storage_service=storage_service, config_service=config_service)
+    batch_service = BatchService(
+        session=session, storage_service=storage_service, config_service=config_service
+    )
 
     batch = batch_service.create_batch(
         files=[
@@ -69,7 +79,9 @@ def test_batch_service_stores_original_files_and_rule_snapshot(tmp_path):
     assert snapshot["business_rules"]["id"] == saved_batch.business_rule_version_id
     assert snapshot["naming_rules"]["content"]["pattern"] == "{date}_{number}"
 
-    invoice_records = session.query(InvoiceRecord).filter(InvoiceRecord.batch_id == batch.id).all()
+    invoice_records = (
+        session.query(InvoiceRecord).filter(InvoiceRecord.batch_id == batch.id).all()
+    )
     assert len(invoice_records) == 2
     assert {record.storage_path_original for record in invoice_records} == {
         "storage/originals/BATCH-TEST-001/invoice-a.pdf",
@@ -82,19 +94,31 @@ def test_batch_service_separates_attachment_candidates_from_invoice_records(tmp_
     config_service = ConfigService(session)
     seed_active_rules(config_service)
     storage_service = StorageService(tmp_path / "storage")
-    batch_service = BatchService(session=session, storage_service=storage_service, config_service=config_service)
+    batch_service = BatchService(
+        session=session, storage_service=storage_service, config_service=config_service
+    )
 
     batch = batch_service.create_batch(
         files=[
-            IncomingFile(filename="invoice-main.pdf", content=b"%PDF-1.7\ninvoice-main"),
-            IncomingFile(filename="invoice-main-销货清单.pdf", content=b"%PDF-1.7\nattachment"),
+            IncomingFile(
+                filename="invoice-main.pdf", content=b"%PDF-1.7\ninvoice-main"
+            ),
+            IncomingFile(
+                filename="invoice-main-销货清单.pdf", content=b"%PDF-1.7\nattachment"
+            ),
         ],
         created_by="tester",
         batch_no="BATCH-ATTACH-001",
     )
 
-    invoice_records = session.query(InvoiceRecord).filter(InvoiceRecord.batch_id == batch.id).all()
-    attachment_documents = session.query(AttachmentDocument).filter(AttachmentDocument.batch_id == batch.id).all()
+    invoice_records = (
+        session.query(InvoiceRecord).filter(InvoiceRecord.batch_id == batch.id).all()
+    )
+    attachment_documents = (
+        session.query(AttachmentDocument)
+        .filter(AttachmentDocument.batch_id == batch.id)
+        .all()
+    )
     saved_batch = session.get(Batch, batch.id)
 
     assert saved_batch is not None
@@ -105,7 +129,10 @@ def test_batch_service_separates_attachment_candidates_from_invoice_records(tmp_
     assert len(attachment_documents) == 1
     assert attachment_documents[0].original_filename == "invoice-main-销货清单.pdf"
     assert attachment_documents[0].attachment_status == "pending_match"
-    assert attachment_documents[0].storage_path_original == "storage/originals/BATCH-ATTACH-001/invoice-main-销货清单.pdf"
+    assert (
+        attachment_documents[0].storage_path_original
+        == "storage/originals/BATCH-ATTACH-001/invoice-main-销货清单.pdf"
+    )
 
 
 def test_batch_service_rejects_duplicate_original_import(tmp_path):
@@ -113,7 +140,9 @@ def test_batch_service_rejects_duplicate_original_import(tmp_path):
     config_service = ConfigService(session)
     seed_active_rules(config_service)
     storage_service = StorageService(tmp_path / "storage")
-    batch_service = BatchService(session=session, storage_service=storage_service, config_service=config_service)
+    batch_service = BatchService(
+        session=session, storage_service=storage_service, config_service=config_service
+    )
 
     batch_service.create_batch(
         files=[IncomingFile(filename="invoice.pdf", content=b"%PDF-1.7\ninvoice")],
@@ -123,7 +152,9 @@ def test_batch_service_rejects_duplicate_original_import(tmp_path):
 
     with pytest.raises(DuplicateOriginalFileError):
         batch_service.create_batch(
-            files=[IncomingFile(filename="invoice.pdf", content=b"%PDF-1.7\ninvoice-copy")],
+            files=[
+                IncomingFile(filename="invoice.pdf", content=b"%PDF-1.7\ninvoice-copy")
+            ],
             created_by="tester",
             batch_no="BATCH-DUP-001",
         )
@@ -134,7 +165,9 @@ def test_batch_service_rejects_illegal_file_types(tmp_path):
     config_service = ConfigService(session)
     seed_active_rules(config_service)
     storage_service = StorageService(tmp_path / "storage")
-    batch_service = BatchService(session=session, storage_service=storage_service, config_service=config_service)
+    batch_service = BatchService(
+        session=session, storage_service=storage_service, config_service=config_service
+    )
 
     with pytest.raises(InvalidFileTypeError):
         batch_service.create_batch(

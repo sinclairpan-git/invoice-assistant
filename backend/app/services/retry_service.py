@@ -31,7 +31,9 @@ class RetryService:
         if invoice is None:
             raise LookupError(f"Invoice {invoice_id!r} not found.")
         if invoice.processing_status != "processing_failed":
-            raise ValueError(f"Invoice {invoice_id!r} is not in a retryable failed state.")
+            raise ValueError(
+                f"Invoice {invoice_id!r} is not in a retryable failed state."
+            )
 
         self._prepare_invoice(invoice)
         batch = self.session.get(Batch, invoice.batch_id)
@@ -40,7 +42,12 @@ class RetryService:
         self._prepare_batch(batch)
         self.session.commit()
         self.processing_runner.enqueue(batch.id)
-        log_event(self.logger, "invoice_retry_enqueued", batch_id=batch.id, invoice_id=invoice_id)
+        log_event(
+            self.logger,
+            "invoice_retry_enqueued",
+            batch_id=batch.id,
+            invoice_id=invoice_id,
+        )
         return invoice_id
 
     def retry_batch_failures(self, batch_id: str) -> list[str]:
@@ -50,7 +57,10 @@ class RetryService:
 
         failed_invoices = self.session.scalars(
             select(InvoiceRecord)
-            .where(InvoiceRecord.batch_id == batch_id, InvoiceRecord.processing_status == "processing_failed")
+            .where(
+                InvoiceRecord.batch_id == batch_id,
+                InvoiceRecord.processing_status == "processing_failed",
+            )
             .order_by(InvoiceRecord.original_filename.asc())
         ).all()
         if not failed_invoices:
@@ -61,7 +71,12 @@ class RetryService:
         self._prepare_batch(batch)
         self.session.commit()
         self.processing_runner.enqueue(batch.id)
-        log_event(self.logger, "batch_retry_enqueued", batch_id=batch.id, invoice_count=len(failed_invoices))
+        log_event(
+            self.logger,
+            "batch_retry_enqueued",
+            batch_id=batch.id,
+            invoice_count=len(failed_invoices),
+        )
         return [invoice.id for invoice in failed_invoices]
 
     @staticmethod

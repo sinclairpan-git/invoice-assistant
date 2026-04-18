@@ -7,7 +7,11 @@ from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
 
 from backend.app.db.models import Batch, InvoiceRecord, ProcessingAttempt, ProcessingJob
-from backend.app.db.session import create_database_engine, create_session_factory, init_db
+from backend.app.db.session import (
+    create_database_engine,
+    create_session_factory,
+    init_db,
+)
 from backend.app.main import create_app
 from backend.app.services.batch_service import BatchService, IncomingFile
 from backend.app.services.config_service import ConfigService
@@ -63,9 +67,16 @@ def test_processing_job_schema_is_created_and_runtime_columns_are_present(tmp_pa
     assert {"processing_jobs", "processing_attempts"}.issubset(table_names)
 
     batch_columns = {column["name"] for column in inspector.get_columns("batches")}
-    assert {"active_job_id", "last_recovered_at", "last_stage_code", "last_stage_text"}.issubset(batch_columns)
+    assert {
+        "active_job_id",
+        "last_recovered_at",
+        "last_stage_code",
+        "last_stage_text",
+    }.issubset(batch_columns)
 
-    invoice_columns = {column["name"] for column in inspector.get_columns("invoice_records")}
+    invoice_columns = {
+        column["name"] for column in inspector.get_columns("invoice_records")
+    }
     assert {
         "processing_stage",
         "last_attempt_id",
@@ -324,13 +335,24 @@ def test_init_db_adds_runtime_columns_to_legacy_sqlite_schema(tmp_path):
     init_db(engine)
 
     inspector = inspect(engine)
-    assert {"processing_jobs", "processing_attempts"}.issubset(set(inspector.get_table_names()))
+    assert {"processing_jobs", "processing_attempts"}.issubset(
+        set(inspector.get_table_names())
+    )
 
-    invoice_columns = {column["name"] for column in inspector.get_columns("invoice_records")}
-    assert {"processing_stage", "last_attempt_id", "retry_count", "retryable"}.issubset(invoice_columns)
+    invoice_columns = {
+        column["name"] for column in inspector.get_columns("invoice_records")
+    }
+    assert {"processing_stage", "last_attempt_id", "retry_count", "retryable"}.issubset(
+        invoice_columns
+    )
 
     batch_columns = {column["name"] for column in inspector.get_columns("batches")}
-    assert {"active_job_id", "last_recovered_at", "last_stage_code", "last_stage_text"}.issubset(batch_columns)
+    assert {
+        "active_job_id",
+        "last_recovered_at",
+        "last_stage_code",
+        "last_stage_text",
+    }.issubset(batch_columns)
 
     with engine.connect() as conn:
         row = conn.execute(
@@ -348,7 +370,9 @@ def test_init_db_adds_runtime_columns_to_legacy_sqlite_schema(tmp_path):
     assert row.retryable == 0
 
 
-def test_process_batch_persists_job_attempts_and_is_idempotent_for_completed_invoices(tmp_path):
+def test_process_batch_persists_job_attempts_and_is_idempotent_for_completed_invoices(
+    tmp_path,
+):
     app = create_app(f"sqlite:///{tmp_path / 'processing-runtime.db'}")
     session = app.state.session_factory()
     seed_active_rules(session)
@@ -387,7 +411,11 @@ def test_process_batch_persists_job_attempts_and_is_idempotent_for_completed_inv
     assert job.completed_items == 1
     assert job.failed_items == 0
 
-    attempts = session.query(ProcessingAttempt).where(ProcessingAttempt.invoice_id == invoice.id).all()
+    attempts = (
+        session.query(ProcessingAttempt)
+        .where(ProcessingAttempt.invoice_id == invoice.id)
+        .all()
+    )
     assert len(attempts) == 1
     assert attempts[0].status == "succeeded"
     assert attempts[0].stage == "completed"
@@ -411,7 +439,11 @@ def test_process_batch_persists_job_attempts_and_is_idempotent_for_completed_inv
     session.refresh(batch)
     session.refresh(invoice)
 
-    attempts_after_rerun = session.query(ProcessingAttempt).where(ProcessingAttempt.invoice_id == invoice.id).all()
+    attempts_after_rerun = (
+        session.query(ProcessingAttempt)
+        .where(ProcessingAttempt.invoice_id == invoice.id)
+        .all()
+    )
     assert len(attempts_after_rerun) == 1
     assert (
         len(invoice.evidence_items),

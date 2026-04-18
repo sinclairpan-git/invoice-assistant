@@ -16,4 +16,8 @@ def get_app_logger(name: str = "app") -> logging.Logger:
 
 
 def log_event(logger: logging.Logger, event: str, **payload: Any) -> None:
-    logger.info("%s %s", event, json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str))
+    logger.info(
+        "%s %s",
+        event,
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str),
+    )

@@ -33,12 +33,18 @@ class RecoveryService:
 
     def recover_stale_jobs(self) -> list[str]:
         batches = self.session.scalars(
-            select(Batch).where(Batch.active_job_id.is_not(None)).order_by(Batch.created_at.asc())
+            select(Batch)
+            .where(Batch.active_job_id.is_not(None))
+            .order_by(Batch.created_at.asc())
         ).all()
         recovered_batch_ids: list[str] = []
 
         for batch in batches:
-            job = self.session.get(ProcessingJob, batch.active_job_id) if batch.active_job_id else None
+            job = (
+                self.session.get(ProcessingJob, batch.active_job_id)
+                if batch.active_job_id
+                else None
+            )
             if job is None or job.status not in RECOVERABLE_JOB_STATUSES:
                 continue
             if self._batch_is_terminal(batch.id):
@@ -72,13 +78,20 @@ class RecoveryService:
             attempt.error_message = "Recovered after runtime restart."
             attempt.completed_at = now
 
-        invoices = self.session.scalars(select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id)).all()
+        invoices = self.session.scalars(
+            select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id)
+        ).all()
         for invoice in invoices:
-            if invoice.processing_status in TERMINAL_INVOICE_STATUSES and invoice.id not in {
-                attempt.invoice_id for attempt in stale_attempts
-            }:
+            if (
+                invoice.processing_status in TERMINAL_INVOICE_STATUSES
+                and invoice.id not in {attempt.invoice_id for attempt in stale_attempts}
+            ):
                 continue
-            if stale_attempt_ids and invoice.last_attempt_id not in stale_attempt_ids and invoice.processing_status == "completed":
+            if (
+                stale_attempt_ids
+                and invoice.last_attempt_id not in stale_attempt_ids
+                and invoice.processing_status == "completed"
+            ):
                 continue
             if invoice.processing_status == "completed":
                 continue
@@ -103,5 +116,10 @@ class RecoveryService:
         self.session.flush()
 
     def _batch_is_terminal(self, batch_id: str) -> bool:
-        invoices = self.session.scalars(select(InvoiceRecord).where(InvoiceRecord.batch_id == batch_id)).all()
-        return bool(invoices) and all(invoice.processing_status in TERMINAL_INVOICE_STATUSES for invoice in invoices)
+        invoices = self.session.scalars(
+            select(InvoiceRecord).where(InvoiceRecord.batch_id == batch_id)
+        ).all()
+        return bool(invoices) and all(
+            invoice.processing_status in TERMINAL_INVOICE_STATUSES
+            for invoice in invoices
+        )

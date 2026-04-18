@@ -6,15 +6,21 @@ from pathlib import Path
 import pytest
 
 
-def test_pytest_wrapper_delegates_to_backend_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_pytest_wrapper_delegates_to_backend_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from workspace_tools import cli
 
     calls: dict[str, object] = {}
     repo_root = Path(__file__).resolve().parents[2]
 
-    monkeypatch.setattr(sys, "argv", ["pytest", "-q", "backend/tests/test_progress_reporting.py"])
+    monkeypatch.setattr(
+        sys, "argv", ["pytest", "-q", "backend/tests/test_progress_reporting.py"]
+    )
 
-    def fake_run(command: list[str], *, cwd: Path, env: dict[str, str], check: bool) -> object:
+    def fake_run(
+        command: list[str], *, cwd: Path, env: dict[str, str], check: bool
+    ) -> object:
         calls["command"] = command
         calls["cwd"] = cwd
         calls["env"] = env
@@ -59,7 +65,9 @@ def test_ruff_wrapper_delegates_to_uvx(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(sys, "argv", ["ruff", "check", "backend/app"])
 
-    def fake_run(command: list[str], *, cwd: Path, env: dict[str, str], check: bool) -> object:
+    def fake_run(
+        command: list[str], *, cwd: Path, env: dict[str, str], check: bool
+    ) -> object:
         calls["command"] = command
         calls["cwd"] = cwd
         calls["env"] = env

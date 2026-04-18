@@ -68,7 +68,11 @@ class UnifiedDocumentEvidence(BaseModel):
     provider_error_code: str | None = None
 
     def best_candidate(self, field_name: str) -> FieldCandidate | None:
-        candidates = [candidate for candidate in self.field_candidates if candidate.field_name == field_name]
+        candidates = [
+            candidate
+            for candidate in self.field_candidates
+            if candidate.field_name == field_name
+        ]
         if not candidates:
             return None
         return max(candidates, key=lambda candidate: candidate.confidence)
@@ -79,13 +83,21 @@ class UnifiedDocumentEvidence(BaseModel):
             source_type=self.source_type,
             raw_text=self.raw_text,
             pages_json=json.dumps(self.pages, sort_keys=True),
-            text_blocks_json=json.dumps([block.model_dump(mode="json") for block in self.text_blocks], sort_keys=True),
-            table_lines_json=json.dumps(self.table_lines, sort_keys=True),
-            field_candidates_json=json.dumps(
-                [candidate.model_dump(mode="json") for candidate in self.field_candidates],
+            text_blocks_json=json.dumps(
+                [block.model_dump(mode="json") for block in self.text_blocks],
                 sort_keys=True,
             ),
-            confidence_summary_json=json.dumps(self.confidence_summary.model_dump(mode="json"), sort_keys=True),
+            table_lines_json=json.dumps(self.table_lines, sort_keys=True),
+            field_candidates_json=json.dumps(
+                [
+                    candidate.model_dump(mode="json")
+                    for candidate in self.field_candidates
+                ],
+                sort_keys=True,
+            ),
+            confidence_summary_json=json.dumps(
+                self.confidence_summary.model_dump(mode="json"), sort_keys=True
+            ),
             provider_name=self.provider_name,
             provider_version=self.provider_version,
             provider_error_code=self.provider_error_code,

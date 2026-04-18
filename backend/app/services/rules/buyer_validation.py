@@ -62,7 +62,9 @@ def validate_buyer_fields(
             )
             continue
 
-        actual_value = candidate.normalized_value or _normalize_field(field_name, candidate.value)
+        actual_value = candidate.normalized_value or _normalize_field(
+            field_name, candidate.value
+        )
         if candidate.confidence < high_confidence_threshold:
             reason = f"{field_name} extracted with low confidence ({candidate.confidence:.2f})."
             checks.append(
@@ -105,9 +107,13 @@ def validate_buyer_fields(
         reject_reasons.append(reason)
 
     if reject_reasons:
-        return BuyerValidationResult(decision="suggested_reject", reasons=reject_reasons, checks=checks)
+        return BuyerValidationResult(
+            decision="suggested_reject", reasons=reject_reasons, checks=checks
+        )
     if review_reasons:
-        return BuyerValidationResult(decision="review_required", reasons=review_reasons, checks=checks)
+        return BuyerValidationResult(
+            decision="review_required", reasons=review_reasons, checks=checks
+        )
     return BuyerValidationResult(decision="suggested_pass", reasons=[], checks=checks)
 
 

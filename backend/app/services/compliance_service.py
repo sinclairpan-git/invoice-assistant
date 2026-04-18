@@ -35,17 +35,25 @@ class ArchiveablePassSummary:
     total_amount: Decimal
 
 
-def build_invoice_compliance_summary(invoice: InvoiceRecord) -> InvoiceComplianceSummary:
+def build_invoice_compliance_summary(
+    invoice: InvoiceRecord,
+) -> InvoiceComplianceSummary:
     display_status = derive_display_status(
         processing_status=invoice.processing_status,
         system_decision=invoice.system_decision,
         duplicate_flag=invoice.duplicate_flag,
     )
     field_failures = _field_failures(invoice)
-    risk_reasons = [_risk_flag_label(flag) for flag in _load_json_list(invoice.risk_flags)]
+    risk_reasons = [
+        _risk_flag_label(flag) for flag in _load_json_list(invoice.risk_flags)
+    ]
     review_reason = _review_reason(invoice)
 
-    basic_status = "不通过" if invoice.processing_status in {"failed", "processing_failed"} else "通过"
+    basic_status = (
+        "不通过"
+        if invoice.processing_status in {"failed", "processing_failed"}
+        else "通过"
+    )
     pending_review_gate = (
         invoice.system_decision == "review_required"
         and not invoice.duplicate_flag
@@ -54,7 +62,9 @@ def build_invoice_compliance_summary(invoice: InvoiceRecord) -> InvoiceComplianc
     )
 
     if invoice.processing_status in {"failed", "processing_failed"}:
-        reasons = _dedupe([invoice.failure_reason, invoice.last_error_message, "处理失败"])
+        reasons = _dedupe(
+            [invoice.failure_reason, invoice.last_error_message, "处理失败"]
+        )
         return InvoiceComplianceSummary(
             basic_compliance_status="不通过",
             business_compliance_status="不通过",
@@ -66,7 +76,9 @@ def build_invoice_compliance_summary(invoice: InvoiceRecord) -> InvoiceComplianc
         )
 
     if invoice.review_status in APPROVED_REVIEW_STATUSES:
-        reasons = _dedupe(field_failures + risk_reasons + [review_reason or "人工复核已确认通过"])
+        reasons = _dedupe(
+            field_failures + risk_reasons + [review_reason or "人工复核已确认通过"]
+        )
         return InvoiceComplianceSummary(
             basic_compliance_status=basic_status,
             business_compliance_status="通过",
@@ -78,7 +90,9 @@ def build_invoice_compliance_summary(invoice: InvoiceRecord) -> InvoiceComplianc
         )
 
     if invoice.review_status in REJECTED_REVIEW_STATUSES:
-        reasons = _dedupe(field_failures + risk_reasons + [review_reason or "人工复核已确认不通过"])
+        reasons = _dedupe(
+            field_failures + risk_reasons + [review_reason or "人工复核已确认不通过"]
+        )
         return InvoiceComplianceSummary(
             basic_compliance_status=basic_status,
             business_compliance_status="不通过",
@@ -160,9 +174,13 @@ def summarize_archiveable_pass(records: list[Any]) -> ArchiveablePassSummary:
 
         count += 1
         if getattr(record, "invoice_amount", None) not in (None, ""):
-            total_amount += Decimal(str(record.invoice_amount)).quantize(Decimal("0.01"))
+            total_amount += Decimal(str(record.invoice_amount)).quantize(
+                Decimal("0.01")
+            )
 
-    return ArchiveablePassSummary(count=count, total_amount=total_amount.quantize(Decimal("0.01")))
+    return ArchiveablePassSummary(
+        count=count, total_amount=total_amount.quantize(Decimal("0.01"))
+    )
 
 
 def serialize_invoice_compliance(invoice: InvoiceRecord) -> dict[str, object]:
@@ -180,7 +198,13 @@ def _field_failures(invoice: InvoiceRecord) -> list[str]:
     failures: list[str] = []
     for check in invoice.field_checks:
         match_result = (check.match_result or "").lower()
-        if match_result not in {"failed", "mismatch", "mismatched", "reject", "rejected"}:
+        if match_result not in {
+            "failed",
+            "mismatch",
+            "mismatched",
+            "reject",
+            "rejected",
+        }:
             continue
         failures.append(check.reason or f"{check.field_name} 校验未通过")
     return failures

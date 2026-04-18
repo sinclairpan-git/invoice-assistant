@@ -29,12 +29,18 @@ class ConfigService:
         if kind not in RULE_KINDS:
             raise ValueError(f"Unsupported rule kind: {kind!r}")
 
-        version_count = self.session.scalar(select(func.count()).select_from(RuleVersion).where(RuleVersion.kind == kind))
+        version_count = self.session.scalar(
+            select(func.count())
+            .select_from(RuleVersion)
+            .where(RuleVersion.kind == kind)
+        )
         next_version_no = f"v{(version_count or 0) + 1}"
 
         if activate:
             current_versions = self.session.scalars(
-                select(RuleVersion).where(RuleVersion.kind == kind, RuleVersion.is_active.is_(True))
+                select(RuleVersion).where(
+                    RuleVersion.kind == kind, RuleVersion.is_active.is_(True)
+                )
             ).all()
             for version in current_versions:
                 version.is_active = False

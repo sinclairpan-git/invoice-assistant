@@ -4,7 +4,11 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from backend.app.db.models import Batch, InvoiceRecord, ProcessingAttempt, ProcessingJob
-from backend.app.db.session import create_database_engine, create_session_factory, init_db
+from backend.app.db.session import (
+    create_database_engine,
+    create_session_factory,
+    init_db,
+)
 from backend.app.services.progress_service import ProgressService
 
 
@@ -18,7 +22,9 @@ def build_session(tmp_path):
 def test_progress_service_refreshes_batch_snapshot_and_logs_events(tmp_path, caplog):
     session = build_session(tmp_path)
 
-    batch = Batch(batch_no="BATCH-PROGRESS-001", created_by="tester", snapshot_json="{}")
+    batch = Batch(
+        batch_no="BATCH-PROGRESS-001", created_by="tester", snapshot_json="{}"
+    )
     session.add(batch)
     session.flush()
 
@@ -152,7 +158,8 @@ def test_progress_service_refreshes_batch_snapshot_and_logs_events(tmp_path, cap
     assert batch.suggested_pass_total_amount == Decimal("50.00")
 
     assert any(
-        record.name == "invoice_assistant.progress" and "batch_progress_refreshed" in record.message
+        record.name == "invoice_assistant.progress"
+        and "batch_progress_refreshed" in record.message
         for record in caplog.records
     )
 
@@ -289,5 +296,7 @@ def test_progress_service_limits_recent_failures_to_latest_three(tmp_path):
 
     snapshot = ProgressService(session).refresh_batch(batch.id)
 
-    assert [item["original_filename"] for item in snapshot.recent_failures] == expected_order
+    assert [
+        item["original_filename"] for item in snapshot.recent_failures
+    ] == expected_order
     assert len(snapshot.recent_failures) == 3

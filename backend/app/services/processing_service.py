@@ -22,8 +22,15 @@ from backend.app.db.models import (
     ProcessingAttempt,
     ProcessingJob,
 )
-from backend.app.services.naming_service import DEFAULT_NAMING_TEMPLATE, build_renamed_filename
-from backend.app.services.parsing.evidence_models import EvidenceAdapterError, StructuredParseError, UnifiedDocumentEvidence
+from backend.app.services.naming_service import (
+    DEFAULT_NAMING_TEMPLATE,
+    build_renamed_filename,
+)
+from backend.app.services.parsing.evidence_models import (
+    EvidenceAdapterError,
+    StructuredParseError,
+    UnifiedDocumentEvidence,
+)
 from backend.app.services.parsing.providers import (
     ProviderExtractionPayload,
     adapt_ocr_output,
@@ -31,22 +38,39 @@ from backend.app.services.parsing.providers import (
     extract_local_ocr,
     extract_pdf_text,
 )
-from backend.app.services.rules.buyer_validation import BuyerValidationResult, validate_buyer_fields
+from backend.app.services.rules.buyer_validation import (
+    BuyerValidationResult,
+    validate_buyer_fields,
+)
 from backend.app.services.rules.duplicate_detector import detect_suspected_duplicate
 from backend.app.services.rules.risk_classifier import classify_risk
-from backend.app.services.status_service import derive_display_status, summarize_suggested_pass
+from backend.app.services.status_service import (
+    derive_display_status,
+    summarize_suggested_pass,
+)
 
 
 FIXTURE_START_MARKER = "INVOICE_ASSISTANT_FIXTURE_START"
 FIXTURE_END_MARKER = "INVOICE_ASSISTANT_FIXTURE_END"
 GENERIC_FIELD_PATTERNS = {
-    "invoice_number": re.compile(r"(?:Invoice(?:\s*No|\s*Number)?|发票号码)[:：]?\s*([A-Z0-9-]+)", re.IGNORECASE),
-    "invoice_code": re.compile(r"(?:Invoice\s*Code|发票代码)[:：]?\s*([A-Z0-9-]+)", re.IGNORECASE),
+    "invoice_number": re.compile(
+        r"(?:Invoice(?:\s*No|\s*Number)?|发票号码)[:：]?\s*([A-Z0-9-]+)", re.IGNORECASE
+    ),
+    "invoice_code": re.compile(
+        r"(?:Invoice\s*Code|发票代码)[:：]?\s*([A-Z0-9-]+)", re.IGNORECASE
+    ),
     "seller_name": re.compile(r"(?:Seller|销方名称)[:：]?\s*([^\r\n]+)", re.IGNORECASE),
     "buyer_name": re.compile(r"(?:Buyer|购方名称)[:：]?\s*([^\r\n]+)", re.IGNORECASE),
-    "buyer_tax_no": re.compile(r"(?:Buyer\s*Tax(?:\s*No)?|购方税号)[:：]?\s*([A-Z0-9]+)", re.IGNORECASE),
-    "invoice_date": re.compile(r"(?:Invoice\s*Date|Date|开票日期)[:：]?\s*([0-9]{4}[-/][0-9]{2}[-/][0-9]{2})", re.IGNORECASE),
-    "invoice_amount": re.compile(r"(?:Amount|价税合计|金额)[:：]?\s*([0-9]+(?:\.[0-9]{1,2})?)", re.IGNORECASE),
+    "buyer_tax_no": re.compile(
+        r"(?:Buyer\s*Tax(?:\s*No)?|购方税号)[:：]?\s*([A-Z0-9]+)", re.IGNORECASE
+    ),
+    "invoice_date": re.compile(
+        r"(?:Invoice\s*Date|Date|开票日期)[:：]?\s*([0-9]{4}[-/][0-9]{2}[-/][0-9]{2})",
+        re.IGNORECASE,
+    ),
+    "invoice_amount": re.compile(
+        r"(?:Amount|价税合计|金额)[:：]?\s*([0-9]+(?:\.[0-9]{1,2})?)", re.IGNORECASE
+    ),
 }
 SUPPORTED_NAMING_KEYS = {
     "{date}": "{date}",
@@ -98,14 +122,19 @@ class ProcessingService:
 
         snapshot = self._load_snapshot(batch.snapshot_json)
         invoices = self.session.scalars(
-            select(InvoiceRecord).where(InvoiceRecord.batch_id == batch_id).order_by(InvoiceRecord.original_filename.asc())
+            select(InvoiceRecord)
+            .where(InvoiceRecord.batch_id == batch_id)
+            .order_by(InvoiceRecord.original_filename.asc())
         ).all()
         job = self._ensure_job(batch=batch, total_items=len(invoices))
         history = self._build_history_from_completed_invoices(invoices)
         parsed_invoice_evidence: dict[str, UnifiedDocumentEvidence] = {}
 
         for invoice in invoices:
-            if invoice.processing_status in TERMINAL_INVOICE_STATUSES and invoice.last_attempt_id:
+            if (
+                invoice.processing_status in TERMINAL_INVOICE_STATUSES
+                and invoice.last_attempt_id
+            ):
                 continue
 
             attempt = self._start_attempt(batch=batch, invoice=invoice, job=job)
@@ -117,7 +146,9 @@ class ProcessingService:
                     history=history,
                     attempt=attempt,
                 )
-                self._mark_attempt_succeeded(batch=batch, invoice=invoice, job=job, attempt=attempt)
+                self._mark_attempt_succeeded(
+                    batch=batch, invoice=invoice, job=job, attempt=attempt
+                )
                 self.session.commit()
                 parsed_invoice_evidence[invoice.id] = evidence
                 history.append(
@@ -143,7 +174,12 @@ class ProcessingService:
                 )
             except Exception as exc:
                 self.session.rollback()
-                self._mark_invoice_failed(invoice_id=invoice.id, attempt_id=attempt.id, job_id=job.id, reason=str(exc))
+                self._mark_invoice_failed(
+                    invoice_id=invoice.id,
+                    attempt_id=attempt.id,
+                    job_id=job.id,
+                    reason=str(exc),
+                )
 
         self._match_attachments_and_reclassify(
             batch=batch,
@@ -164,7 +200,9 @@ class ProcessingService:
         history: list[dict[str, Any]],
         attempt: ProcessingAttempt,
     ) -> UnifiedDocumentEvidence:
-        self._advance_stage(batch=batch, invoice=invoice, attempt=attempt, stage_code="text_extraction")
+        self._advance_stage(
+            batch=batch, invoice=invoice, attempt=attempt, stage_code="text_extraction"
+        )
         source_path = self._resolve_storage_path(invoice.storage_path_original)
         parsed = self._parse_document(source_path.read_bytes())
         evidence = parsed.evidence
@@ -176,13 +214,17 @@ class ProcessingService:
                 "provider_name": evidence.provider_name,
                 "provider_version": evidence.provider_version,
                 "provider_error_code": evidence.provider_error_code,
-                "confidence_summary": evidence.confidence_summary.model_dump(mode="json"),
+                "confidence_summary": evidence.confidence_summary.model_dump(
+                    mode="json"
+                ),
             },
             ensure_ascii=False,
             sort_keys=True,
         )
 
-        self._advance_stage(batch=batch, invoice=invoice, attempt=attempt, stage_code="classification")
+        self._advance_stage(
+            batch=batch, invoice=invoice, attempt=attempt, stage_code="classification"
+        )
         buyer_validation = validate_buyer_fields(
             evidence=evidence,
             tax_profile=self._snapshot_content(snapshot, "tax_profile"),
@@ -202,7 +244,9 @@ class ProcessingService:
         invoice.invoice_amount = self._candidate_amount(evidence, "invoice_amount")
         invoice.parse_source = evidence.source_type
 
-        self._advance_stage(batch=batch, invoice=invoice, attempt=attempt, stage_code="duplicate_check")
+        self._advance_stage(
+            batch=batch, invoice=invoice, attempt=attempt, stage_code="duplicate_check"
+        )
         duplicate_result = detect_suspected_duplicate(
             invoice_data={
                 "invoice_number": invoice.invoice_number,
@@ -216,11 +260,15 @@ class ProcessingService:
             history=history,
         )
 
-        self._advance_stage(batch=batch, invoice=invoice, attempt=attempt, stage_code="finalization")
+        self._advance_stage(
+            batch=batch, invoice=invoice, attempt=attempt, stage_code="finalization"
+        )
         invoice.system_decision = duplicate_result.decision
         invoice.duplicate_flag = duplicate_result.duplicate_flag
         invoice.duplicate_group_key = duplicate_result.duplicate_group_key
-        invoice.risk_flags = json.dumps(duplicate_result.risk_flags, ensure_ascii=False, sort_keys=True)
+        invoice.risk_flags = json.dumps(
+            duplicate_result.risk_flags, ensure_ascii=False, sort_keys=True
+        )
         invoice.processing_status = "completed"
         invoice.processing_stage = "completed"
         invoice.review_status = "not_reviewed"
@@ -245,10 +293,14 @@ class ProcessingService:
                     field_name=candidate.field_name,
                     extracted_value=candidate.value,
                     normalized_value=candidate.normalized_value,
-                    confidence=Decimal(str(candidate.confidence)).quantize(Decimal("0.0001")),
+                    confidence=Decimal(str(candidate.confidence)).quantize(
+                        Decimal("0.0001")
+                    ),
                     page_no=candidate.page_no,
                     source_fragment=candidate.source_fragment,
-                    bbox_json=json.dumps(candidate.bbox_json, ensure_ascii=False) if candidate.bbox_json else None,
+                    bbox_json=json.dumps(candidate.bbox_json, ensure_ascii=False)
+                    if candidate.bbox_json
+                    else None,
                 )
             )
 
@@ -298,7 +350,9 @@ class ProcessingService:
         self.session.flush()
         return evidence
 
-    def _mark_invoice_failed(self, *, invoice_id: str, attempt_id: str, job_id: str, reason: str) -> None:
+    def _mark_invoice_failed(
+        self, *, invoice_id: str, attempt_id: str, job_id: str, reason: str
+    ) -> None:
         invoice = self.session.get(InvoiceRecord, invoice_id)
         attempt = self.session.get(ProcessingAttempt, attempt_id)
         job = self.session.get(ProcessingJob, job_id)
@@ -362,9 +416,17 @@ class ProcessingService:
         existing_job = self._current_job(batch)
         if existing_job is not None and existing_job.status in {"queued", "running"}:
             return existing_job
-        if existing_job is not None and existing_job.status in {"completed", "completed_with_failures"}:
-            invoices = self.session.scalars(select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id)).all()
-            if invoices and all(invoice.processing_status in TERMINAL_INVOICE_STATUSES for invoice in invoices):
+        if existing_job is not None and existing_job.status in {
+            "completed",
+            "completed_with_failures",
+        }:
+            invoices = self.session.scalars(
+                select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id)
+            ).all()
+            if invoices and all(
+                invoice.processing_status in TERMINAL_INVOICE_STATUSES
+                for invoice in invoices
+            ):
                 return existing_job
 
         job = ProcessingJob(
@@ -389,7 +451,9 @@ class ProcessingService:
         self.session.refresh(batch)
         return job
 
-    def _start_attempt(self, *, batch: Batch, invoice: InvoiceRecord, job: ProcessingJob) -> ProcessingAttempt:
+    def _start_attempt(
+        self, *, batch: Batch, invoice: InvoiceRecord, job: ProcessingJob
+    ) -> ProcessingAttempt:
         attempt_no = (
             self.session.query(ProcessingAttempt)
             .where(ProcessingAttempt.invoice_id == invoice.id)
@@ -468,7 +532,9 @@ class ProcessingService:
 
         self._advance_batch_stage(batch=batch, stage_code="attachment_matching")
 
-        completed_invoices = [invoice for invoice in invoices if invoice.processing_status == "completed"]
+        completed_invoices = [
+            invoice for invoice in invoices if invoice.processing_status == "completed"
+        ]
         invoice_by_id = {invoice.id: invoice for invoice in completed_invoices}
         attachment_by_id = {attachment.id: attachment for attachment in attachments}
         attachment_evidence: dict[str, UnifiedDocumentEvidence] = {}
@@ -486,14 +552,20 @@ class ProcessingService:
                 continue
 
             attachment_evidence[attachment.id] = evidence
-            matches = self._find_attachment_matches(evidence=evidence, invoices=completed_invoices)
+            matches = self._find_attachment_matches(
+                evidence=evidence, invoices=completed_invoices
+            )
             if not matches:
                 attachment.attachment_status = "unmatched"
-                attachment.match_reason = "No same-batch invoice matched the attachment summary."
+                attachment.match_reason = (
+                    "No same-batch invoice matched the attachment summary."
+                )
                 continue
             if len(matches) > 1:
                 attachment.attachment_status = "ambiguous"
-                attachment.match_reason = self._format_ambiguous_attachment_reason(matches)
+                attachment.match_reason = self._format_ambiguous_attachment_reason(
+                    matches
+                )
                 continue
 
             invoice_id, reason = matches[0]
@@ -528,7 +600,9 @@ class ProcessingService:
             ):
                 continue
 
-            main_evidence = parsed_invoice_evidence.get(invoice_id) or self._parse_invoice_evidence(invoice)
+            main_evidence = parsed_invoice_evidence.get(
+                invoice_id
+            ) or self._parse_invoice_evidence(invoice)
             buyer_validation = validate_buyer_fields(
                 evidence=main_evidence,
                 tax_profile=tax_profile,
@@ -540,7 +614,10 @@ class ProcessingService:
                 buyer_validation=buyer_validation,
             )
             current_risk_flags = json.loads(invoice.risk_flags or "[]")
-            if risk_result.decision == invoice.system_decision and risk_result.risk_flags == current_risk_flags:
+            if (
+                risk_result.decision == invoice.system_decision
+                and risk_result.risk_flags == current_risk_flags
+            ):
                 continue
 
             duplicate_result = detect_suspected_duplicate(
@@ -553,13 +630,17 @@ class ProcessingService:
                     "system_decision": risk_result.decision,
                     "risk_flags": risk_result.risk_flags,
                 },
-                history=self._build_history_excluding_invoice(invoices=invoices, invoice_id=invoice.id),
+                history=self._build_history_excluding_invoice(
+                    invoices=invoices, invoice_id=invoice.id
+                ),
             )
 
             invoice.system_decision = duplicate_result.decision
             invoice.duplicate_flag = duplicate_result.duplicate_flag
             invoice.duplicate_group_key = duplicate_result.duplicate_group_key
-            invoice.risk_flags = json.dumps(duplicate_result.risk_flags, ensure_ascii=False, sort_keys=True)
+            invoice.risk_flags = json.dumps(
+                duplicate_result.risk_flags, ensure_ascii=False, sort_keys=True
+            )
             invoice.display_status = derive_display_status(
                 processing_status=invoice.processing_status,
                 system_decision=invoice.system_decision,
@@ -604,7 +685,10 @@ class ProcessingService:
                     continue
                 matched_keys.append("seller_name")
 
-            if attachment_invoice_amount is not None and invoice.invoice_amount is not None:
+            if (
+                attachment_invoice_amount is not None
+                and invoice.invoice_amount is not None
+            ):
                 if attachment_invoice_amount != invoice.invoice_amount:
                     continue
                 matched_keys.append("invoice_amount")
@@ -612,7 +696,9 @@ class ProcessingService:
             if not matched_keys:
                 continue
 
-            matches.append((invoice.id, self._format_attachment_match_reason(matched_keys)))
+            matches.append(
+                (invoice.id, self._format_attachment_match_reason(matched_keys))
+            )
 
         return matches
 
@@ -621,11 +707,15 @@ class ProcessingService:
         joined = ", ".join(matched_keys)
         return f"Matched attachment to invoice using {joined}."
 
-    def _format_ambiguous_attachment_reason(self, matches: list[tuple[str, str]]) -> str:
+    def _format_ambiguous_attachment_reason(
+        self, matches: list[tuple[str, str]]
+    ) -> str:
         invoice_ids = ", ".join(match[0] for match in matches)
         return f"Multiple invoices matched the attachment summary: {invoice_ids}."
 
-    def _parse_invoice_evidence(self, invoice: InvoiceRecord) -> UnifiedDocumentEvidence:
+    def _parse_invoice_evidence(
+        self, invoice: InvoiceRecord
+    ) -> UnifiedDocumentEvidence:
         source_path = self._resolve_storage_path(invoice.storage_path_original)
         return self._parse_document(source_path.read_bytes()).evidence
 
@@ -681,15 +771,23 @@ class ProcessingService:
             select(ProcessingAttempt).where(ProcessingAttempt.job_id == job.id)
         ).all()
         job.total_items = len(attempts) or job.total_items
-        job.completed_items = sum(1 for attempt in attempts if attempt.status == "succeeded")
-        job.failed_items = sum(1 for attempt in attempts if attempt.status in {"failed", "retryable_failed"})
+        job.completed_items = sum(
+            1 for attempt in attempts if attempt.status == "succeeded"
+        )
+        job.failed_items = sum(
+            1
+            for attempt in attempts
+            if attempt.status in {"failed", "retryable_failed"}
+        )
 
     def _finalize_job(self, *, batch_id: str, job_id: str) -> None:
         batch = self.session.get(Batch, batch_id)
         job = self.session.get(ProcessingJob, job_id)
         if batch is None or job is None:
             return
-        invoices = self.session.scalars(select(InvoiceRecord).where(InvoiceRecord.batch_id == batch_id)).all()
+        invoices = self.session.scalars(
+            select(InvoiceRecord).where(InvoiceRecord.batch_id == batch_id)
+        ).all()
         pass_summary = summarize_suggested_pass(invoices)
         self._refresh_job_counters(job=job)
         job.current_stage = "completed" if job.failed_items == 0 else "failed"
@@ -699,12 +797,26 @@ class ProcessingService:
         batch.last_stage_code = "completed" if job.failed_items == 0 else "failed"
         batch.last_stage_text = STAGE_TEXTS[batch.last_stage_code]
         batch.total_files = len(invoices)
-        batch.completed_files = sum(1 for invoice in invoices if invoice.processing_status == "completed")
-        batch.failed_files = sum(1 for invoice in invoices if invoice.processing_status == "processing_failed")
-        batch.processing_files = max(batch.total_files - batch.completed_files - batch.failed_files, 0)
+        batch.completed_files = sum(
+            1 for invoice in invoices if invoice.processing_status == "completed"
+        )
+        batch.failed_files = sum(
+            1
+            for invoice in invoices
+            if invoice.processing_status == "processing_failed"
+        )
+        batch.processing_files = max(
+            batch.total_files - batch.completed_files - batch.failed_files, 0
+        )
         batch.suggested_pass_count = pass_summary.count
         batch.suggested_pass_total_amount = pass_summary.total_amount
-        batch.status = "completed" if batch.failed_files == 0 else "processing" if batch.processing_files else "completed"
+        batch.status = (
+            "completed"
+            if batch.failed_files == 0
+            else "processing"
+            if batch.processing_files
+            else "completed"
+        )
         self.session.commit()
 
     @staticmethod
@@ -715,7 +827,9 @@ class ProcessingService:
         return None
 
     @staticmethod
-    def _build_history_from_completed_invoices(invoices: list[InvoiceRecord]) -> list[dict[str, Any]]:
+    def _build_history_from_completed_invoices(
+        invoices: list[InvoiceRecord],
+    ) -> list[dict[str, Any]]:
         history: list[dict[str, Any]] = []
         for invoice in invoices:
             if invoice.processing_status != "completed":
@@ -758,7 +872,9 @@ class ProcessingService:
 
             if metadata and parse_mode != "ocr":
                 return ParsedDocument(
-                    evidence=self._build_fixture_evidence(metadata, extraction=text_extraction),
+                    evidence=self._build_fixture_evidence(
+                        metadata, extraction=text_extraction
+                    ),
                     metadata=metadata,
                 )
 
@@ -774,10 +890,14 @@ class ProcessingService:
         except EvidenceAdapterError as exc:
             raise ValueError(self._format_parse_failure(exc.error, text_error)) from exc
 
-        ocr_metadata = metadata or self._extract_fixture_metadata(ocr_extraction.raw_text)
+        ocr_metadata = metadata or self._extract_fixture_metadata(
+            ocr_extraction.raw_text
+        )
         if ocr_metadata:
             return ParsedDocument(
-                evidence=self._build_fixture_evidence(ocr_metadata, extraction=ocr_extraction),
+                evidence=self._build_fixture_evidence(
+                    ocr_metadata, extraction=ocr_extraction
+                ),
                 metadata=ocr_metadata,
             )
 
@@ -785,7 +905,9 @@ class ProcessingService:
         if generic_evidence is not None:
             return ParsedDocument(evidence=generic_evidence, metadata={})
 
-        raise ValueError("ocr_no_invoice_fields: Local OCR did not produce recognizable invoice fields.")
+        raise ValueError(
+            "ocr_no_invoice_fields: Local OCR did not produce recognizable invoice fields."
+        )
 
     @staticmethod
     def _extract_fixture_metadata(raw_text: str) -> dict[str, Any]:
@@ -854,7 +976,9 @@ class ProcessingService:
             value = metadata.get(field_name)
             if value in (None, ""):
                 continue
-            confidence = self._coerce_float(metadata.get(f"{field_name}_confidence"), default=overall_confidence)
+            confidence = self._coerce_float(
+                metadata.get(f"{field_name}_confidence"), default=overall_confidence
+            )
             confidence_fields[field_name] = confidence
             raw_lines.append(f"{field_name}: {value}")
             field_candidates.append(
@@ -882,7 +1006,9 @@ class ProcessingService:
             ]
 
         raw_text = extraction.raw_text.strip() or "\n".join(raw_lines).strip()
-        text_blocks = extraction.text_blocks or ([{"page_no": 1, "text": raw_text}] if raw_text else [])
+        text_blocks = extraction.text_blocks or (
+            [{"page_no": 1, "text": raw_text}] if raw_text else []
+        )
         payload = {
             "provider_name": extraction.provider_name,
             "provider_version": extraction.provider_version,
@@ -902,8 +1028,12 @@ class ProcessingService:
             return adapt_ocr_output(payload)
         return adapt_text_extraction(payload)
 
-    def _build_generic_evidence(self, extraction: ProviderExtractionPayload) -> UnifiedDocumentEvidence:
-        normalized_text = "\n".join(line.strip() for line in extraction.raw_text.splitlines() if line.strip())
+    def _build_generic_evidence(
+        self, extraction: ProviderExtractionPayload
+    ) -> UnifiedDocumentEvidence:
+        normalized_text = "\n".join(
+            line.strip() for line in extraction.raw_text.splitlines() if line.strip()
+        )
         if not normalized_text:
             raise ValueError("No usable text extracted from document.")
 
@@ -929,7 +1059,10 @@ class ProcessingService:
             raise ValueError("Unable to extract invoice fields from document text.")
 
         confidence_flags = list(dict.fromkeys(extraction.confidence_flags))
-        if extraction.base_confidence < 0.75 and "low_confidence" not in confidence_flags:
+        if (
+            extraction.base_confidence < 0.75
+            and "low_confidence" not in confidence_flags
+        ):
             confidence_flags.append("low_confidence")
 
         payload = {
@@ -938,9 +1071,13 @@ class ProcessingService:
             "provider_error_code": extraction.provider_error_code,
             "raw_text": normalized_text,
             "pages": extraction.pages or [{"page_no": 1}],
-            "text_blocks": extraction.text_blocks or [{"page_no": 1, "text": normalized_text}],
+            "text_blocks": extraction.text_blocks
+            or [{"page_no": 1, "text": normalized_text}],
             "table_lines": extraction.table_lines
-            or [{"row_no": index, "text": line} for index, line in enumerate(normalized_text.splitlines(), start=1)],
+            or [
+                {"row_no": index, "text": line}
+                for index, line in enumerate(normalized_text.splitlines(), start=1)
+            ],
             "field_candidates": field_candidates,
             "confidence_summary": {
                 "overall": extraction.base_confidence,
@@ -952,28 +1089,36 @@ class ProcessingService:
             return adapt_ocr_output(payload)
         return adapt_text_extraction(payload)
 
-    def _try_build_generic_evidence(self, extraction: ProviderExtractionPayload) -> UnifiedDocumentEvidence | None:
+    def _try_build_generic_evidence(
+        self, extraction: ProviderExtractionPayload
+    ) -> UnifiedDocumentEvidence | None:
         try:
             return self._build_generic_evidence(extraction)
         except (EvidenceAdapterError, ValueError):
             return None
 
     @staticmethod
-    def _format_parse_failure(error: StructuredParseError, text_error: StructuredParseError | None = None) -> str:
+    def _format_parse_failure(
+        error: StructuredParseError, text_error: StructuredParseError | None = None
+    ) -> str:
         message = f"{error.code}: {error.message}"
         if text_error is not None:
             message = f"{message} (text provider error: {text_error.code})"
         return message
 
     @staticmethod
-    def _candidate_value(evidence: UnifiedDocumentEvidence, field_name: str) -> str | None:
+    def _candidate_value(
+        evidence: UnifiedDocumentEvidence, field_name: str
+    ) -> str | None:
         candidate = evidence.best_candidate(field_name)
         if candidate is None:
             return None
         value = candidate.value.strip()
         return value or None
 
-    def _candidate_date(self, evidence: UnifiedDocumentEvidence, field_name: str) -> date | None:
+    def _candidate_date(
+        self, evidence: UnifiedDocumentEvidence, field_name: str
+    ) -> date | None:
         value = self._candidate_value(evidence, field_name)
         if not value:
             return None
@@ -984,7 +1129,9 @@ class ProcessingService:
             return None
 
     @staticmethod
-    def _candidate_amount(evidence: UnifiedDocumentEvidence, field_name: str) -> Decimal | None:
+    def _candidate_amount(
+        evidence: UnifiedDocumentEvidence, field_name: str
+    ) -> Decimal | None:
         candidate = evidence.best_candidate(field_name)
         if candidate is None or not candidate.value.strip():
             return None
@@ -994,9 +1141,13 @@ class ProcessingService:
             return None
 
     @staticmethod
-    def _compute_problem_count(*, risk_flags: list[str], buyer_validation: BuyerValidationResult) -> int:
+    def _compute_problem_count(
+        *, risk_flags: list[str], buyer_validation: BuyerValidationResult
+    ) -> int:
         count = len(risk_flags)
-        count += sum(1 for check in buyer_validation.checks if check.match_result != "matched")
+        count += sum(
+            1 for check in buyer_validation.checks if check.match_result != "matched"
+        )
         return count
 
     def _resolve_naming_template(self, snapshot: dict[str, Any]) -> str:
@@ -1009,13 +1160,19 @@ class ProcessingService:
         for source, target in SUPPORTED_NAMING_KEYS.items():
             template = template.replace(source, target)
 
-        if "{invoice_number}" not in template or "{amount}" not in template or "{date}" not in template:
+        if (
+            "{invoice_number}" not in template
+            or "{amount}" not in template
+            or "{date}" not in template
+        ):
             return DEFAULT_NAMING_TEMPLATE
         if not template.endswith(".pdf"):
             template = f"{template}.pdf"
         return template
 
-    def _write_renamed_copy(self, *, batch_no: str, source_path: Path, target_name: str) -> Path:
+    def _write_renamed_copy(
+        self, *, batch_no: str, source_path: Path, target_name: str
+    ) -> Path:
         renamed_dir = self.storage_root / "renamed" / batch_no
         renamed_dir.mkdir(parents=True, exist_ok=True)
 

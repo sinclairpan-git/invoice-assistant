@@ -3,7 +3,11 @@ import json
 from sqlalchemy import select
 
 from backend.app.db.models import AuditLog, Batch, RuleVersion
-from backend.app.db.session import create_database_engine, create_session_factory, init_db
+from backend.app.db.session import (
+    create_database_engine,
+    create_session_factory,
+    init_db,
+)
 from backend.app.services.batch_service import BatchService, IncomingFile
 from backend.app.services.config_service import ConfigService
 from backend.app.services.storage_service import StorageService
@@ -35,7 +39,11 @@ def test_config_versions_are_appended_and_audited(tmp_path):
         change_reason="policy update",
     )
 
-    versions = session.scalars(select(RuleVersion).where(RuleVersion.kind == "tax_profile").order_by(RuleVersion.version_no)).all()
+    versions = session.scalars(
+        select(RuleVersion)
+        .where(RuleVersion.kind == "tax_profile")
+        .order_by(RuleVersion.version_no)
+    ).all()
     assert len(versions) == 2
     assert first.version_no == "v1"
     assert second.version_no == "v2"
@@ -44,7 +52,9 @@ def test_config_versions_are_appended_and_audited(tmp_path):
     assert json.loads(versions[0].content_json) == {"rate": "6%"}
     assert json.loads(versions[1].content_json) == {"rate": "9%"}
 
-    audit_logs = session.scalars(select(AuditLog).where(AuditLog.entity_type == "rule_version")).all()
+    audit_logs = session.scalars(
+        select(AuditLog).where(AuditLog.entity_type == "rule_version")
+    ).all()
     assert len(audit_logs) == 2
     assert audit_logs[1].changed_by == "fin-admin"
     assert audit_logs[1].change_summary == "adjust tax profile"
@@ -56,7 +66,9 @@ def test_batch_creation_binds_latest_active_rule_versions(tmp_path):
     session = build_session(tmp_path)
     config_service = ConfigService(session)
     storage_service = StorageService(tmp_path / "storage")
-    batch_service = BatchService(session=session, storage_service=storage_service, config_service=config_service)
+    batch_service = BatchService(
+        session=session, storage_service=storage_service, config_service=config_service
+    )
 
     config_service.create_version(
         kind="tax_profile",

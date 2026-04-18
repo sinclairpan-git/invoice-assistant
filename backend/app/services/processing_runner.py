@@ -9,7 +9,9 @@ from backend.app.services.processing_service import ProcessingService
 
 
 class InProcessBatchRunner:
-    def __init__(self, *, session_factory: Callable[[], object], storage_root: Path | str) -> None:
+    def __init__(
+        self, *, session_factory: Callable[[], object], storage_root: Path | str
+    ) -> None:
         self.session_factory = session_factory
         self.storage_root = Path(storage_root)
         self.logger = get_app_logger("processing_runner")
@@ -33,7 +35,11 @@ class InProcessBatchRunner:
 
     def shutdown(self) -> None:
         with self._lock:
-            finished = [batch_id for batch_id, thread in self._threads.items() if not thread.is_alive()]
+            finished = [
+                batch_id
+                for batch_id, thread in self._threads.items()
+                if not thread.is_alive()
+            ]
             for batch_id in finished:
                 self._threads.pop(batch_id, None)
 
@@ -41,10 +47,15 @@ class InProcessBatchRunner:
         session = self.session_factory()
         try:
             log_event(self.logger, "batch_enqueued", batch_id=batch_id)
-            ProcessingService(session=session, storage_root=self.storage_root).process_batch(batch_id)
+            ProcessingService(
+                session=session, storage_root=self.storage_root
+            ).process_batch(batch_id)
             log_event(self.logger, "batch_completed", batch_id=batch_id)
         except Exception as exc:
-            self.logger.exception("batch processing crashed", extra={"batch_id": batch_id, "error": str(exc)})
+            self.logger.exception(
+                "batch processing crashed",
+                extra={"batch_id": batch_id, "error": str(exc)},
+            )
         finally:
             session.close()
             with self._lock:

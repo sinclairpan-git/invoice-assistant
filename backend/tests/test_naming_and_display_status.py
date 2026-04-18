@@ -2,7 +2,10 @@ from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 
-from backend.app.services.naming_service import DEFAULT_NAMING_TEMPLATE, build_renamed_filename
+from backend.app.services.naming_service import (
+    DEFAULT_NAMING_TEMPLATE,
+    build_renamed_filename,
+)
 from backend.app.services.status_service import (
     DISPLAY_STATUS_DUPLICATE,
     DISPLAY_STATUS_FAILED,
@@ -38,22 +41,74 @@ def test_missing_key_fields_skip_rename_with_reason():
 
 
 def test_display_status_priority_matches_spec():
-    assert derive_display_status(processing_status="processing_failed", system_decision="suggested_pass", duplicate_flag=False) == DISPLAY_STATUS_FAILED
-    assert derive_display_status(processing_status="completed", system_decision="suggested_pass", duplicate_flag=True) == DISPLAY_STATUS_DUPLICATE
-    assert derive_display_status(processing_status="completed", system_decision="review_required", duplicate_flag=False) == DISPLAY_STATUS_REVIEW
-    assert derive_display_status(processing_status="completed", system_decision="suggested_reject", duplicate_flag=False) == DISPLAY_STATUS_REJECT
-    assert derive_display_status(processing_status="completed", system_decision="suggested_pass", duplicate_flag=False) == DISPLAY_STATUS_PASS
+    assert (
+        derive_display_status(
+            processing_status="processing_failed",
+            system_decision="suggested_pass",
+            duplicate_flag=False,
+        )
+        == DISPLAY_STATUS_FAILED
+    )
+    assert (
+        derive_display_status(
+            processing_status="completed",
+            system_decision="suggested_pass",
+            duplicate_flag=True,
+        )
+        == DISPLAY_STATUS_DUPLICATE
+    )
+    assert (
+        derive_display_status(
+            processing_status="completed",
+            system_decision="review_required",
+            duplicate_flag=False,
+        )
+        == DISPLAY_STATUS_REVIEW
+    )
+    assert (
+        derive_display_status(
+            processing_status="completed",
+            system_decision="suggested_reject",
+            duplicate_flag=False,
+        )
+        == DISPLAY_STATUS_REJECT
+    )
+    assert (
+        derive_display_status(
+            processing_status="completed",
+            system_decision="suggested_pass",
+            duplicate_flag=False,
+        )
+        == DISPLAY_STATUS_PASS
+    )
 
 
 def test_suggested_pass_summary_supports_total_amount_and_filter_scope():
     records = [
-        SimpleNamespace(processing_status="completed", system_decision="suggested_pass", duplicate_flag=False, invoice_amount=Decimal("100.00")),
-        SimpleNamespace(processing_status="completed", system_decision="suggested_pass", duplicate_flag=True, invoice_amount=Decimal("88.00")),
-        SimpleNamespace(processing_status="completed", system_decision="review_required", duplicate_flag=False, invoice_amount=Decimal("66.00")),
+        SimpleNamespace(
+            processing_status="completed",
+            system_decision="suggested_pass",
+            duplicate_flag=False,
+            invoice_amount=Decimal("100.00"),
+        ),
+        SimpleNamespace(
+            processing_status="completed",
+            system_decision="suggested_pass",
+            duplicate_flag=True,
+            invoice_amount=Decimal("88.00"),
+        ),
+        SimpleNamespace(
+            processing_status="completed",
+            system_decision="review_required",
+            duplicate_flag=False,
+            invoice_amount=Decimal("66.00"),
+        ),
     ]
 
     batch_summary = summarize_suggested_pass(records)
-    filtered_summary = summarize_suggested_pass(records, filter_display_status=DISPLAY_STATUS_PASS)
+    filtered_summary = summarize_suggested_pass(
+        records, filter_display_status=DISPLAY_STATUS_PASS
+    )
 
     assert batch_summary.count == 1
     assert batch_summary.total_amount == Decimal("100.00")
@@ -72,7 +127,9 @@ def test_suggested_pass_summary_ignores_stale_persisted_display_status():
         )
     ]
 
-    filtered_summary = summarize_suggested_pass(records, filter_display_status=DISPLAY_STATUS_PASS)
+    filtered_summary = summarize_suggested_pass(
+        records, filter_display_status=DISPLAY_STATUS_PASS
+    )
 
     assert filtered_summary.count == 0
     assert filtered_summary.total_amount == Decimal("0.00")

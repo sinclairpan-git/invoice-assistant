@@ -40,7 +40,9 @@ def build_fixture_pdf_bytes(lines: list[str]) -> bytes:
         offsets.append(len(payload))
         payload += obj.encode("latin-1")
     startxref = len(payload)
-    xref = "xref\n0 6\n0000000000 65535 f \n" + "".join(f"{offset:010d} 00000 n \n" for offset in offsets)
+    xref = "xref\n0 6\n0000000000 65535 f \n" + "".join(
+        f"{offset:010d} 00000 n \n" for offset in offsets
+    )
     trailer = f"trailer << /Root 1 0 R /Size 6 >>\nstartxref\n{startxref}\n%%EOF\n"
     return payload + xref.encode("latin-1") + trailer.encode("latin-1")
 
@@ -99,7 +101,9 @@ def seed_active_rules(session) -> None:
     )
 
 
-def wait_for_batch_stage(client: TestClient, batch_id: str, expected_stage: str, *, timeout: float = 5.0) -> dict[str, object]:
+def wait_for_batch_stage(
+    client: TestClient, batch_id: str, expected_stage: str, *, timeout: float = 5.0
+) -> dict[str, object]:
     deadline = time.monotonic() + timeout
     last_payload: dict[str, object] | None = None
     while time.monotonic() < deadline:
@@ -109,12 +113,15 @@ def wait_for_batch_stage(client: TestClient, batch_id: str, expected_stage: str,
         is_terminal = (
             last_payload["total_files"] > 0
             and last_payload["processing_files"] == 0
-            and last_payload["completed_files"] + last_payload["failed_files"] == last_payload["total_files"]
+            and last_payload["completed_files"] + last_payload["failed_files"]
+            == last_payload["total_files"]
         )
         if last_payload["stage_code"] == expected_stage and is_terminal:
             return last_payload
         time.sleep(0.05)
-    raise AssertionError(f"Timed out waiting for batch {batch_id} to reach stage {expected_stage!r}: {last_payload!r}")
+    raise AssertionError(
+        f"Timed out waiting for batch {batch_id} to reach stage {expected_stage!r}: {last_payload!r}"
+    )
 
 
 def test_parse_document_uses_real_pdf_text_provider_for_electronic_fixture(tmp_path):
@@ -122,7 +129,9 @@ def test_parse_document_uses_real_pdf_text_provider_for_electronic_fixture(tmp_p
     session = app.state.session_factory()
     try:
         service = ProcessingService(session, storage_root=app.state.storage_root)
-        parsed = service._parse_document((FIXTURE_DIR / "01-standard-electronic.pdf").read_bytes())
+        parsed = service._parse_document(
+            (FIXTURE_DIR / "01-standard-electronic.pdf").read_bytes()
+        )
     finally:
         session.close()
 
@@ -138,7 +147,9 @@ def test_parse_document_forces_local_ocr_for_scanned_fixture(tmp_path):
     session = app.state.session_factory()
     try:
         service = ProcessingService(session, storage_root=app.state.storage_root)
-        parsed = service._parse_document((FIXTURE_DIR / "02-scanned-ocr.pdf").read_bytes())
+        parsed = service._parse_document(
+            (FIXTURE_DIR / "02-scanned-ocr.pdf").read_bytes()
+        )
     finally:
         session.close()
 
@@ -183,9 +194,13 @@ def test_low_confidence_ocr_fixture_is_review_required(tmp_path):
 
     session = app.state.session_factory()
     try:
-        batch = session.scalar(select(Batch).where(Batch.batch_no == "BATCH-RUNTIME-LOW-001"))
+        batch = session.scalar(
+            select(Batch).where(Batch.batch_no == "BATCH-RUNTIME-LOW-001")
+        )
         assert batch is not None
-        invoice = session.scalar(select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id))
+        invoice = session.scalar(
+            select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id)
+        )
         assert invoice is not None
 
         invoice_id = invoice.id
@@ -201,7 +216,9 @@ def test_low_confidence_ocr_fixture_is_review_required(tmp_path):
     detail = detail_response.json()["item"]
     assert detail["display_status"] == DISPLAY_STATUS_REVIEW
     assert detail["evidence_items"][0]["provider_name"] == "rapidocr-onnxruntime"
-    assert detail["evidence_items"][0]["confidence_summary"]["overall"] == pytest.approx(0.61)
+    assert detail["evidence_items"][0]["confidence_summary"][
+        "overall"
+    ] == pytest.approx(0.61)
     assert "low_confidence" in detail["risk_flags"]
 
 
@@ -215,7 +232,9 @@ def test_invalid_pdf_records_structured_failure_reason(tmp_path):
     response = client.post(
         "/api/batches",
         data={"created_by": "runtime-tester", "batch_no": "BATCH-RUNTIME-FAIL-001"},
-        files=[("files", ("broken.pdf", b"%PDF-1.7\nbroken fixture", "application/pdf"))],
+        files=[
+            ("files", ("broken.pdf", b"%PDF-1.7\nbroken fixture", "application/pdf"))
+        ],
     )
 
     assert response.status_code == 200
@@ -229,9 +248,13 @@ def test_invalid_pdf_records_structured_failure_reason(tmp_path):
 
     session = app.state.session_factory()
     try:
-        batch = session.scalar(select(Batch).where(Batch.batch_no == "BATCH-RUNTIME-FAIL-001"))
+        batch = session.scalar(
+            select(Batch).where(Batch.batch_no == "BATCH-RUNTIME-FAIL-001")
+        )
         assert batch is not None
-        invoice = session.scalar(select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id))
+        invoice = session.scalar(
+            select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id)
+        )
         assert invoice is not None
 
         assert invoice.processing_status == "processing_failed"
@@ -291,10 +314,16 @@ def test_attachment_match_can_reclassify_review_keyword_invoice(tmp_path):
 
     session = app.state.session_factory()
     try:
-        batch = session.scalar(select(Batch).where(Batch.batch_no == "BATCH-RUNTIME-ATTACH-001"))
+        batch = session.scalar(
+            select(Batch).where(Batch.batch_no == "BATCH-RUNTIME-ATTACH-001")
+        )
         assert batch is not None
-        invoice = session.scalar(select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id))
-        attachment = session.scalar(select(AttachmentDocument).where(AttachmentDocument.batch_id == batch.id))
+        invoice = session.scalar(
+            select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id)
+        )
+        attachment = session.scalar(
+            select(AttachmentDocument).where(AttachmentDocument.batch_id == batch.id)
+        )
         assert invoice is not None
         assert attachment is not None
 
@@ -315,7 +344,10 @@ def test_attachment_parse_failure_does_not_create_invoice_runtime_failure(tmp_pa
     client = TestClient(app)
     response = client.post(
         "/api/batches",
-        data={"created_by": "runtime-tester", "batch_no": "BATCH-RUNTIME-ATTACH-FAIL-001"},
+        data={
+            "created_by": "runtime-tester",
+            "batch_no": "BATCH-RUNTIME-ATTACH-FAIL-001",
+        },
         files=[
             (
                 "files",
@@ -325,7 +357,10 @@ def test_attachment_parse_failure_does_not_create_invoice_runtime_failure(tmp_pa
                     "application/pdf",
                 ),
             ),
-            ("files", ("detail-list.pdf", b"%PDF-1.7\nbroken fixture", "application/pdf")),
+            (
+                "files",
+                ("detail-list.pdf", b"%PDF-1.7\nbroken fixture", "application/pdf"),
+            ),
         ],
     )
 
@@ -338,10 +373,16 @@ def test_attachment_parse_failure_does_not_create_invoice_runtime_failure(tmp_pa
 
     session = app.state.session_factory()
     try:
-        batch = session.scalar(select(Batch).where(Batch.batch_no == "BATCH-RUNTIME-ATTACH-FAIL-001"))
+        batch = session.scalar(
+            select(Batch).where(Batch.batch_no == "BATCH-RUNTIME-ATTACH-FAIL-001")
+        )
         assert batch is not None
-        invoice = session.scalar(select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id))
-        attachment = session.scalar(select(AttachmentDocument).where(AttachmentDocument.batch_id == batch.id))
+        invoice = session.scalar(
+            select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id)
+        )
+        attachment = session.scalar(
+            select(AttachmentDocument).where(AttachmentDocument.batch_id == batch.id)
+        )
         assert invoice is not None
         assert attachment is not None
 
@@ -363,7 +404,10 @@ def test_attachment_match_stays_ambiguous_when_multiple_invoices_fit(tmp_path):
     client = TestClient(app)
     response = client.post(
         "/api/batches",
-        data={"created_by": "runtime-tester", "batch_no": "BATCH-RUNTIME-ATTACH-AMB-001"},
+        data={
+            "created_by": "runtime-tester",
+            "batch_no": "BATCH-RUNTIME-ATTACH-AMB-001",
+        },
         files=[
             (
                 "files",
@@ -423,9 +467,13 @@ def test_attachment_match_stays_ambiguous_when_multiple_invoices_fit(tmp_path):
 
     session = app.state.session_factory()
     try:
-        batch = session.scalar(select(Batch).where(Batch.batch_no == "BATCH-RUNTIME-ATTACH-AMB-001"))
+        batch = session.scalar(
+            select(Batch).where(Batch.batch_no == "BATCH-RUNTIME-ATTACH-AMB-001")
+        )
         assert batch is not None
-        attachment = session.scalar(select(AttachmentDocument).where(AttachmentDocument.batch_id == batch.id))
+        attachment = session.scalar(
+            select(AttachmentDocument).where(AttachmentDocument.batch_id == batch.id)
+        )
         assert attachment is not None
 
         assert attachment.attachment_status == "ambiguous"

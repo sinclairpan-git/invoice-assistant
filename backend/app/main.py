@@ -9,7 +9,13 @@ from backend.app.api.actors import router as actors_router
 from backend.app.api.batches import router as batches_router
 from backend.app.api.config import router as config_router
 from backend.app.api.invoices import router as invoices_router
-from backend.app.db.session import BACKEND_ROOT, DEFAULT_DATABASE_URL, create_database_engine, create_session_factory, init_db
+from backend.app.db.session import (
+    BACKEND_ROOT,
+    DEFAULT_DATABASE_URL,
+    create_database_engine,
+    create_session_factory,
+    init_db,
+)
 from backend.app.core.logging import get_app_logger
 from backend.app.services.processing_runner import InProcessBatchRunner
 from backend.app.services.recovery_service import RecoveryService

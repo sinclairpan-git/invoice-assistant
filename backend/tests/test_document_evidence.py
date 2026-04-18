@@ -4,7 +4,11 @@ from pathlib import Path
 import pytest
 
 from backend.app.services.parsing.evidence_models import EvidenceAdapterError
-from backend.app.services.parsing.providers import adapt_ocr_output, adapt_text_extraction, extract_pdf_text
+from backend.app.services.parsing.providers import (
+    adapt_ocr_output,
+    adapt_text_extraction,
+    extract_pdf_text,
+)
 
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "invoices"
@@ -45,10 +49,21 @@ def test_ocr_payload_adapts_to_unified_document_evidence():
             "provider_name": "paddleocr",
             "provider_version": "3.0",
             "text": "Invoice No: 12345678",
-            "text_blocks": [{"page_no": 1, "text": "Invoice No: 12345678", "bbox_json": {"x0": 1, "y0": 2}}],
+            "text_blocks": [
+                {
+                    "page_no": 1,
+                    "text": "Invoice No: 12345678",
+                    "bbox_json": {"x0": 1, "y0": 2},
+                }
+            ],
             "table_lines": [{"text": "Consulting Service", "row_no": 1}],
             "field_candidates": [
-                {"field_name": "invoice_number", "value": "12345678", "normalized_value": "12345678", "confidence": 0.88}
+                {
+                    "field_name": "invoice_number",
+                    "value": "12345678",
+                    "normalized_value": "12345678",
+                    "confidence": 0.88,
+                }
             ],
         }
     )
@@ -61,7 +76,9 @@ def test_ocr_payload_adapts_to_unified_document_evidence():
 
 def test_missing_raw_text_raises_structured_error():
     with pytest.raises(EvidenceAdapterError) as exc_info:
-        adapt_text_extraction({"provider_name": "pdfminer", "provider_version": "2026.4"})
+        adapt_text_extraction(
+            {"provider_name": "pdfminer", "provider_version": "2026.4"}
+        )
 
     error = exc_info.value.to_dict()
     assert error["code"] == "missing_raw_text"
@@ -70,7 +87,9 @@ def test_missing_raw_text_raises_structured_error():
 
 
 def test_pdf_text_provider_extracts_real_pdf_binary_to_payload():
-    extraction = extract_pdf_text((FIXTURE_DIR / "01-standard-electronic.pdf").read_bytes())
+    extraction = extract_pdf_text(
+        (FIXTURE_DIR / "01-standard-electronic.pdf").read_bytes()
+    )
 
     assert extraction.source_type == "text"
     assert extraction.provider_name == "pypdf"

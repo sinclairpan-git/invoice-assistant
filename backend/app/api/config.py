@@ -7,7 +7,12 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.dependencies import assert_actor_has_role, get_session, get_trusted_actor, resolve_actor
+from backend.app.api.dependencies import (
+    assert_actor_has_role,
+    get_session,
+    get_trusted_actor,
+    resolve_actor,
+)
 from backend.app.api.serializers import serialize_rule_version
 from backend.app.db.models import RuleVersion
 from backend.app.services.config_service import ConfigService, RULE_KINDS
@@ -39,12 +44,16 @@ def get_active_config(session: Session = Depends(get_session)) -> dict[str, obje
 
 
 @router.get("/{kind}/versions")
-def list_rule_versions(kind: str, session: Session = Depends(get_session)) -> dict[str, object]:
+def list_rule_versions(
+    kind: str, session: Session = Depends(get_session)
+) -> dict[str, object]:
     if kind not in RULE_KINDS:
         raise HTTPException(status_code=400, detail="Unsupported rule kind.")
 
     versions = session.scalars(
-        select(RuleVersion).where(RuleVersion.kind == kind).order_by(RuleVersion.changed_at.desc())
+        select(RuleVersion)
+        .where(RuleVersion.kind == kind)
+        .order_by(RuleVersion.changed_at.desc())
     ).all()
     return {"items": [serialize_rule_version(version) for version in versions]}
 

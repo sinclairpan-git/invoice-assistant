@@ -41,7 +41,11 @@ def get_trusted_actor(request: Request) -> TrustedActor:
         return TrustedActor(
             actor_id=str(actor_payload.get("actor_id") or "trusted-actor"),
             display_name=str(actor_payload.get("display_name") or "本机管理员"),
-            roles=tuple(str(role) for role in actor_payload.get("roles", []) if str(role).strip()),
+            roles=tuple(
+                str(role)
+                for role in actor_payload.get("roles", [])
+                if str(role).strip()
+            ),
             trusted=True,
         )
 

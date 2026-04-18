@@ -10,7 +10,11 @@ from starlette.testclient import TestClient
 from backend.app.db.models import AuditLog, Batch, ExportJob, InvoiceRecord
 from backend.app.main import create_app
 from backend.app.services.config_service import ConfigService
-from backend.app.services.status_service import DISPLAY_STATUS_DUPLICATE, DISPLAY_STATUS_PASS, DISPLAY_STATUS_REVIEW
+from backend.app.services.status_service import (
+    DISPLAY_STATUS_DUPLICATE,
+    DISPLAY_STATUS_PASS,
+    DISPLAY_STATUS_REVIEW,
+)
 
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "invoices"
@@ -61,7 +65,9 @@ def load_fixture_uploads() -> list[tuple[str, tuple[str, bytes, str]]]:
     return uploads
 
 
-def wait_for_batch_stage(client: TestClient, batch_id: str, expected_stage: str, *, timeout: float = 5.0) -> dict[str, object]:
+def wait_for_batch_stage(
+    client: TestClient, batch_id: str, expected_stage: str, *, timeout: float = 5.0
+) -> dict[str, object]:
     deadline = time.monotonic() + timeout
     last_payload: dict[str, object] | None = None
     while time.monotonic() < deadline:
@@ -71,12 +77,15 @@ def wait_for_batch_stage(client: TestClient, batch_id: str, expected_stage: str,
         is_terminal = (
             last_payload["total_files"] > 0
             and last_payload["processing_files"] == 0
-            and last_payload["completed_files"] + last_payload["failed_files"] == last_payload["total_files"]
+            and last_payload["completed_files"] + last_payload["failed_files"]
+            == last_payload["total_files"]
         )
         if last_payload["stage_code"] == expected_stage and is_terminal:
             return last_payload
         time.sleep(0.05)
-    raise AssertionError(f"Timed out waiting for batch {batch_id} to reach stage {expected_stage!r}: {last_payload!r}")
+    raise AssertionError(
+        f"Timed out waiting for batch {batch_id} to reach stage {expected_stage!r}: {last_payload!r}"
+    )
 
 
 def test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent(tmp_path):
@@ -115,7 +124,10 @@ def test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent(tmp
     batch_detail_response = client.get(f"/api/batches/{batch_id}")
     assert batch_detail_response.status_code == 200
     batch_detail = batch_detail_response.json()["item"]
-    assert batch_detail["snapshot"]["naming_rules"]["content"]["pattern"] == "{date}_{amount}_{number}"
+    assert (
+        batch_detail["snapshot"]["naming_rules"]["content"]["pattern"]
+        == "{date}_{amount}_{number}"
+    )
     assert batch_detail["export_jobs"] == []
 
     all_invoices_response = client.get(f"/api/batches/{batch_id}/invoices")
@@ -125,8 +137,14 @@ def test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent(tmp
     assert all_invoices_payload["status_counts"][DISPLAY_STATUS_PASS] == 2
     assert all_invoices_payload["status_counts"][DISPLAY_STATUS_REVIEW] == 1
     assert all_invoices_payload["status_counts"][DISPLAY_STATUS_DUPLICATE] == 1
-    assert all_invoices_payload["batch_summary"] == {"count": 2, "total_amount": "384.50"}
-    assert all_invoices_payload["filtered_summary"] == {"count": 2, "total_amount": "384.50"}
+    assert all_invoices_payload["batch_summary"] == {
+        "count": 2,
+        "total_amount": "384.50",
+    }
+    assert all_invoices_payload["filtered_summary"] == {
+        "count": 2,
+        "total_amount": "384.50",
+    }
 
     pass_response = client.get(
         f"/api/batches/{batch_id}/invoices",
@@ -154,7 +172,9 @@ def test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent(tmp
     assert review_invoice["original_filename"] == "03-review-required.pdf"
 
     duplicate_invoice = next(
-        item for item in all_invoices_payload["items"] if item["display_status"] == DISPLAY_STATUS_DUPLICATE
+        item
+        for item in all_invoices_payload["items"]
+        if item["display_status"] == DISPLAY_STATUS_DUPLICATE
     )
     assert duplicate_invoice["original_filename"] == "04-duplicate.pdf"
 
@@ -182,7 +202,9 @@ def test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent(tmp
     assert duplicate_detail["duplicate_group_key"]
     assert duplicate_detail["risk_flags"] == ["suspected_duplicate"]
 
-    preview_response = client.get(f"/api/invoices/{pass_payload['items'][0]['id']}/preview")
+    preview_response = client.get(
+        f"/api/invoices/{pass_payload['items'][0]['id']}/preview"
+    )
     assert preview_response.status_code == 200
     assert preview_response.headers["content-type"] == "application/pdf"
     assert preview_response.content.startswith(b"%PDF")
@@ -192,7 +214,10 @@ def test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent(tmp
         json={"export_type": "suggested_pass_zip", "created_by": "exporter-a"},
     )
     assert blocked_pass_export_response.status_code == 400
-    assert blocked_pass_export_response.json()["detail"] == "当前批次仍有待复核票据，无法导出建议通过 ZIP。"
+    assert (
+        blocked_pass_export_response.json()["detail"]
+        == "当前批次仍有待复核票据，无法导出建议通过 ZIP。"
+    )
 
     approve_response = client.post(
         f"/api/invoices/{review_invoice['id']}/review-actions",
@@ -260,15 +285,21 @@ def test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent(tmp
     assert batch_detail_after_exports.status_code == 200
     batch_detail_payload = batch_detail_after_exports.json()["item"]
     assert len(batch_detail_payload["export_jobs"]) == 3
-    assert batch_detail_payload["export_manifest_path"] == manifest_export["output_path"]
+    assert (
+        batch_detail_payload["export_manifest_path"] == manifest_export["output_path"]
+    )
 
     session = app.state.session_factory()
     batch_row = session.get(Batch, batch_id)
     invoices = session.scalars(
-        select(InvoiceRecord).where(InvoiceRecord.batch_id == batch_id).order_by(InvoiceRecord.original_filename.asc())
+        select(InvoiceRecord)
+        .where(InvoiceRecord.batch_id == batch_id)
+        .order_by(InvoiceRecord.original_filename.asc())
     ).all()
     export_jobs = session.scalars(
-        select(ExportJob).where(ExportJob.batch_id == batch_id).order_by(ExportJob.created_at.asc())
+        select(ExportJob)
+        .where(ExportJob.batch_id == batch_id)
+        .order_by(ExportJob.created_at.asc())
     ).all()
 
     assert batch_row is not None

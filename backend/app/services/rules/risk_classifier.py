@@ -50,24 +50,39 @@ def classify_risk(
         )
         matched_rules.append("minimum_confidence")
 
-    if any(flag in {"low_confidence", "ocr_low_confidence"} for flag in evidence.confidence_summary.flags):
+    if any(
+        flag in {"low_confidence", "ocr_low_confidence"}
+        for flag in evidence.confidence_summary.flags
+    ):
         risk_flags.append("low_confidence")
-        reasons.append("Confidence summary already flagged the document as low confidence.")
+        reasons.append(
+            "Confidence summary already flagged the document as low confidence."
+        )
         matched_rules.append("confidence_summary_flag")
 
-    review_keywords = _normalized_set(business_rules.get("review_keywords", DEFAULT_REVIEW_KEYWORDS))
+    review_keywords = _normalized_set(
+        business_rules.get("review_keywords", DEFAULT_REVIEW_KEYWORDS)
+    )
     reject_keywords = _normalized_set(business_rules.get("reject_keywords", []))
     pass_keywords = _normalized_set(business_rules.get("pass_keywords", []))
     seller_blacklist = _normalized_set(business_rules.get("seller_blacklist", []))
     seller_whitelist = _normalized_set(business_rules.get("seller_whitelist", []))
 
-    line_texts = [_normalize_text(str(line.get("text") or "")) for line in evidence.table_lines]
-    if any(keyword and keyword in line_text for keyword in review_keywords for line_text in line_texts):
+    line_texts = [
+        _normalize_text(str(line.get("text") or "")) for line in evidence.table_lines
+    ]
+    if any(
+        keyword and keyword in line_text
+        for keyword in review_keywords
+        for line_text in line_texts
+    ):
         risk_flags.append("fuzzy_line_items")
         reasons.append("Line items contain review keywords and require manual review.")
         matched_rules.append("review_keywords")
 
-    if any(line.get("mixed_invoice") or line.get("fuzzy") for line in evidence.table_lines):
+    if any(
+        line.get("mixed_invoice") or line.get("fuzzy") for line in evidence.table_lines
+    ):
         risk_flags.append("mixed_invoice")
         reasons.append("Line item metadata indicates mixed or fuzzy invoice content.")
         matched_rules.append("table_line_metadata")
@@ -85,7 +100,11 @@ def classify_risk(
             matched_rules=_dedupe(matched_rules),
         )
 
-    if any(keyword and keyword in line_text for keyword in reject_keywords for line_text in line_texts):
+    if any(
+        keyword and keyword in line_text
+        for keyword in reject_keywords
+        for line_text in line_texts
+    ):
         risk_flags.append("reject_keyword_hit")
         reasons.append("Line items matched a configured reject keyword.")
         matched_rules.append("reject_keywords")
@@ -114,7 +133,11 @@ def classify_risk(
             matched_rules=matched_rules,
         )
 
-    if any(keyword and keyword in line_text for keyword in pass_keywords for line_text in line_texts):
+    if any(
+        keyword and keyword in line_text
+        for keyword in pass_keywords
+        for line_text in line_texts
+    ):
         reasons.append("Line items matched a configured pass keyword.")
         matched_rules.append("pass_keywords")
         return RiskClassificationResult(
@@ -134,7 +157,9 @@ def classify_risk(
 
 def _normalized_set(raw_values: object) -> set[str]:
     if isinstance(raw_values, (list, tuple, set)):
-        return {_normalize_text(str(value)) for value in raw_values if str(value).strip()}
+        return {
+            _normalize_text(str(value)) for value in raw_values if str(value).strip()
+        }
     return set()
 
 
@@ -147,16 +172,27 @@ def _select_classification_evidence(
     if attachment_evidence is None or not attachment_evidence.table_lines:
         return evidence
 
-    review_keywords = _normalized_set(business_rules.get("review_keywords", DEFAULT_REVIEW_KEYWORDS))
-    line_texts = [_normalize_text(str(line.get("text") or "")) for line in evidence.table_lines]
-    has_review_keyword = any(keyword and keyword in line_text for keyword in review_keywords for line_text in line_texts)
+    review_keywords = _normalized_set(
+        business_rules.get("review_keywords", DEFAULT_REVIEW_KEYWORDS)
+    )
+    line_texts = [
+        _normalize_text(str(line.get("text") or "")) for line in evidence.table_lines
+    ]
+    has_review_keyword = any(
+        keyword and keyword in line_text
+        for keyword in review_keywords
+        for line_text in line_texts
+    )
     if not has_review_keyword:
         return evidence
 
     minimum_confidence = float(business_rules.get("minimum_confidence", 0.75))
     if attachment_evidence.confidence_summary.overall < minimum_confidence:
         return evidence
-    if any(flag in {"low_confidence", "ocr_low_confidence"} for flag in attachment_evidence.confidence_summary.flags):
+    if any(
+        flag in {"low_confidence", "ocr_low_confidence"}
+        for flag in attachment_evidence.confidence_summary.flags
+    ):
         return evidence
 
     merged = evidence.model_copy(deep=True)

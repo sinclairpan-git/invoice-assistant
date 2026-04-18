@@ -51,7 +51,9 @@ ATTACHMENT_STATUS_LABELS = {
 def _serialize_attachment_status_counts(batch: Batch) -> dict[str, int]:
     counts: dict[str, int] = {}
     for attachment in batch.attachment_documents:
-        counts[attachment.attachment_status] = counts.get(attachment.attachment_status, 0) + 1
+        counts[attachment.attachment_status] = (
+            counts.get(attachment.attachment_status, 0) + 1
+        )
     return counts
 
 
@@ -61,7 +63,9 @@ def _serialize_attachment_document(attachment: AttachmentDocument) -> dict[str, 
         "batch_id": attachment.batch_id,
         "original_filename": attachment.original_filename,
         "attachment_status": attachment.attachment_status,
-        "attachment_status_label": ATTACHMENT_STATUS_LABELS.get(attachment.attachment_status, attachment.attachment_status),
+        "attachment_status_label": ATTACHMENT_STATUS_LABELS.get(
+            attachment.attachment_status, attachment.attachment_status
+        ),
         "matched_invoice_id": attachment.matched_invoice_id,
         "match_reason": attachment.match_reason,
     }
@@ -95,7 +99,9 @@ def serialize_batch(
         "processing_files": batch.processing_files,
         "failed_files": batch.failed_files,
         "suggested_pass_count": batch.suggested_pass_count,
-        "suggested_pass_total_amount": _serialize_scalar(batch.suggested_pass_total_amount),
+        "suggested_pass_total_amount": _serialize_scalar(
+            batch.suggested_pass_total_amount
+        ),
         "export_manifest_path": batch.export_manifest_path,
         "invoice_file_count": len(batch.invoices),
         "attachment_file_count": len(batch.attachment_documents),
@@ -106,7 +112,10 @@ def serialize_batch(
     if include_snapshot:
         payload["snapshot"] = _json_load(batch.snapshot_json, {})
     if include_exports:
-        payload["export_jobs"] = [serialize_export_job(job) for job in sorted(batch.export_jobs, key=lambda item: item.created_at)]
+        payload["export_jobs"] = [
+            serialize_export_job(job)
+            for job in sorted(batch.export_jobs, key=lambda item: item.created_at)
+        ]
     return payload
 
 
@@ -167,10 +176,18 @@ def serialize_invoice_detail(invoice: InvoiceRecord) -> dict[str, object]:
     payload["last_error_message"] = invoice.last_error_message
     payload["retryable"] = invoice.retryable
     payload["provider_diagnostic"] = _latest_attempt_diagnostic(invoice)
-    payload["evidence_items"] = [serialize_document_evidence(item) for item in invoice.evidence_items]
-    payload["extracted_fields"] = [serialize_extracted_field(item) for item in invoice.extracted_fields]
-    payload["field_checks"] = [serialize_field_check(item) for item in invoice.field_checks]
-    payload["review_actions"] = [serialize_review_action(item) for item in invoice.review_actions]
+    payload["evidence_items"] = [
+        serialize_document_evidence(item) for item in invoice.evidence_items
+    ]
+    payload["extracted_fields"] = [
+        serialize_extracted_field(item) for item in invoice.extracted_fields
+    ]
+    payload["field_checks"] = [
+        serialize_field_check(item) for item in invoice.field_checks
+    ]
+    payload["review_actions"] = [
+        serialize_review_action(item) for item in invoice.review_actions
+    ]
     return payload
 
 
