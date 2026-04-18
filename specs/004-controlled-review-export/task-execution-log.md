@@ -2,7 +2,7 @@
 
 **功能编号**：`004-controlled-review-export`  
 **创建日期**：2026-04-18  
-**状态**：Batch 1、Batch 2 已完成；待进入单票结果字段与导出门槛批次
+**状态**：Batch 1、Batch 2、Batch 3、Batch 4 已完成；待进入 branch close-out / 提交整理
 
 ## 1. 归档规则
 
@@ -193,3 +193,157 @@
 - 当前批次 branch disposition 状态：进行中
 - 当前批次 worktree disposition 状态：进行中
 - 是否继续下一批：是，下一批为 `T31` / `T32`
+
+### Batch 2026-04-18-003 | T31-T32
+
+#### 2.1 批次范围
+
+- 覆盖任务：`T31`、`T32`
+- 覆盖阶段：Batch 3 单票结果字段、导出门槛与审计落地
+- 预读范围：`.ai-sdlc/memory/constitution.md`、`specs/004-controlled-review-export/spec.md`、`specs/004-controlled-review-export/plan.md`、`specs/004-controlled-review-export/tasks.md`
+- 激活的规则：单票统一解释层、导出门槛收敛、成功/拒绝导出审计
+
+#### 2.2 统一验证命令
+
+- `V1`（adapter acknowledgement）
+  - 命令：`python -m ai_sdlc adapter activate`
+  - 结果：PASS，记录当前 Codex adapter acknowledgement；仍按 `soft_prompt_only` 理解。
+- `V2`（框架预演）
+  - 命令：`python -m ai_sdlc run --dry-run`
+  - 结果：RETRY，`execute` / `close` 阶段仍有 open gates；不阻塞本批定向实现。
+- `V3`（后端定向回归）
+  - 命令：`uv run --project backend --extra dev python -m pytest backend/tests/test_export_service.py backend/tests/test_end_to_end_batch.py backend/tests/test_api_workflows.py -q`
+  - 结果：GREEN，`14 passed`。
+- `V4`（前端定向回归）
+  - 命令：`npm test -- frontend/tests/runtime-ui.test.tsx frontend/tests/app-shell.test.tsx`（在 `frontend/` 目录执行）
+  - 结果：GREEN，`7 passed`。
+
+#### 2.3 任务记录
+
+##### T31 | 红灯测试覆盖单票结果字段和导出门槛
+
+- 改动范围：`backend/tests/test_export_service.py`、`backend/tests/test_end_to_end_batch.py`
+- 改动内容：补齐红灯断言，覆盖详情/台账统一解释字段、`suggested_pass_zip` 待复核拦截、成功与拒绝导出审计差异，以及建议通过/问题票归档口径。
+- 新增/调整的测试：
+  - `test_export_service_blocks_non_terminal_batch_exports_and_records_denied_audit`
+  - `test_export_service_blocks_pending_review_pass_export_and_success_manifest_includes_compliance_fields`
+  - `test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent`
+- 执行的命令：`uv run --project backend --extra dev python -m pytest backend/tests/test_export_service.py backend/tests/test_end_to_end_batch.py -q`
+- 测试结果：RED 阶段暴露详情缺少解释字段、导出台账缺少合规列、建议通过 ZIP 未拦截待复核票据、导出审计缺少门槛结论。
+- 是否符合任务目标：是。
+
+##### T32 | 实现单票解释层、导出台账字段和导出门槛
+
+- 改动范围：`backend/app/services/compliance_service.py`、`backend/app/api/serializers.py`、`backend/app/api/invoices.py`、`backend/app/api/batches.py`、`backend/app/services/export_service.py`、`frontend/src/app/types.ts`、`frontend/src/components/results/InvoiceDrawer.tsx`、`frontend/tests/runtime-ui.test.tsx`
+- 改动内容：
+  - 新增统一 `compliance_service`，为单票摘要、详情、导出台账和导出选择逻辑提供一致的基础合规、业务合规、最终结论、结论原因、建议动作口径。
+  - 将批次列表/筛选汇总与 `suggested_pass_zip` 选择口径收敛到“可归档建议通过票”；`issue_zip` 收敛到其余终态票据。
+  - 为导出服务增加批次终态门槛、待复核门槛和 `export_denied` / `export_completed` / `export_failed` 审计门槛快照。
+  - 前端类型与 `InvoiceDrawer` 展示同步接入解释字段，并补齐运行时 UI 测试样例。
+- 新增/调整的测试：沿用 `T31` 红灯用例与前端 `runtime-ui` 定向用例做实现验证。
+- 执行的命令：
+  - `uv run --project backend --extra dev python -m pytest backend/tests/test_export_service.py backend/tests/test_end_to_end_batch.py backend/tests/test_api_workflows.py -q`
+  - `npm test -- frontend/tests/runtime-ui.test.tsx frontend/tests/app-shell.test.tsx`
+- 测试结果：GREEN，后端 `14 passed`；前端 `7 passed`。
+- 是否符合任务目标：是。
+
+#### 2.4 代码审查结论（Mandatory）
+
+- 宪章/规格对齐：已对齐。Batch 3 只补统一解释层、导出门槛与审计，不扩展规则引擎和登录体系。
+- 代码质量：解释口径集中到单一服务，导出门槛和审计落在导出服务内部，前端只消费新增字段并展示。
+- 测试质量：先依据红灯断言暴露缺口，再实现并复跑后端/前端定向回归为 GREEN。
+- 结论：允许进入 Batch 4 的执行归档与框架收口检查。
+
+#### 2.5 任务/计划同步状态（Mandatory）
+
+- `tasks.md` 同步状态：已同步，`T31` / `T32` 勾选完成。
+- `related_plan`（如存在）同步状态：无额外 external plan。
+- 关联 branch/worktree disposition 计划：进入 Batch 4，补齐执行日志和 dry-run / worktree 检查。
+- 说明：本批完成实现与定向验证，未执行提交整理。
+
+#### 2.6 自动决策记录（如有）
+
+- 基础合规状态仅在处理失败时判为“不通过”；待复核和低置信度不再直接打成基础不通过，以匹配四期“基础合规”和“业务待复核”分层要求。
+- 导出审计仅在存在角色快照时写入 `actor_roles`，避免服务级无角色调用污染最小审计断言，同时保留 API 路径的角色留痕。
+
+#### 2.7 批次结论
+
+- Batch 3 已完成，系统现在可以在详情、列表汇总、导出台账和导出门槛上复用统一的财务/合规解释层。
+
+#### 2.8 归档后动作
+
+- 已完成 git 提交：否
+- 提交哈希：待后续整理脏变更并分批提交时生成
+- 当前批次 branch disposition 状态：进行中
+- 当前批次 worktree disposition 状态：进行中
+- 是否继续下一批：是，下一批为 `T41` / `T42`
+
+### Batch 2026-04-18-004 | T41-T42
+
+#### 2.1 批次范围
+
+- 覆盖任务：`T41`、`T42`
+- 覆盖阶段：Batch 4 验证归档与 branch close-out 准备
+- 预读范围：`.ai-sdlc/memory/constitution.md`、`specs/004-controlled-review-export/spec.md`、`specs/004-controlled-review-export/tasks.md`
+- 激活的规则：执行归档同步、dry-run 回看、工作区状态可解释
+
+#### 2.2 统一验证命令
+
+- `V1`（框架预演回看）
+  - 命令：`python -m ai_sdlc run --dry-run`
+  - 结果：RETRY，`execute` / `close` 阶段仍有 open gates；与本轮实现无新增冲突。
+- `V2`（工作区状态检查）
+  - 命令：`git status --short`
+  - 结果：PASS，脏变更均可归因于 Batch 3 / Batch 4 或 AI-SDLC 运行态文件。
+
+#### 2.3 任务记录
+
+##### T41 | 更新执行日志与任务勾选
+
+- 改动范围：`specs/004-controlled-review-export/tasks.md`、`specs/004-controlled-review-export/task-execution-log.md`
+- 改动内容：同步勾选 `T31` / `T32` / `T41` / `T42`，并追加 Batch 3、Batch 4 的实现与验证归档。
+- 新增/调整的测试：无，文档归档更新。
+- 执行的命令：文档对账与前述验证结果回填。
+- 测试结果：不适用。
+- 是否符合任务目标：是。
+
+##### T42 | 完成框架验证与工作区收口检查
+
+- 改动范围：工作区状态、`.ai-sdlc/project/config/project-config.yaml`
+- 改动内容：重新执行 dry-run，确认当前 open gates 仍停留在 `execute` / `close`；核对工作区脏变更均与本轮实现或 AI-SDLC 运行态刷新有关。
+- 新增/调整的测试：无，使用框架 dry-run 与工作区检查命令。
+- 执行的命令：
+  - `python -m ai_sdlc run --dry-run`
+  - `git status --short`
+- 测试结果：dry-run 返回 RETRY（open gates 未关闭）；工作区状态可解释。
+- 是否符合任务目标：是。
+
+#### 2.4 代码审查结论（Mandatory）
+
+- 宪章/规格对齐：已对齐。收口批次只做归档和状态检查，不追加范围外改动。
+- 代码质量：无新增生产逻辑。
+- 测试质量：以框架 dry-run 和工作区状态核对作为收口证据。
+- 结论：本轮实现可以进入用户要求的“分类分批提交”阶段。
+
+#### 2.5 任务/计划同步状态（Mandatory）
+
+- `tasks.md` 同步状态：已同步，`T41` / `T42` 勾选完成。
+- `related_plan`（如存在）同步状态：无额外 external plan。
+- 关联 branch/worktree disposition 计划：下一步整理当前脏变更并按主题分批提交。
+- 说明：close-out 准备完成，但尚未创建新提交。
+
+#### 2.6 自动决策记录（如有）
+
+- `python -m ai_sdlc run --dry-run` 的 open gates 继续按流程状态处理，不将其误判为本轮功能回归失败。
+
+#### 2.7 批次结论
+
+- Batch 4 已完成；本轮功能实现、验证和执行归档已收口，后续只差提交整理。
+
+#### 2.8 归档后动作
+
+- 已完成 git 提交：否
+- 提交哈希：待整理当前脏变更时生成
+- 当前批次 branch disposition 状态：进行中
+- 当前批次 worktree disposition 状态：进行中
+- 是否继续下一批：否，等待提交整理或进一步指令
