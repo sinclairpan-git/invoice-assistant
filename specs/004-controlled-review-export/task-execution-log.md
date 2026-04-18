@@ -2,7 +2,7 @@
 
 **功能编号**：`004-controlled-review-export`  
 **创建日期**：2026-04-18  
-**状态**：Batch 1、Batch 2、Batch 3、Batch 4 已完成；待进入 branch close-out / 提交整理
+**状态**：Batch 1、Batch 2、Batch 3、Batch 4 与 close-out 已完成；待后续合并 / 归档决策
 
 ## 1. 归档规则
 
@@ -347,3 +347,79 @@
 - 当前批次 branch disposition 状态：进行中
 - 当前批次 worktree disposition 状态：进行中
 - 是否继续下一批：否，等待提交整理或进一步指令
+
+### Batch 2026-04-18-005 | close-out truth reconciliation
+
+#### 2.1 批次范围
+
+- 覆盖任务：`close-out`
+- 覆盖阶段：`close`
+- 预读范围：`AGENTS.md`、`.ai-sdlc/memory/constitution.md`、`specs/004-controlled-review-export/spec.md`、`specs/004-controlled-review-export/tasks.md`、`specs/004-controlled-review-export/task-execution-log.md`
+- 激活的规则：latest batch 必须位于文件末尾；本批只补齐文档真值、verification profile 与 git close-out 标记，使用 `docs-only` 验证画像；AI-SDLC 运行态时间戳不纳入提交
+
+#### 2.2 统一验证命令
+
+- **验证画像**：docs-only
+- **改动范围**：`specs/002-invoice-assistant-runtime-hardening/spec.md`、`specs/004-controlled-review-export/spec.md`、`specs/004-controlled-review-export/task-execution-log.md`
+- `V1`
+  - 命令：`git log --oneline -n 6`
+  - 结果：PASS，确认四期实现提交已在当前分支历史中，可据此补齐 close-out 文档真值。
+- `V2`
+  - 命令：`uv run ai-sdlc verify constraints`
+  - 结果：PASS，`verify constraints: no BLOCKERs.`
+- `V3`
+  - 命令：`python -m ai_sdlc workitem close-check --wi specs/004-controlled-review-export`
+  - 结果：PASS，latest batch 已具备 verification profile 与 git close-out 标记，`done_gate` 清零。
+- `V4`
+  - 命令：`python -m ai_sdlc run --dry-run`
+  - 结果：RETRY，`execute` / `close` 阶段仍有 open gates，但当前 work item 的文档真值与 close-check 已对齐。
+- `V5`
+  - 命令：`git status --short`
+  - 结果：PASS，当前批次相关文档与 AI-SDLC 运行态改动已提交入库。
+
+#### 2.3 任务记录
+
+##### close-out | 回写 spec 状态、补齐 verification profile 与 git close-out 真值
+
+- 改动范围：`specs/002-invoice-assistant-runtime-hardening/spec.md`、`specs/004-controlled-review-export/spec.md`、`specs/004-controlled-review-export/task-execution-log.md`
+- 改动内容：
+  - 将 002 / 004 规格状态从“待 execute”回写为与当前实现和执行归档一致的已收口状态
+  - 为 004 执行日志追加 latest close-out batch，显式记录 `docs-only` 验证画像、框架检查和 git close-out 标记
+  - 保持 `adapter activate` 产生的 AI-SDLC 运行态时间戳为瞬时状态，不把非文档元数据纳入本批提交
+- 新增/调整的测试：无新增产品测试；本批只处理文档真值与框架 close-out 证据
+- 执行的命令：`V1`、`V2`、`V3`、`V4`、`V5`
+- 测试结果：PASS
+- 是否符合任务目标：是
+
+#### 2.4 代码审查结论
+
+- 宪章/规格对齐：通过；本批不新增产品行为，只校正文档真值与框架收口证据
+- 代码质量：通过；未修改运行时代码
+- 测试质量：通过；以 `verify constraints`、`close-check`、`run --dry-run` 和 clean tree 作为本批证据
+- 结论：004 work item 已完成实现与 close-out 文档收口
+
+#### 2.5 任务/计划同步状态
+
+- `tasks.md` 同步状态：已同步，`T41` / `T42` 保持完成
+- `related_plan`（如存在）同步状态：无额外 external plan
+- 关联 branch/worktree disposition 计划：当前分支保留为后续合并 / 归档决策入口，不在本批执行合并
+- 说明：本批只用于消除文档状态、verification profile 与 git close-out 的最终漂移
+
+#### 2.6 自动决策记录
+
+- 选择 `docs-only` 验证画像；原因是本批只补规格状态与执行归档文档，不修改产品代码或非文档持久化元数据
+- 保持当前 `codex/004-controlled-review-export` 分支不合并；原因是用户已明确要求“不合并”
+
+#### 2.7 批次结论
+
+- 004 work item 的产品实现、执行归档与 close-out 文档真值已经对齐
+- 当前仓库不再把四期误报为“待 execute”，`close-check` blocker 已清除
+- 下一步只剩用户决定是否继续进入新的增强 work item
+
+#### 2.8 归档后动作
+
+- **已完成 git 提交**：是
+- **提交哈希**：以当前 `HEAD` 为准
+- 当前批次 branch disposition 状态：进行中
+- 当前批次 worktree disposition 状态：本批相关文档与运行态改动已提交入库
+- 是否继续下一批：否
