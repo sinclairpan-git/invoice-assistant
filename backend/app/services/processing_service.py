@@ -13,7 +13,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_app_logger, log_event
-from backend.app.db.models import Batch, ExtractedField, FieldCheck, InvoiceRecord, ProcessingAttempt, ProcessingJob
+from backend.app.db.models import (
+    AttachmentDocument,
+    Batch,
+    ExtractedField,
+    FieldCheck,
+    InvoiceRecord,
+    ProcessingAttempt,
+    ProcessingJob,
+)
 from backend.app.services.naming_service import DEFAULT_NAMING_TEMPLATE, build_renamed_filename
 from backend.app.services.parsing.evidence_models import EvidenceAdapterError, StructuredParseError, UnifiedDocumentEvidence
 from backend.app.services.parsing.providers import (
@@ -53,6 +61,7 @@ STAGE_TEXTS = {
     "classification": "规则校验中",
     "duplicate_check": "重复票检测中",
     "finalization": "结果归档中",
+    "attachment_matching": "清单匹配中",
     "completed": "批次处理完成",
     "failed": "批次处理失败",
 }
@@ -93,6 +102,7 @@ class ProcessingService:
         ).all()
         job = self._ensure_job(batch=batch, total_items=len(invoices))
         history = self._build_history_from_completed_invoices(invoices)
+        parsed_invoice_evidence: dict[str, UnifiedDocumentEvidence] = {}
 
         for invoice in invoices:
             if invoice.processing_status in TERMINAL_INVOICE_STATUSES and invoice.last_attempt_id:
@@ -100,9 +110,16 @@ class ProcessingService:
 
             attempt = self._start_attempt(batch=batch, invoice=invoice, job=job)
             try:
-                self._process_invoice(batch=batch, invoice=invoice, snapshot=snapshot, history=history, attempt=attempt)
+                evidence = self._process_invoice(
+                    batch=batch,
+                    invoice=invoice,
+                    snapshot=snapshot,
+                    history=history,
+                    attempt=attempt,
+                )
                 self._mark_attempt_succeeded(batch=batch, invoice=invoice, job=job, attempt=attempt)
                 self.session.commit()
+                parsed_invoice_evidence[invoice.id] = evidence
                 history.append(
                     {
                         "invoice_number": invoice.invoice_number,
@@ -128,6 +145,12 @@ class ProcessingService:
                 self.session.rollback()
                 self._mark_invoice_failed(invoice_id=invoice.id, attempt_id=attempt.id, job_id=job.id, reason=str(exc))
 
+        self._match_attachments_and_reclassify(
+            batch=batch,
+            invoices=invoices,
+            snapshot=snapshot,
+            parsed_invoice_evidence=parsed_invoice_evidence,
+        )
         self._finalize_job(batch_id=batch_id, job_id=job.id)
         self.session.refresh(batch)
         return batch
@@ -140,7 +163,7 @@ class ProcessingService:
         snapshot: dict[str, Any],
         history: list[dict[str, Any]],
         attempt: ProcessingAttempt,
-    ) -> None:
+    ) -> UnifiedDocumentEvidence:
         self._advance_stage(batch=batch, invoice=invoice, attempt=attempt, stage_code="text_extraction")
         source_path = self._resolve_storage_path(invoice.storage_path_original)
         parsed = self._parse_document(source_path.read_bytes())
@@ -273,6 +296,7 @@ class ProcessingService:
                 invoice.artifact_status = "renamed"
 
         self.session.flush()
+        return evidence
 
     def _mark_invoice_failed(self, *, invoice_id: str, attempt_id: str, job_id: str, reason: str) -> None:
         invoice = self.session.get(InvoiceRecord, invoice_id)
@@ -426,6 +450,218 @@ class ProcessingService:
         job.last_heartbeat_at = datetime.now(UTC)
         self._refresh_job_counters(job=job)
 
+    def _match_attachments_and_reclassify(
+        self,
+        *,
+        batch: Batch,
+        invoices: list[InvoiceRecord],
+        snapshot: dict[str, Any],
+        parsed_invoice_evidence: dict[str, UnifiedDocumentEvidence],
+    ) -> None:
+        attachments = self.session.scalars(
+            select(AttachmentDocument)
+            .where(AttachmentDocument.batch_id == batch.id)
+            .order_by(AttachmentDocument.original_filename.asc())
+        ).all()
+        if not attachments:
+            return
+
+        self._advance_batch_stage(batch=batch, stage_code="attachment_matching")
+
+        completed_invoices = [invoice for invoice in invoices if invoice.processing_status == "completed"]
+        invoice_by_id = {invoice.id: invoice for invoice in completed_invoices}
+        attachment_by_id = {attachment.id: attachment for attachment in attachments}
+        attachment_evidence: dict[str, UnifiedDocumentEvidence] = {}
+        matched_invoice_ids: dict[str, str] = {}
+        invoice_to_attachment_ids: dict[str, list[str]] = {}
+
+        for attachment in attachments:
+            attachment.matched_invoice_id = None
+            source_path = self._resolve_storage_path(attachment.storage_path_original)
+            try:
+                evidence = self._parse_document(source_path.read_bytes()).evidence
+            except Exception as exc:
+                attachment.attachment_status = "parse_failed"
+                attachment.match_reason = str(exc)
+                continue
+
+            attachment_evidence[attachment.id] = evidence
+            matches = self._find_attachment_matches(evidence=evidence, invoices=completed_invoices)
+            if not matches:
+                attachment.attachment_status = "unmatched"
+                attachment.match_reason = "No same-batch invoice matched the attachment summary."
+                continue
+            if len(matches) > 1:
+                attachment.attachment_status = "ambiguous"
+                attachment.match_reason = self._format_ambiguous_attachment_reason(matches)
+                continue
+
+            invoice_id, reason = matches[0]
+            attachment.attachment_status = "matched"
+            attachment.matched_invoice_id = invoice_id
+            attachment.match_reason = reason
+            matched_invoice_ids[attachment.id] = invoice_id
+            invoice_to_attachment_ids.setdefault(invoice_id, []).append(attachment.id)
+
+        for invoice_id, attachment_ids in invoice_to_attachment_ids.items():
+            if len(attachment_ids) < 2:
+                continue
+            for attachment_id in attachment_ids:
+                attachment = attachment_by_id[attachment_id]
+                attachment.attachment_status = "ambiguous"
+                attachment.matched_invoice_id = None
+                attachment.match_reason = "Multiple attachments matched the same invoice; manual review required."
+                matched_invoice_ids.pop(attachment_id, None)
+
+        business_rules = self._snapshot_content(snapshot, "business_rules")
+        tax_profile = self._snapshot_content(snapshot, "tax_profile")
+
+        for attachment_id, invoice_id in matched_invoice_ids.items():
+            invoice = invoice_by_id.get(invoice_id)
+            attachment = attachment_by_id[attachment_id]
+            current_attachment_evidence = attachment_evidence.get(attachment_id)
+            if (
+                invoice is None
+                or current_attachment_evidence is None
+                or invoice.processing_status != "completed"
+                or invoice.system_decision != "review_required"
+            ):
+                continue
+
+            main_evidence = parsed_invoice_evidence.get(invoice_id) or self._parse_invoice_evidence(invoice)
+            buyer_validation = validate_buyer_fields(
+                evidence=main_evidence,
+                tax_profile=tax_profile,
+            )
+            risk_result = classify_risk(
+                evidence=main_evidence,
+                attachment_evidence=current_attachment_evidence,
+                business_rules=business_rules,
+                buyer_validation=buyer_validation,
+            )
+            current_risk_flags = json.loads(invoice.risk_flags or "[]")
+            if risk_result.decision == invoice.system_decision and risk_result.risk_flags == current_risk_flags:
+                continue
+
+            duplicate_result = detect_suspected_duplicate(
+                invoice_data={
+                    "invoice_number": invoice.invoice_number,
+                    "invoice_code": invoice.invoice_code,
+                    "seller_name": invoice.seller_name,
+                    "invoice_date": invoice.invoice_date,
+                    "invoice_amount": invoice.invoice_amount,
+                    "system_decision": risk_result.decision,
+                    "risk_flags": risk_result.risk_flags,
+                },
+                history=self._build_history_excluding_invoice(invoices=invoices, invoice_id=invoice.id),
+            )
+
+            invoice.system_decision = duplicate_result.decision
+            invoice.duplicate_flag = duplicate_result.duplicate_flag
+            invoice.duplicate_group_key = duplicate_result.duplicate_group_key
+            invoice.risk_flags = json.dumps(duplicate_result.risk_flags, ensure_ascii=False, sort_keys=True)
+            invoice.display_status = derive_display_status(
+                processing_status=invoice.processing_status,
+                system_decision=invoice.system_decision,
+                duplicate_flag=invoice.duplicate_flag,
+            )
+            invoice.problem_count = self._compute_problem_count(
+                risk_flags=duplicate_result.risk_flags,
+                buyer_validation=buyer_validation,
+            )
+            attachment.attachment_status = "consumed"
+            attachment.match_reason = f"{attachment.match_reason}; reclassified the invoice using attachment line items."
+
+        self.session.flush()
+
+    def _find_attachment_matches(
+        self,
+        *,
+        evidence: UnifiedDocumentEvidence,
+        invoices: list[InvoiceRecord],
+    ) -> list[tuple[str, str]]:
+        matches: list[tuple[str, str]] = []
+        attachment_invoice_number = self._candidate_value(evidence, "invoice_number")
+        attachment_invoice_code = self._candidate_value(evidence, "invoice_code")
+        attachment_seller_name = self._candidate_value(evidence, "seller_name")
+        attachment_invoice_amount = self._candidate_amount(evidence, "invoice_amount")
+
+        for invoice in invoices:
+            matched_keys: list[str] = []
+
+            if attachment_invoice_number and invoice.invoice_number:
+                if attachment_invoice_number != invoice.invoice_number:
+                    continue
+                matched_keys.append("invoice_number")
+
+            if attachment_invoice_code and invoice.invoice_code:
+                if attachment_invoice_code != invoice.invoice_code:
+                    continue
+                matched_keys.append("invoice_code")
+
+            if attachment_seller_name and invoice.seller_name:
+                if attachment_seller_name != invoice.seller_name:
+                    continue
+                matched_keys.append("seller_name")
+
+            if attachment_invoice_amount is not None and invoice.invoice_amount is not None:
+                if attachment_invoice_amount != invoice.invoice_amount:
+                    continue
+                matched_keys.append("invoice_amount")
+
+            if not matched_keys:
+                continue
+
+            matches.append((invoice.id, self._format_attachment_match_reason(matched_keys)))
+
+        return matches
+
+    @staticmethod
+    def _format_attachment_match_reason(matched_keys: list[str]) -> str:
+        joined = ", ".join(matched_keys)
+        return f"Matched attachment to invoice using {joined}."
+
+    def _format_ambiguous_attachment_reason(self, matches: list[tuple[str, str]]) -> str:
+        invoice_ids = ", ".join(match[0] for match in matches)
+        return f"Multiple invoices matched the attachment summary: {invoice_ids}."
+
+    def _parse_invoice_evidence(self, invoice: InvoiceRecord) -> UnifiedDocumentEvidence:
+        source_path = self._resolve_storage_path(invoice.storage_path_original)
+        return self._parse_document(source_path.read_bytes()).evidence
+
+    @staticmethod
+    def _build_history_excluding_invoice(
+        *,
+        invoices: list[InvoiceRecord],
+        invoice_id: str,
+    ) -> list[dict[str, Any]]:
+        history: list[dict[str, Any]] = []
+        for invoice in invoices:
+            if invoice.id == invoice_id or invoice.processing_status != "completed":
+                continue
+            history.append(
+                {
+                    "invoice_number": invoice.invoice_number,
+                    "invoice_code": invoice.invoice_code,
+                    "seller_name": invoice.seller_name,
+                    "invoice_date": invoice.invoice_date,
+                    "invoice_amount": invoice.invoice_amount,
+                    "system_decision": invoice.system_decision,
+                    "risk_flags": json.loads(invoice.risk_flags or "[]"),
+                }
+            )
+        return history
+
+    def _advance_batch_stage(self, *, batch: Batch, stage_code: str) -> None:
+        batch.last_stage_code = stage_code
+        batch.last_stage_text = STAGE_TEXTS.get(stage_code, stage_code)
+        current_job = self._current_job(batch)
+        if current_job is not None:
+            current_job.status = "running"
+            current_job.current_stage = stage_code
+            current_job.last_heartbeat_at = datetime.now(UTC)
+        self.session.flush()
+
     def _advance_stage(
         self,
         *,
@@ -437,13 +673,7 @@ class ProcessingService:
         attempt.stage = stage_code
         invoice.processing_status = "processing"
         invoice.processing_stage = stage_code
-        batch.last_stage_code = stage_code
-        batch.last_stage_text = STAGE_TEXTS.get(stage_code, stage_code)
-        current_job = self._current_job(batch)
-        if current_job is not None:
-            current_job.status = "running"
-            current_job.current_stage = stage_code
-            current_job.last_heartbeat_at = datetime.now(UTC)
+        self._advance_batch_stage(batch=batch, stage_code=stage_code)
         self.session.flush()
 
     def _refresh_job_counters(self, *, job: ProcessingJob) -> None:

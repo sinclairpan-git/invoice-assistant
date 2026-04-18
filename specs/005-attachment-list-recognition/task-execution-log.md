@@ -100,8 +100,8 @@
 
 #### 2.8 归档后动作
 
-- 已完成 git 提交：否（须与 **本批唯一一次** commit 对齐）
-- 提交哈希：待本批提交后生成
+- 已完成 git 提交：是
+- 提交哈希：见当前 `HEAD`（提交内回填精确哈希会导致哈希再次变化）
 - 当前批次 branch disposition 状态：进行中
 - 当前批次 worktree disposition 状态：沿用当前工作区
 - 是否继续下一批：是
@@ -174,8 +174,79 @@
 
 #### 2.8 归档后动作
 
-- 已完成 git 提交：否（须与 **本批唯一一次** commit 对齐）
-- 提交哈希：待本批提交后生成
+- 已完成 git 提交：是
+- 提交哈希：见当前 `HEAD`（提交内回填精确哈希会导致哈希再次变化）
+- 当前批次 branch disposition 状态：进行中
+- 当前批次 worktree disposition 状态：沿用当前工作区
+- 是否继续下一批：是
+
+### Batch 2026-04-19-001 | T31-T32
+
+#### 2.1 批次范围
+
+- 覆盖任务：`T31`、`T32`
+- 覆盖阶段：Batch 3 附件解析、匹配与分类
+- 预读范围：`specs/005-attachment-list-recognition/spec.md`、`specs/005-attachment-list-recognition/plan.md`、`specs/005-attachment-list-recognition/tasks.md`、`backend/app/services/processing_service.py`、`backend/app/services/rules/risk_classifier.py`、`backend/tests/test_processing_runtime.py`、`backend/tests/test_rules_pipeline.py`
+- 激活的规则：TDD 优先、主票语义不回退、附件 sidecar 保守消费、失败口径与进度口径不扩散
+
+#### 2.2 统一验证命令
+
+- `R1`（红灯验证，如有 TDD）
+  - 命令：`uv run pytest backend/tests/test_rules_pipeline.py -q`、`uv run pytest backend/tests/test_processing_runtime.py -q`
+  - 结果：先红后绿；初始分别因 `classify_risk()` 尚不接受 `attachment_evidence`，以及附件状态仍停留在 `pending_match`/主票未重判而失败
+- `V1`（定向验证）
+  - 命令：`uv run pytest backend/tests/test_rules_pipeline.py -q`、`uv run pytest backend/tests/test_processing_runtime.py -q`
+  - 结果：通过（6 passed, 7 passed）
+- `V2`（回归验证）
+  - 命令：`uv run pytest backend/tests/test_batch_storage.py -q`、`uv run pytest backend/tests/test_api_workflows.py -q`、`uv run pytest backend/tests/test_progress_reporting.py -q`
+  - 结果：通过（4 passed, 9 passed, 3 passed）
+
+#### 2.3 任务记录
+
+##### T31 | 为清单附件补充解析与匹配规则
+
+- 改动范围：`backend/app/services/processing_service.py`、`backend/tests/test_processing_runtime.py`
+- 改动内容：在 `ProcessingService.process_batch` 末尾新增附件 sidecar phase；复用既有 `_parse_document` 解析 `AttachmentDocument`，按同批次发票号/代码/销方/金额做保守匹配，写回 `matched`/`consumed`/`ambiguous`/`unmatched`/`parse_failed` 状态与原因；附件解析失败不进入 `InvoiceRecord` 的失败通道，也不改变 `total_files`/`recent_failures` 语义。
+- 新增/调整的测试：新增 runtime 场景覆盖“可信附件触发主票重判”“附件解析失败不产生运行时失败”“多发票歧义匹配保持保守”三条路径，并使用最小 PDF fixture 控制主票/附件元数据。
+- 执行的命令：`uv run pytest backend/tests/test_processing_runtime.py -q`
+- 测试结果：通过（7 passed）
+- 是否符合任务目标：是
+
+##### T32 | 让风险分类器消费附件证据
+
+- 改动范围：`backend/app/services/rules/risk_classifier.py`、`backend/tests/test_rules_pipeline.py`
+- 改动内容：为 `classify_risk` 增加可选 `attachment_evidence` 输入；仅当主票命中“详见清单”类关键词且附件自身达到置信阈值时，才用附件表格行替换主票的占位行文本，再复用既有白名单/拒绝/通过规则；主票低置信、附件低置信或未触发“详见清单”时均保持原判。
+- 新增/调整的测试：新增三条纯规则单测，覆盖“可信附件可解除详见清单默认待复核”“低置信主票仍保留复核”“无详见清单触发时忽略附件”。
+- 执行的命令：`uv run pytest backend/tests/test_rules_pipeline.py -q`
+- 测试结果：通过（6 passed）
+- 是否符合任务目标：是
+
+#### 2.4 代码审查结论（Mandatory）
+
+- 宪章/规格对齐：实现严格停留在 Batch 3，附件只作为 sidecar 证据参与匹配与重判，没有抬升为新的 processing 主对象。
+- 代码质量：附件解析与匹配被限制在 `ProcessingService` 的批次后处理阶段；`risk_classifier` 仍保持纯函数，只接受紧凑证据输入。
+- 测试质量：红绿循环覆盖了规则边界、附件状态机，以及 `total_files`/`recent_failures` 的回归口径。
+- 结论：可进入 Batch 4 的结果展示与导出对齐。
+
+#### 2.5 任务/计划同步状态（Mandatory）
+
+- `tasks.md` 同步状态：已同步，T31-T32 标记完成
+- `related_plan`（如存在）同步状态：无需调整，仍以 `plan.md` 为准
+- 关联 branch/worktree disposition 计划：继续在 `codex/005-attachment-list-recognition` 上推进 Batch 4
+- 说明：`.ai-sdlc/project/config/project-config.yaml` 与 `.ai-sdlc/project/config/project-state.yaml` 仍为运行态变更，未纳入本批提交
+
+#### 2.6 自动决策记录（如有）
+
+- 在财务/工程双重对抗评估后，确定本批只做 `ProcessingService` 内的附件 sidecar：不扩散到 `ProcessingJob`、`ProcessingAttempt`、`DocumentEvidence` 或批次总览序列化。
+
+#### 2.7 批次结论
+
+- Batch 3 已完成附件摘要解析、同批次保守匹配和“详见清单”主票的受控重判，同时保持主票失败与进度统计语义不回退。
+
+#### 2.8 归档后动作
+
+- 已完成 git 提交：是
+- 提交哈希：见当前 `HEAD`（提交内回填精确哈希会导致哈希再次变化）
 - 当前批次 branch disposition 状态：进行中
 - 当前批次 worktree disposition 状态：沿用当前工作区
 - 是否继续下一批：是

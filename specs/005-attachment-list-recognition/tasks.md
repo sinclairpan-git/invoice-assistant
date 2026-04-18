@@ -105,7 +105,7 @@ Batch 5: 回归验证与收口
   1. 清单附件能生成统一证据摘要，并尝试匹配到主发票。
   2. 匹配失败时会记录明确原因，而不是丢失附件上下文。
 - **验证**：`python -m pytest backend/tests/test_processing_service.py -q`
-- **状态**：未开始
+- **状态**：已完成
 
 ### Task 3.2 让风险分类器消费附件证据
 
@@ -118,7 +118,7 @@ Batch 5: 回归验证与收口
   1. 对“详见清单”主票，系统会优先检查可信附件证据。
   2. 附件足够可信时复用既有通过/拒绝规则；不足时保留 `review_required` 并写明原因。
 - **验证**：`python -m pytest backend/tests/test_rules_pipeline.py -q`
-- **状态**：未开始
+- **状态**：已完成
 
 ## Batch 4：结果展示与导出对齐
 

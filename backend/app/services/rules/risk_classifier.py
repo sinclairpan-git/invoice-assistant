@@ -22,7 +22,14 @@ def classify_risk(
     evidence: UnifiedDocumentEvidence,
     business_rules: dict[str, object],
     buyer_validation: BuyerValidationResult | None = None,
+    attachment_evidence: UnifiedDocumentEvidence | None = None,
 ) -> RiskClassificationResult:
+    evidence = _select_classification_evidence(
+        evidence=evidence,
+        business_rules=business_rules,
+        attachment_evidence=attachment_evidence,
+    )
+
     if buyer_validation and buyer_validation.decision == "suggested_reject":
         return RiskClassificationResult(
             decision="suggested_reject",
@@ -129,6 +136,32 @@ def _normalized_set(raw_values: object) -> set[str]:
     if isinstance(raw_values, (list, tuple, set)):
         return {_normalize_text(str(value)) for value in raw_values if str(value).strip()}
     return set()
+
+
+def _select_classification_evidence(
+    *,
+    evidence: UnifiedDocumentEvidence,
+    business_rules: dict[str, object],
+    attachment_evidence: UnifiedDocumentEvidence | None,
+) -> UnifiedDocumentEvidence:
+    if attachment_evidence is None or not attachment_evidence.table_lines:
+        return evidence
+
+    review_keywords = _normalized_set(business_rules.get("review_keywords", DEFAULT_REVIEW_KEYWORDS))
+    line_texts = [_normalize_text(str(line.get("text") or "")) for line in evidence.table_lines]
+    has_review_keyword = any(keyword and keyword in line_text for keyword in review_keywords for line_text in line_texts)
+    if not has_review_keyword:
+        return evidence
+
+    minimum_confidence = float(business_rules.get("minimum_confidence", 0.75))
+    if attachment_evidence.confidence_summary.overall < minimum_confidence:
+        return evidence
+    if any(flag in {"low_confidence", "ocr_low_confidence"} for flag in attachment_evidence.confidence_summary.flags):
+        return evidence
+
+    merged = evidence.model_copy(deep=True)
+    merged.table_lines = [dict(line) for line in attachment_evidence.table_lines]
+    return merged
 
 
 def _normalize_text(value: str) -> str:
