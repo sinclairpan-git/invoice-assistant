@@ -2,7 +2,7 @@
 
 **功能编号**：`001-invoice-assistant-mvp`  
 **创建日期**：2026-04-17  
-**状态**：Batch 6 端到端验证与交付收口完成
+**状态**：Batch 6 端到端验证与交付收口完成；2026-04-18 文档真相漂移已收口
 
 ## 1. 归档规则
 
@@ -573,3 +573,69 @@
 - 当前批次 branch disposition 状态：进行中
 - 当前批次 worktree disposition 状态：进行中
 - 是否继续下一批：否，本期进入收口
+
+### Batch 2026-04-18-001 | close-out truth drift
+
+#### 2.47 批次范围
+
+- 覆盖任务：`close-out truth drift`
+- 覆盖阶段：`close`
+- 预读范围：`AGENTS.md`、`.ai-sdlc/memory/constitution.md`、`specs/001-invoice-assistant-mvp/spec.md`、`specs/001-invoice-assistant-mvp/task-execution-log.md`
+- 激活的规则：仅允许对 `.md` 文档做事实对齐，不改产品代码；最新批次按 `docs-only` 画像记录验证证据与 git 收口标记
+
+#### 2.48 统一验证命令
+
+- **验证画像**：docs-only
+- **改动范围**：`specs/001-invoice-assistant-mvp/spec.md`、`specs/001-invoice-assistant-mvp/task-execution-log.md`
+- `V1`
+  - 命令：`uv run ai-sdlc verify constraints`
+  - 结果：PASS
+- `V2`
+  - 命令：`python -m ai_sdlc workitem close-check --wi specs/001-invoice-assistant-mvp`
+  - 结果：PASS，无阻塞项
+
+#### 2.49 任务记录
+
+- 改动范围：`specs/001-invoice-assistant-mvp/spec.md`、`specs/001-invoice-assistant-mvp/task-execution-log.md`
+- 改动内容：
+  - 将 `spec.md` 顶部状态从执行前口径更新为一期 MVP 已完成实现与 close-out 收口的当前事实
+  - 将核心约束从“文档阶段不越过 execute”修正为“后续增强必须通过新 work item 承接”的历史后状态描述
+  - 追加本批 `docs-only` 收口记录，避免 canonical spec 与执行日志出现时间线冲突
+- 新增/调整的测试：无新增产品测试；依赖 `verify constraints` 与 `close-check`
+- 执行的命令：`uv run ai-sdlc verify constraints`、`python -m ai_sdlc workitem close-check --wi specs/001-invoice-assistant-mvp`
+- 测试结果：PASS
+- 是否符合任务目标：是
+
+#### 2.50 代码审查结论
+
+- 宪章/规格对齐：通过，本批仅修正文档真相漂移，没有扩大范围
+- 对抗评审结论：通过，`spec.md` 与执行日志、close-check 结果现已一致
+- 代码质量：不适用，本批无产品代码改动
+- 测试质量：通过，约束校验与 work item close-check 均已通过
+- 结论：无阻塞 `001-invoice-assistant-mvp` 收口的 Critical 问题
+
+#### 2.51 任务/计划同步状态
+
+- `tasks.md` 同步状态：无需变更，现有任务完成状态与事实一致
+- `related_plan`（如存在）同步状态：无单独 `related_plan`
+- 关联 branch/worktree disposition 计划：保持当前分支未合并状态，等待后续合并 / 归档决策
+- 说明：当前收口针对 canonical 文档真相对齐，不引入新的需求或实现动作
+
+#### 2.52 自动决策记录
+
+- 采用 `docs-only` 画像补记真相漂移，而不是重写既有 Batch 6 记录，保留原始执行轨迹
+- 沿用 `python -m ai_sdlc workitem close-check` 作为收口事实校验，避免只凭人工判断更新状态
+
+#### 2.53 批次结论
+
+- `001-invoice-assistant-mvp` 的 canonical spec、执行日志与 close-check 结果已完成对齐
+- 本期 MVP 维持“已完成实现与 close-out 收口，待后续合并 / 归档决策”的口径
+
+#### 2.54 归档后动作
+
+- 本文件与本批提交合并入库
+- **已完成 git 提交**：是
+- **提交哈希**：见本批 git 提交记录
+- 当前批次 branch disposition 状态：进行中
+- 当前批次 worktree disposition 状态：进行中
+- 是否继续下一批：否，本批仅完成文档收口
