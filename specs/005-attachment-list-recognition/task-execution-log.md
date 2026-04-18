@@ -487,15 +487,18 @@
 
 #### 2.2 统一验证命令
 
-- **验证画像**：docs-only + governance dry-run
+- **验证画像**：docs-only
 - **改动范围**：`docs/invoice-assistant-gap-backlog.zh-CN.md`、`specs/005-attachment-list-recognition/task-execution-log.md`
 - `V0`
   - 命令：`python -m ai_sdlc adapter activate`
   - 结果：PASS，当前 adapter 人工确认已记录为 `acknowledged`
 - `V1`
+  - 命令：`uv run ai-sdlc verify constraints`
+  - 结果：PASS，`verify constraints: no BLOCKERs.`
+- `V2`
   - 命令：`python -m ai_sdlc run --dry-run`
   - 结果：PASS，输出 `Stage close: PASS`
-- `V2`
+- `V3`
   - 命令：`uv run pytest backend/tests -q`
   - 结果：PASS，60 passed
 
@@ -505,8 +508,8 @@
 
 - 改动范围：`docs/invoice-assistant-gap-backlog.zh-CN.md`、`specs/005-attachment-list-recognition/task-execution-log.md`
 - 改动内容：基于顶层 PRD、设计文档、`specs/001-005` 与当前实现再次复扫；确认上一轮 backlog 已完成 `P1-P3`，未发现新的产品行为缺口；将本轮唯一剩余问题收敛为 `005` 执行日志状态漂移，并补齐 latest batch 归档。
-- 新增/调整的测试：无；本批为文档真值修正，仅复用 AI-SDLC dry-run 与后端全量回归作为 fresh 证据
-- 执行的命令：`python -m ai_sdlc adapter activate`、`python -m ai_sdlc run --dry-run`、`uv run pytest backend/tests -q`
+- 新增/调整的测试：无；本批为文档真值修正，补齐 `docs-only` 所需的约束验证证据，并复用 AI-SDLC dry-run 与后端全量回归作为 fresh 证据
+- 执行的命令：`python -m ai_sdlc adapter activate`、`uv run ai-sdlc verify constraints`、`python -m ai_sdlc run --dry-run`、`uv run pytest backend/tests -q`
 - 测试结果：通过
 - 是否符合任务目标：是
 
@@ -528,6 +531,7 @@
 
 - 选择不重开 005 任务，因为本轮发现的是文档真值漂移，不是新的产品实现缺口
 - 选择把“下一轮”复扫结果直接追加到顶层 backlog，而不是新建分散清单，保持单一顺序来源
+- 选择不把 `python -m ai_sdlc program truth sync --dry-run` 记为本批证据；原因是当前仓库缺少 `program-manifest.yaml`，该命令在本仓库上下文中不适用
 
 #### 2.7 批次结论
 

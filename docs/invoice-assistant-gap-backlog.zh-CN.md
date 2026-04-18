@@ -16,6 +16,7 @@
 - `001-004` 未发现新的顶层主路径实现缺口。
 - `005-attachment-list-recognition` 的 2 个行为缺口与 2 个文档真值缺口，已按本文件顺序完成收口。
 - 下一轮复扫未发现新的产品行为缺口，仅发现 `005-attachment-list-recognition/task-execution-log.md` 的收口状态漂移，已在本轮修正。
+- 继续按框架约束复扫后，新增发现 1 个 AI-SDLC 收口缺口：`005` latest batch 的 `verification profile` 不符合 `close-check` 要求；现已修正，并在 clean worktree 中确认 `001-005` 的 `workitem close-check` 全部通过。
 - 后续新增范围必须基于本文件继续追加，不再回到分散文档里重复建 backlog。
 
 ## 顺序执行清单
@@ -86,20 +87,46 @@
   2. 已追加 next-round batch，记录 backlog 复扫与文档真值修正
   3. 复扫后仍未发现新的产品行为缺口
 
+### P5 完成 `001-005` 的 AI-SDLC close-check 收口
+
+- **状态**：已完成
+- **来源规格**：
+  - `python -m ai_sdlc workitem close-check --wi specs/<work-item> --json`
+  - `src/ai_sdlc/rules/verification.md`
+- **现状**：
+  - `001-004` 的 `close-check` 在主工作区只阻塞于 git working tree 不干净
+  - `005` 除 dirty tree 外，还因 latest batch 使用了不受支持的 `verification profile` 文案而被拒绝
+- **本轮目标**：
+  1. 把 `005` latest batch 的 `verification profile` 改成 AI-SDLC 可接受的值
+  2. 补齐 `docs-only` 画像所需的约束验证命令证据
+  3. 在 clean worktree 中确认 `001-005` 全部 `close-check` 通过
+- **收口结果**：
+  1. `005` latest batch 已改为 `docs-only`，并补录 `uv run ai-sdlc verify constraints`
+  2. 在 clean worktree 中，`001-005` 的 `python -m ai_sdlc workitem close-check --wi ... --json` 全部返回 `ok: true`
+  3. 当前主工作区继续保留 `.ai-sdlc/project/config/project-config.yaml` 这类运行态变更，不把它混入功能/归档提交
+
 ## 本轮验证证据
 
 - `python -m ai_sdlc adapter activate`
+- `uv run ai-sdlc verify constraints`
 - `python -m ai_sdlc run --dry-run`
 - `uv run pytest backend/tests -q`
+- `python -m ai_sdlc workitem close-check --wi specs/001-invoice-assistant-mvp --json`
+- `python -m ai_sdlc workitem close-check --wi specs/002-invoice-assistant-runtime-hardening --json`
+- `python -m ai_sdlc workitem close-check --wi specs/003-runtime-state-recovery --json`
+- `python -m ai_sdlc workitem close-check --wi specs/004-controlled-review-export --json`
+- `python -m ai_sdlc workitem close-check --wi specs/005-attachment-list-recognition --json`
 
 ## 本轮验证结果
 
 - 2026-04-19：`python -m ai_sdlc adapter activate` 已记录当前 adapter 人工确认（`acknowledged`）
+- 2026-04-19：`uv run ai_sdlc verify constraints` 通过，输出 `verify constraints: no BLOCKERs.`
 - 2026-04-19：`python -m ai_sdlc run --dry-run` 通过，输出 `Stage close: PASS`
 - 2026-04-19：`uv run pytest backend/tests -q` 通过，结果 `60 passed`
+- 2026-04-19：在 clean worktree 中，`001-005` 的 `python -m ai_sdlc workitem close-check --wi ... --json` 均返回 `ok: true`
 
 ## 执行规则
 
-1. 严格按 `P1 -> P2 -> P3 -> P4` 顺序执行。
+1. 严格按 `P1 -> P2 -> P3 -> P4 -> P5` 顺序执行。
 2. 每个条目先补失败测试，再写最小实现，再跑对应回归。
 3. 如某条目实现过程中发现新的范围扩张，只能在本文件追加，不直接隐式扩 scope。
