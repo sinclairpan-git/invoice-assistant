@@ -2,7 +2,7 @@
 
 ## 目的
 
-归档 2026-04-19 对 `.ai-sdlc/` 目录的版本控制边界审计，并明确本仓库对运行态文件的纳管策略。
+归档 2026-04-19 对 `.ai-sdlc/` 与 `specs/` 工件边界的版本控制审计，并明确本仓库对运行态文件、formal 工件与遗留兼容文件的纳管策略。
 
 ## 审计起点（执行前）
 
@@ -25,8 +25,16 @@
   - `.ai-sdlc/profiles/decisions.yml`
   - `.ai-sdlc/project/config/project-state.yaml`
   - `.ai-sdlc/work-items/**/reviewer-decision*.yaml`
+  - `specs/**/spec.md`
+  - `specs/**/plan.md`
+  - `specs/**/tasks.md`
+  - `specs/**/task-execution-log.md`
+  - `specs/**/development-summary.md`
+  - `specs/**/release-gate-evidence.md`
 - 停止跟踪并保留本地运行：
   - `.ai-sdlc/project/config/project-config.yaml`
+- 保留已存在文件，但按遗留兼容镜像理解：
+  - `specs/**/execution-log.md`
 
 ## 事实
 
@@ -49,6 +57,10 @@
 11. AI-SDLC 上游会把 `reviewer-decision-<checkpoint>.yaml` 作为 reviewer gate 的正式输入，并在 `close-check` 中校验其存在与审批结果。
 12. `.ai-sdlc/memory/constitution.md`、`.ai-sdlc/profiles/tech-stack.yml`、`.ai-sdlc/profiles/decisions.yml` 被 stage/rule 直接引用，属于 canonical 治理与设计输入，而不是运行态缓存。
 13. 这三份文件在仓库历史中仅出现在项目初始化基线提交中，本轮未观察到日常命令触发的自动改写行为。
+14. AI-SDLC 上游 `pipeline.md` 将 direct-formal work item 的核心文档面定义为 `spec.md`、`plan.md`、`tasks.md` 与 `task-execution-log.md`，`close` 阶段也以 `task-execution-log.md` 和 `tasks.md` 作为主要输入。
+15. 上游实现同时把 `development-summary.md`、`release-gate-evidence.md` 视为 formal close / verify 工件；它们会被 `reconcile`、`close-check`、`verify_constraints` 等路径读取。
+16. 上游 `core/executor.py` 仍保留 `execution-log.md` 兼容写入，并明确注释“Keep legacy execution-log.md in sync until drift cleanup batch.”，说明它是遗留镜像而非新的独立真源。
+17. 本仓库当前仅 `specs/002-invoice-assistant-runtime-hardening/` 存在 `execution-log.md`，且与 `task-execution-log.md` 内容一致，没有发生漂移。
 
 ## 结论
 
@@ -92,11 +104,21 @@
   - 当前没有运行时噪音改写迹象
   - 将其移出版本控制会削弱仓库内的 canonical 治理与设计基线
 
+### P6 明确 `specs/` 与 `.ai-sdlc/work-items/` 的真值边界
+
+- **状态**：本轮补充归档规则
+- **原因**：
+  - `specs/NNN/` 承载 formal work item 的可审阅真源，至少包括 `spec.md`、`plan.md`、`tasks.md`、`task-execution-log.md`
+  - `development-summary.md`、`release-gate-evidence.md` 在生成后也属于 formal 归档/验证工件，应继续受控
+  - `.ai-sdlc/work-items/NNN/` 下的 `runtime.yaml`、`working-set.yaml`、`resume-pack.yaml`、`latest-summary.md`、`execution-plan.yaml` 仍是执行期状态面，不应替代 `specs/` 真源
+  - `execution-log.md` 目前仅作为历史兼容镜像存在；在上游完成 drift cleanup 之前，可保留已生成文件，但不应把它当成独立来源或单独编辑
+
 ## 本轮落地动作
 
 1. 在 `.gitignore` 中显式忽略 `.ai-sdlc/project/config/project-config.yaml`
 2. 将 `project-config.yaml` 从 Git 跟踪集合移除，但保留本地文件供 AI-SDLC 继续读写
 3. 执行 `python -m ai_sdlc run --dry-run`，确认仓库约定未被破坏
+4. 核对 `specs/002-invoice-assistant-runtime-hardening/execution-log.md` 与 `task-execution-log.md` 一致，确认遗留镜像未发生漂移
 
 ## 后续约束
 
@@ -109,3 +131,5 @@
 4. `.ai-sdlc/work-items/` 下仅 `reviewer-decision*.yaml` 允许作为 formal 工件入库，其他 work item 运行态文件继续忽略。
 5. `.ai-sdlc/memory/constitution.md`、`.ai-sdlc/profiles/*.yml` 继续作为 canonical 基线受控，不按运行态文件处理。
 6. 在没有新的上游证据前，不扩展到 `.ai-sdlc/project/config/project-state.yaml` 之外的更多 project 配置文件。
+7. `specs/` 下如需追加或修改 formal work item 归档，优先更新 `task-execution-log.md`；若仓库内已存在同目录 `execution-log.md`，仅在保持与前者同步时被动保留，禁止把两者当作两个独立文档面维护。
+8. `.ai-sdlc/work-items/` 运行态文件只作为恢复执行上下文使用，不作为 close、verify、traceability 的最终审阅依据；最终真值以 `specs/` 下 formal 文档为准。
