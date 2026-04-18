@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from backend.app.db.models import Batch, InvoiceRecord, ProcessingAttempt, ProcessingJob
@@ -215,3 +216,78 @@ def test_progress_service_prefers_active_job_stage_for_processing_snapshot(tmp_p
     assert snapshot.stage_code == "duplicate_check"
     assert snapshot.stage_text == "重复票检测中"
     assert snapshot.progress_percent == 0.0
+
+
+def test_progress_service_limits_recent_failures_to_latest_three(tmp_path):
+    session = build_session(tmp_path)
+
+    batch = Batch(
+        batch_no="BATCH-PROGRESS-003",
+        created_by="tester",
+        snapshot_json="{}",
+        status="processing",
+    )
+    session.add(batch)
+    session.flush()
+
+    base_time = datetime(2026, 4, 18, 10, 0, tzinfo=UTC)
+    expected_order: list[str] = []
+
+    for index in range(5):
+        invoice = InvoiceRecord(
+            batch_id=batch.id,
+            original_filename=f"failed-{index}.pdf",
+            storage_path_original=f"storage/originals/BATCH-PROGRESS-003/failed-{index}.pdf",
+            file_sha256=f"failed-sha-{index}",
+            processing_status="processing_failed",
+            processing_stage="failed",
+            parse_source="ocr",
+            review_status="not_reviewed",
+            artifact_status="original_only",
+            duplicate_flag=False,
+            risk_flags="[]",
+            failure_reason=f"OCR failed #{index}",
+            last_error_stage="ocr_processing",
+            last_error_code=f"ocr_timeout_{index}",
+            retryable=True,
+        )
+        session.add(invoice)
+        session.flush()
+
+        attempt = ProcessingAttempt(
+            job_id="job-recent-failures",
+            invoice_id=invoice.id,
+            attempt_no=1,
+            status="retryable_failed",
+            stage="ocr_processing",
+            parse_source="ocr",
+            provider_name="rapidocr-onnxruntime",
+            provider_version="1.3.24",
+            error_code=f"ocr_timeout_{index}",
+            error_message=f"OCR failed #{index}",
+            retryable=True,
+            completed_at=base_time + timedelta(minutes=index),
+            diagnostic_json=json.dumps(
+                {
+                    "provider_name": "rapidocr-onnxruntime",
+                    "provider_version": "1.3.24",
+                    "provider_error_code": f"ocr_timeout_{index}",
+                    "stage": "ocr_processing",
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+        )
+        session.add(attempt)
+        session.flush()
+        invoice.last_attempt_id = attempt.id
+
+        if index >= 2:
+            expected_order.insert(0, invoice.original_filename)
+
+    session.commit()
+
+    snapshot = ProgressService(session).refresh_batch(batch.id)
+
+    assert [item["original_filename"] for item in snapshot.recent_failures] == expected_order
+    assert len(snapshot.recent_failures) == 3

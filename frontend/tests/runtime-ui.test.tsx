@@ -146,6 +146,84 @@ describe("runtime UI", () => {
     expect(screen.getByRole("button", { name: "重试失败票" })).toBeInTheDocument();
   });
 
+  it("treats fine-grained runtime stages as active batches on the workbench", async () => {
+    apiMocks.listBatches.mockResolvedValue([
+      {
+        id: "batch-stage-1",
+        batch_no: "BATCH-STAGE-001",
+        created_at: "2026-04-18T10:05:00Z",
+        created_by: "tester",
+        status: "processing",
+        total_files: 3,
+        completed_files: 1,
+        processing_files: 2,
+        failed_files: 0,
+        suggested_pass_count: 1,
+        suggested_pass_total_amount: "88.00",
+        export_manifest_path: null,
+        progress: {
+          batch_id: "batch-stage-1",
+          batch_no: "BATCH-STAGE-001",
+          stage_code: "text_extraction",
+          stage_text: "文本抽取中",
+          progress_percent: 33.33,
+          total_files: 3,
+          completed_files: 1,
+          processing_files: 2,
+          failed_files: 0,
+          suggested_pass_count: 1,
+          suggested_pass_total_amount: "88.00",
+          recent_failures: [],
+        },
+      } as never,
+    ]);
+
+    renderWithProviders(<BatchWorkbench />);
+
+    expect((await screen.findAllByText("BATCH-STAGE-001")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("文本抽取中").length).toBeGreaterThan(0);
+    expect(screen.queryByText("当前没有活跃批次")).not.toBeInTheDocument();
+  });
+
+  it("keeps recovered queued batches visible on the workbench", async () => {
+    apiMocks.listBatches.mockResolvedValue([
+      {
+        id: "batch-recovery-1",
+        batch_no: "BATCH-RECOVERY-UI-001",
+        created_at: "2026-04-18T10:08:00Z",
+        created_by: "tester",
+        status: "processing",
+        total_files: 2,
+        completed_files: 0,
+        processing_files: 2,
+        failed_files: 0,
+        suggested_pass_count: 0,
+        suggested_pass_total_amount: "0.00",
+        export_manifest_path: null,
+        progress: {
+          batch_id: "batch-recovery-1",
+          batch_no: "BATCH-RECOVERY-UI-001",
+          stage_code: "queued",
+          stage_text: "等待处理",
+          progress_percent: 0,
+          total_files: 2,
+          completed_files: 0,
+          processing_files: 2,
+          failed_files: 0,
+          suggested_pass_count: 0,
+          suggested_pass_total_amount: "0.00",
+          recent_failures: [],
+        },
+      } as never,
+    ]);
+
+    renderWithProviders(<BatchWorkbench />);
+
+    expect((await screen.findAllByText("BATCH-RECOVERY-UI-001")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("等待处理").length).toBeGreaterThan(0);
+    expect(screen.queryByText("当前没有活跃批次")).not.toBeInTheDocument();
+  });
+
   it("retries failed invoices from the batch results page", async () => {
     apiMocks.listBatches.mockResolvedValue([
       {

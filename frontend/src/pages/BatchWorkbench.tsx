@@ -16,6 +16,25 @@ interface BatchListState {
   items: Batch[];
 }
 
+const ACTIVE_BATCH_STAGE_CODES = new Set([
+  "queued",
+  "processing",
+  "recovering",
+  "text_extraction",
+  "ocr_processing",
+  "classification",
+  "duplicate_check",
+  "finalization",
+]);
+
+function isActiveBatch(item: Batch) {
+  const stageCode = item.progress?.stage_code;
+  if (stageCode && ACTIVE_BATCH_STAGE_CODES.has(stageCode)) {
+    return true;
+  }
+  return item.status === "queued" || item.status === "processing";
+}
+
 export function BatchWorkbench() {
   const { message } = App.useApp();
   const navigate = useNavigate();
@@ -53,10 +72,7 @@ export function BatchWorkbench() {
   }, [loadBatches]);
 
   const activeBatch = useMemo(() => {
-    return state.items.find((item) => {
-      const stageCode = item.progress?.stage_code;
-      return stageCode === "processing" || stageCode === "queued";
-    }) ?? null;
+    return state.items.find((item) => isActiveBatch(item)) ?? null;
   }, [state.items]);
 
   const activeFailures = activeBatch?.progress?.recent_failures ?? [];

@@ -7,16 +7,20 @@ detected_ide: codex
 agent_target: codex
 adapter_applied: codex
 adapter_version: '1'
-adapter_applied_at: '2026-04-17T08:52:25+00:00'
+adapter_applied_at: '2026-04-18T03:55:51+00:00'
 adapter_activation_state: acknowledged
 adapter_support_tier: acknowledged_activation
 agent_target_source: ''
 adapter_activation_source: operator_cli
 adapter_activation_evidence: ai-sdlc adapter activate
-adapter_activated_at: '2026-04-17T18:33:57+00:00'
+adapter_activated_at: '2026-04-18T04:23:30+00:00'
 adapter_ingress_state: verified_loaded
 adapter_verification_result: verified
 adapter_canonical_path: AGENTS.md
+adapter_canonical_content_digest: sha256:c02c0709ce5345c2262821b020eb862acac89d1572ceca71ab20d0a14b928f10
+adapter_canonical_consumption_result: unverified
+adapter_canonical_consumption_evidence: ''
+adapter_canonical_consumed_at: ''
 adapter_degrade_reason: ''
 adapter_verification_evidence: env:OPENAI_CODEX
 adapter_verified_at: '2026-04-17T08:52:25+00:00'

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
+from datetime import UTC, datetime
 from logging import Logger
 import json
 
@@ -12,11 +13,11 @@ from backend.app.core.logging import get_app_logger, log_event
 from backend.app.db.models import Batch, InvoiceRecord, ProcessingAttempt, ProcessingJob
 from backend.app.services.status_service import summarize_suggested_pass
 
-
-PROCESSING_ACTIVE_STATUSES = {"queued", "extracting", "classifying", "processing"}
 PROCESSING_FAILED_STATUSES = {"failed", "processing_failed"}
+MAX_RECENT_FAILURES = 3
 STAGE_TEXTS = {
     "queued": "等待处理",
+    "recovering": "恢复处理中",
     "text_extraction": "文本抽取中",
     "ocr_processing": "OCR 识别中",
     "classification": "规则校验中",
@@ -153,11 +154,7 @@ class ProgressService:
             stage_code = "queued"
             stage_text = "等待处理"
 
-        recent_failures = [
-            self._serialize_recent_failure(invoice)
-            for invoice in invoices
-            if invoice.processing_status in PROCESSING_FAILED_STATUSES
-        ]
+        recent_failures = [self._serialize_recent_failure(invoice) for invoice in self._recent_failures(invoices)]
 
         return BatchProgressSnapshot(
             batch_id=batch.id,
@@ -175,7 +172,7 @@ class ProgressService:
         )
 
     def _serialize_recent_failure(self, invoice: InvoiceRecord) -> dict[str, object]:
-        attempt = self.session.get(ProcessingAttempt, invoice.last_attempt_id) if invoice.last_attempt_id else None
+        attempt = self._last_attempt(invoice)
         provider_diagnostic = self._load_json(attempt.diagnostic_json, {}) if attempt is not None else {}
         return {
             "invoice_id": invoice.id,
@@ -187,6 +184,24 @@ class ProgressService:
             "parse_source": invoice.parse_source,
             "provider_diagnostic": provider_diagnostic,
         }
+
+    def _recent_failures(self, invoices: list[InvoiceRecord]) -> list[InvoiceRecord]:
+        failed_invoices = [invoice for invoice in invoices if invoice.processing_status in PROCESSING_FAILED_STATUSES]
+        return sorted(failed_invoices, key=self._recent_failure_sort_key, reverse=True)[:MAX_RECENT_FAILURES]
+
+    def _recent_failure_sort_key(self, invoice: InvoiceRecord) -> tuple[float, int, str]:
+        attempt = self._last_attempt(invoice)
+        failure_time = attempt.completed_at if attempt is not None else None
+        if failure_time is None and attempt is not None:
+            failure_time = attempt.started_at
+        failure_timestamp = failure_time.timestamp() if isinstance(failure_time, datetime) else datetime.min.replace(
+            tzinfo=UTC
+        ).timestamp()
+        attempt_no = attempt.attempt_no if attempt is not None else -1
+        return (failure_timestamp, attempt_no, invoice.original_filename)
+
+    def _last_attempt(self, invoice: InvoiceRecord) -> ProcessingAttempt | None:
+        return self.session.get(ProcessingAttempt, invoice.last_attempt_id) if invoice.last_attempt_id else None
 
     @staticmethod
     def _load_json(value: str | None, fallback: dict[str, object]) -> dict[str, object]:
