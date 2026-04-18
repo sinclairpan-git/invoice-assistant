@@ -397,7 +397,7 @@
 
 - **验证画像**：docs-only
 - **改动范围**：`specs/005-attachment-list-recognition/task-execution-log.md`
-- 框架签名：`python -m ai_sdlc verify constraints`
+- 框架签名：`uv run ai-sdlc verify constraints`
 - `V1`
   - 命令：`uv run pytest backend/tests -q`
   - 结果：PASS，56 passed
@@ -470,8 +470,8 @@
 
 #### 2.8 归档后动作
 
-- 已完成 git 提交：是
-- 提交哈希：以当前 `HEAD` 为准
+- **已完成 git 提交**：是
+- **提交哈希**：以当前 `HEAD` 为准
 - 当前批次 branch disposition 状态：merged
 - 当前批次 worktree disposition 状态：main 保留
 - 是否继续下一批：否
