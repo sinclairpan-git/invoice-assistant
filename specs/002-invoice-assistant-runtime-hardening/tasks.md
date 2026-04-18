@@ -170,26 +170,26 @@ Batch 5: 回归验证、导出一致性与收口
 - **任务编号**：T41
 - **优先级**：P0
 - **依赖**：T32
-- **文件**：`backend/app/api/batches.py`、`backend/app/api/invoices.py`、`backend/app/api/serializers.py`、`backend/tests/test_api_runtime.py`
+- **文件**：`backend/app/api/batches.py`、`backend/app/api/invoices.py`、`backend/app/api/serializers.py`、`backend/tests/test_api_workflows.py`
 - **可并行**：否
 - **验收标准**：
   1. 批次进度接口返回更细粒度阶段、最近失败、provider 诊断摘要。
   2. 发票详情接口返回 parse source、失败阶段、错误码和可重试标记。
   3. 旧前端依赖字段保持兼容。
-- **验证**：`uv run --project backend --extra dev pytest backend/tests/test_api_runtime.py -q`
+- **验证**：`uv run --project backend --extra dev pytest backend/tests/test_api_workflows.py -q`
 
 ### Task 4.2 暴露单票 / 批次重试接口
 
 - **任务编号**：T42
 - **优先级**：P1
 - **依赖**：T33、T41
-- **文件**：`backend/app/api/batches.py`、`backend/app/api/invoices.py`、`backend/tests/test_api_runtime.py`
+- **文件**：`backend/app/api/batches.py`、`backend/app/api/invoices.py`、`backend/tests/test_api_workflows.py`
 - **可并行**：是
 - **验收标准**：
   1. 失败票支持单票重试。
   2. 批次支持只重试失败子集，而不是强制整批重跑。
   3. 重试接口遵循幂等约束。
-- **验证**：`uv run --project backend --extra dev pytest backend/tests/test_api_runtime.py -q`
+- **验证**：`uv run --project backend --extra dev pytest backend/tests/test_api_workflows.py -q`
 
 ### Task 4.3 前端接入阶段文案、失败详情与重试入口
 
