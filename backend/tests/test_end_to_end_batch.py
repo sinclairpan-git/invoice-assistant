@@ -7,7 +7,7 @@ from zipfile import ZipFile
 from sqlalchemy import select
 from starlette.testclient import TestClient
 
-from backend.app.db.models import Batch, ExportJob, InvoiceRecord
+from backend.app.db.models import AuditLog, Batch, ExportJob, InvoiceRecord
 from backend.app.main import create_app
 from backend.app.services.config_service import ConfigService
 from backend.app.services.status_service import DISPLAY_STATUS_DUPLICATE, DISPLAY_STATUS_PASS, DISPLAY_STATUS_REVIEW
@@ -167,6 +167,11 @@ def test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent(tmp
     assert len(review_detail["extracted_fields"]) >= 6
     assert len(review_detail["field_checks"]) >= 2
     assert set(review_detail["risk_flags"]) == {"low_confidence", "fuzzy_line_items"}
+    assert review_detail["basic_compliance_status"] == "通过"
+    assert review_detail["business_compliance_status"] == "待人工复核"
+    assert review_detail["final_decision"] == "需人工复核"
+    assert "低置信度" in review_detail["decision_reasons"]
+    assert "需人工复核后再导出" in review_detail["suggested_actions"]
     assert review_detail["review_actions"] == []
     assert review_detail["evidence_items"][0]["confidence_summary"]["overall"] == 0.61
 
@@ -181,6 +186,13 @@ def test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent(tmp
     assert preview_response.status_code == 200
     assert preview_response.headers["content-type"] == "application/pdf"
     assert preview_response.content.startswith(b"%PDF")
+
+    blocked_pass_export_response = client.post(
+        f"/api/batches/{batch_id}/exports",
+        json={"export_type": "suggested_pass_zip", "created_by": "exporter-a"},
+    )
+    assert blocked_pass_export_response.status_code == 400
+    assert blocked_pass_export_response.json()["detail"] == "当前批次仍有待复核票据，无法导出建议通过 ZIP。"
 
     approve_response = client.post(
         f"/api/invoices/{review_invoice['id']}/review-actions",
@@ -202,12 +214,13 @@ def test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent(tmp
     )
     assert pass_export_response.status_code == 200
     pass_export = pass_export_response.json()["item"]
-    assert pass_export["summary"] == {"record_count": 2, "total_amount": "384.50"}
+    assert pass_export["summary"] == {"record_count": 3, "total_amount": "472.50"}
     assert Path(pass_export["output_path"]).is_file()
     with ZipFile(pass_export["output_path"]) as archive:
         assert set(archive.namelist()) == {
             "20260417_128.50_STD-001.pdf",
             "20260416_256.00_OCR-001.pdf",
+            "03-review-required.pdf",
         }
 
     issue_export_response = client.post(
@@ -216,10 +229,10 @@ def test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent(tmp
     )
     assert issue_export_response.status_code == 200
     issue_export = issue_export_response.json()["item"]
-    assert issue_export["summary"] == {"record_count": 2, "total_amount": "216.50"}
+    assert issue_export["summary"] == {"record_count": 1, "total_amount": "128.50"}
     assert Path(issue_export["output_path"]).is_file()
     with ZipFile(issue_export["output_path"]) as archive:
-        assert set(archive.namelist()) == {"03-review-required.pdf", "04-duplicate.pdf"}
+        assert set(archive.namelist()) == {"04-duplicate.pdf"}
 
     manifest_export_response = client.post(
         f"/api/batches/{batch_id}/exports",
@@ -229,15 +242,19 @@ def test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent(tmp
     manifest_export = manifest_export_response.json()["item"]
     assert manifest_export["summary"] == {
         "record_count": 4,
-        "suggested_pass_count": 2,
-        "suggested_pass_total_amount": "384.50",
+        "suggested_pass_count": 3,
+        "suggested_pass_total_amount": "472.50",
     }
     assert Path(manifest_export["output_path"]).is_file()
     with ZipFile(manifest_export["output_path"]) as workbook:
         sheet_xml = workbook.read("xl/worksheets/sheet1.xml").decode("utf-8")
     assert "BATCH-E2E-001" in sheet_xml
+    assert "基础合规" in sheet_xml
+    assert "业务合规" in sheet_xml
+    assert "最终结论" in sheet_xml
     assert "03-review-required.pdf" in sheet_xml
     assert "04-duplicate.pdf" in sheet_xml
+    assert "人工确认通过" in sheet_xml
 
     batch_detail_after_exports = client.get(f"/api/batches/{batch_id}")
     assert batch_detail_after_exports.status_code == 200
@@ -275,5 +292,18 @@ def test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent(tmp
         "issue_zip",
         "excel_manifest",
     ]
+
+    export_audits = session.scalars(
+        select(AuditLog)
+        .where(AuditLog.entity_type == "export_job")
+        .order_by(AuditLog.changed_at.asc())
+    ).all()
+    assert [audit.action for audit in export_audits] == [
+        "export_denied",
+        "export_completed",
+        "export_completed",
+        "export_completed",
+    ]
+    assert export_audits[0].entity_id == batch_id
 
     session.close()

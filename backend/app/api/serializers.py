@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Any
 
 from backend.app.db.models import Batch, DocumentEvidence, ExportJob, ExtractedField, FieldCheck, InvoiceRecord, ReviewAction, RuleVersion
+from backend.app.services.compliance_service import serialize_invoice_compliance
 from backend.app.services.progress_service import BatchProgressSnapshot
 from backend.app.services.status_service import derive_display_status
 
@@ -75,7 +76,7 @@ def serialize_invoice_summary(invoice: InvoiceRecord) -> dict[str, object]:
         system_decision=invoice.system_decision,
         duplicate_flag=invoice.duplicate_flag,
     )
-    return {
+    payload = {
         "id": invoice.id,
         "batch_id": invoice.batch_id,
         "original_filename": invoice.original_filename,
@@ -102,6 +103,8 @@ def serialize_invoice_summary(invoice: InvoiceRecord) -> dict[str, object]:
         "failure_reason": invoice.failure_reason,
         "preview_path": invoice.storage_path_renamed or invoice.storage_path_original,
     }
+    payload.update(serialize_invoice_compliance(invoice))
+    return payload
 
 
 def serialize_invoice_detail(invoice: InvoiceRecord) -> dict[str, object]:

@@ -13,13 +13,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_app_logger, log_event
-from backend.app.db.models import Batch, ExportJob, InvoiceRecord
-from backend.app.services.status_service import DISPLAY_STATUS_PASS, derive_display_status, summarize_suggested_pass
+from backend.app.db.models import AuditLog, Batch, ExportJob, InvoiceRecord
+from backend.app.services.compliance_service import build_invoice_compliance_summary, summarize_archiveable_pass
+from backend.app.services.status_service import derive_display_status
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_STORAGE_ROOT = PROJECT_ROOT / "storage"
 SUPPORTED_EXPORT_TYPES = {"suggested_pass_zip", "issue_zip", "excel_manifest"}
+TERMINAL_BATCH_STATUSES = {"completed", "completed_with_failures", "failed"}
 
 
 @dataclass(frozen=True)
@@ -43,7 +45,14 @@ class ExportService:
         self.storage_root = Path(storage_root)
         self.logger = logger or get_app_logger("export")
 
-    def create_export(self, *, batch_id: str, export_type: str, created_by: str) -> ExportResult:
+    def create_export(
+        self,
+        *,
+        batch_id: str,
+        export_type: str,
+        created_by: str,
+        actor_roles: tuple[str, ...] | list[str] = (),
+    ) -> ExportResult:
         if export_type not in SUPPORTED_EXPORT_TYPES:
             raise ValueError(f"Unsupported export type: {export_type!r}")
 
@@ -54,6 +63,29 @@ class ExportService:
         invoices = self.session.scalars(
             select(InvoiceRecord).where(InvoiceRecord.batch_id == batch_id).order_by(InvoiceRecord.original_filename.asc())
         ).all()
+
+        gate_failure = self._validate_export_gate(batch=batch, invoices=invoices, export_type=export_type)
+        if gate_failure is not None:
+            self._record_audit(
+                entity_id=batch.id,
+                action="export_denied",
+                changed_by=created_by,
+                change_summary=f"export_type={export_type}",
+                change_reason=gate_failure,
+                payload=self._with_actor_roles(
+                    actor_roles,
+                    {
+                        "batch_id": batch.id,
+                        "export_type": export_type,
+                        "gate": {
+                            "allowed": False,
+                            "reasons": [gate_failure],
+                        },
+                    },
+                ),
+            )
+            self.session.commit()
+            raise ValueError(self._gate_failure_message(export_type=export_type, gate_failure=gate_failure))
 
         timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
         export_dir = self.storage_root / "exports" / batch.batch_no
@@ -83,6 +115,29 @@ class ExportService:
                 summary_json=json.dumps(summary, ensure_ascii=False, sort_keys=True),
             )
             self.session.add(job)
+            self.session.flush()
+
+            self._record_audit(
+                entity_id=job.id,
+                action="export_completed",
+                changed_by=created_by,
+                change_summary=f"export_type={export_type}",
+                change_reason="export gate passed",
+                payload=self._with_actor_roles(
+                    actor_roles,
+                    {
+                        "batch_id": batch.id,
+                        "job_id": job.id,
+                        "export_type": export_type,
+                        "output_path": relative_output,
+                        "summary": summary,
+                        "gate": {
+                            "allowed": True,
+                            "reasons": [],
+                        },
+                    },
+                ),
+            )
 
             if export_type == "excel_manifest":
                 batch.export_manifest_path = relative_output
@@ -117,6 +172,27 @@ class ExportService:
                 summary_json=json.dumps({"error": str(exc)}, ensure_ascii=False, sort_keys=True),
             )
             self.session.add(job)
+            self.session.flush()
+            self._record_audit(
+                entity_id=job.id,
+                action="export_failed",
+                changed_by=created_by,
+                change_summary=f"export_type={export_type}",
+                change_reason=str(exc),
+                payload=self._with_actor_roles(
+                    actor_roles,
+                    {
+                        "batch_id": batch.id,
+                        "job_id": job.id,
+                        "export_type": export_type,
+                        "error": str(exc),
+                        "gate": {
+                            "allowed": True,
+                            "reasons": [],
+                        },
+                    },
+                ),
+            )
             self.session.commit()
             log_event(
                 self.logger,
@@ -133,18 +209,13 @@ class ExportService:
             return [
                 invoice
                 for invoice in invoices
-                if invoice.system_decision == "suggested_pass" and not invoice.duplicate_flag
+                if build_invoice_compliance_summary(invoice).archiveable_pass
             ]
         if export_type == "issue_zip":
             return [
                 invoice
                 for invoice in invoices
-                if derive_display_status(
-                    processing_status=invoice.processing_status,
-                    system_decision=invoice.system_decision,
-                    duplicate_flag=invoice.duplicate_flag,
-                )
-                != DISPLAY_STATUS_PASS
+                if not build_invoice_compliance_summary(invoice).archiveable_pass
             ]
         return invoices
 
@@ -156,7 +227,7 @@ class ExportService:
         all_invoices: list[InvoiceRecord],
     ) -> dict[str, object]:
         if export_type == "suggested_pass_zip":
-            summary = summarize_suggested_pass(selected_invoices)
+            summary = summarize_archiveable_pass(selected_invoices)
             return {
                 "record_count": summary.count,
                 "total_amount": f"{summary.total_amount:.2f}",
@@ -171,7 +242,7 @@ class ExportService:
                 "total_amount": f"{issue_amount.quantize(Decimal('0.01')):.2f}",
             }
 
-        batch_summary = summarize_suggested_pass(all_invoices)
+        batch_summary = summarize_archiveable_pass(all_invoices)
         return {
             "record_count": len(all_invoices),
             "suggested_pass_count": batch_summary.count,
@@ -193,6 +264,11 @@ class ExportService:
             "显示状态",
             "系统判定",
             "人工复核状态",
+            "基础合规",
+            "业务合规",
+            "最终结论",
+            "结论原因",
+            "建议动作",
             "金额",
             "发票号码",
             "购方名称",
@@ -207,6 +283,7 @@ class ExportService:
                 system_decision=invoice.system_decision,
                 duplicate_flag=invoice.duplicate_flag,
             )
+            compliance = build_invoice_compliance_summary(invoice)
             rows.append(
                 [
                     batch.batch_no,
@@ -215,6 +292,11 @@ class ExportService:
                     display_status,
                     invoice.system_decision or "",
                     invoice.review_status,
+                    compliance.basic_compliance_status,
+                    compliance.business_compliance_status,
+                    compliance.final_decision,
+                    "；".join(compliance.decision_reasons),
+                    "；".join(compliance.suggested_actions),
                     "" if invoice.invoice_amount is None else f"{Decimal(str(invoice.invoice_amount)):.2f}",
                     invoice.invoice_number or "",
                     invoice.buyer_name or "",
@@ -297,6 +379,60 @@ class ExportService:
             return output_file.relative_to(PROJECT_ROOT).as_posix()
         except ValueError:
             return str(output_file)
+
+    def _validate_export_gate(self, *, batch: Batch, invoices: list[InvoiceRecord], export_type: str) -> str | None:
+        is_terminal = (
+            batch.status in TERMINAL_BATCH_STATUSES
+            and batch.total_files > 0
+            and batch.processing_files == 0
+            and batch.completed_files + batch.failed_files == batch.total_files
+        )
+        if not is_terminal:
+            return "batch_not_terminal"
+
+        if export_type == "suggested_pass_zip" and any(
+            build_invoice_compliance_summary(invoice).pending_review_gate for invoice in invoices
+        ):
+            return "pending_manual_review"
+
+        return None
+
+    @staticmethod
+    def _gate_failure_message(*, export_type: str, gate_failure: str) -> str:
+        if gate_failure == "batch_not_terminal":
+            return "当前批次尚未处理完成，暂不允许导出。"
+        if gate_failure == "pending_manual_review" and export_type == "suggested_pass_zip":
+            return "当前批次仍有待复核票据，无法导出建议通过 ZIP。"
+        return "当前导出请求未通过门槛校验。"
+
+    def _record_audit(
+        self,
+        *,
+        entity_id: str,
+        action: str,
+        changed_by: str,
+        change_summary: str,
+        change_reason: str,
+        payload: dict[str, object],
+    ) -> None:
+        self.session.add(
+            AuditLog(
+                entity_type="export_job",
+                entity_id=entity_id,
+                action=action,
+                changed_by=changed_by,
+                change_summary=change_summary,
+                change_reason=change_reason,
+                payload_json=json.dumps(payload, ensure_ascii=False, sort_keys=True),
+            )
+        )
+
+    @staticmethod
+    def _with_actor_roles(actor_roles: tuple[str, ...] | list[str], payload: dict[str, object]) -> dict[str, object]:
+        if actor_roles:
+            payload = dict(payload)
+            payload["actor_roles"] = list(actor_roles)
+        return payload
 
     @staticmethod
     def _column_letter(index: int) -> str:

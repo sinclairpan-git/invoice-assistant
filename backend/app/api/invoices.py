@@ -12,8 +12,9 @@ from sqlalchemy.orm import Session
 from backend.app.api.dependencies import assert_actor_has_role, get_session, get_trusted_actor, resolve_actor
 from backend.app.api.serializers import serialize_invoice_detail, serialize_invoice_summary, serialize_review_action
 from backend.app.db.models import Batch, InvoiceRecord, ReviewAction
+from backend.app.services.compliance_service import summarize_archiveable_pass
 from backend.app.services.retry_service import RetryService
-from backend.app.services.status_service import DISPLAY_STATUS_DUPLICATE, DISPLAY_STATUS_REVIEW, summarize_suggested_pass
+from backend.app.services.status_service import DISPLAY_STATUS_DUPLICATE, DISPLAY_STATUS_REVIEW
 
 
 router = APIRouter(prefix="/api", tags=["invoices"])
@@ -53,8 +54,8 @@ def list_batch_invoices(
         filtered_items = [item for item in all_items if item["display_status"] == display_status]
 
     status_counts = dict(Counter(item["display_status"] for item in all_items))
-    batch_summary = summarize_suggested_pass(invoices)
-    filtered_summary = summarize_suggested_pass(
+    batch_summary = summarize_archiveable_pass(invoices)
+    filtered_summary = summarize_archiveable_pass(
         [
             invoice
             for invoice in invoices

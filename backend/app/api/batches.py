@@ -132,6 +132,7 @@ def create_export(
             batch_id=batch_id,
             export_type=payload.export_type,
             created_by=actor.display_name,
+            actor_roles=actor.roles,
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
