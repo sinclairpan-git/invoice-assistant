@@ -21,6 +21,7 @@
 
 - 继续受版本控制：
   - `.ai-sdlc/project/config/project-state.yaml`
+  - `.ai-sdlc/work-items/**/reviewer-decision*.yaml`
 - 停止跟踪并保留本地运行：
   - `.ai-sdlc/project/config/project-config.yaml`
 
@@ -41,6 +42,8 @@
    - `workitem_scaffold` 直接初始化 formal work item 时推进 `next_work_item_seq`
 8. `python -m ai_sdlc run --dry-run` 不会改写 `project-state.yaml`；本轮审计中工作区在 dry-run 后保持干净。
 9. 仓库历史中，`project-state.yaml` 的提交只出现在基线初始化、work item 序号推进、运行态恢复收口等少量节点，并未表现出类似 `project-config.yaml` 的频繁时间戳噪音。
+10. `.ai-sdlc/work-items/003-runtime-state-recovery/reviewer-decision-pre-close.yaml` 已被仓库跟踪，但该目录此前被整目录 `.gitignore`，说明 ignore 规则与 formal reviewer gate 工件的真实使用存在冲突。
+11. AI-SDLC 上游会把 `reviewer-decision-<checkpoint>.yaml` 作为 reviewer gate 的正式输入，并在 `close-check` 中校验其存在与审批结果。
 
 ## 结论
 
@@ -68,6 +71,14 @@
   - 这是本地掩盖手段，不是团队可见策略
   - 容易把真正需要审阅的配置改动一起藏掉
 
+### P4 收窄 `.ai-sdlc/work-items/` 的 ignore 范围
+
+- **状态**：本轮执行
+- **原因**：
+  - work item 目录下大部分文件确实是运行态产物，仍应保持忽略
+  - 但 `reviewer-decision*.yaml` 属于 formal reviewer gate 工件，不能继续被整目录 ignore 误伤
+  - 调整后，未来新增 reviewer decision 工件可正常进入版本控制，其余运行态 work item 文件仍保持忽略
+
 ## 本轮落地动作
 
 1. 在 `.gitignore` 中显式忽略 `.ai-sdlc/project/config/project-config.yaml`
@@ -82,4 +93,5 @@
    - 项目初始化或 bootstrap 修复
    - 新建 canonical work item 导致 `next_work_item_seq` 合法推进
    - 经确认的状态恢复/真值修复
-4. 在没有新的上游证据前，不扩展到 `.ai-sdlc/project/config/project-state.yaml`。
+4. `.ai-sdlc/work-items/` 下仅 `reviewer-decision*.yaml` 允许作为 formal 工件入库，其他 work item 运行态文件继续忽略。
+5. 在没有新的上游证据前，不扩展到 `.ai-sdlc/project/config/project-state.yaml` 之外的更多 project 配置文件。

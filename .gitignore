@@ -22,5 +22,8 @@ __pycache__/
 
 .ai-sdlc/local/
 .ai-sdlc/state/
-.ai-sdlc/work-items/
+.ai-sdlc/work-items/*
+!.ai-sdlc/work-items/*/
+.ai-sdlc/work-items/**/*
+!.ai-sdlc/work-items/**/reviewer-decision*.yaml
 .ai-sdlc/project/config/project-config.yaml
