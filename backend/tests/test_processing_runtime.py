@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+from zipfile import ZipFile
 
 import pytest
 from sqlalchemy import select
@@ -11,6 +12,7 @@ from starlette.testclient import TestClient
 from backend.app.db.models import AttachmentDocument, Batch, InvoiceRecord
 from backend.app.main import create_app
 from backend.app.services.config_service import ConfigService
+from backend.app.services.export_service import ExportService
 from backend.app.services.processing_service import ProcessingService
 from backend.app.services.status_service import DISPLAY_STATUS_REVIEW
 
@@ -335,6 +337,101 @@ def test_attachment_match_can_reclassify_review_keyword_invoice(tmp_path):
         session.close()
 
 
+def test_multiple_attachments_for_same_invoice_are_preserved_and_exposed(tmp_path):
+    app = create_app(f"sqlite:///{tmp_path / 'runtime-attachment-multi.db'}")
+    session = app.state.session_factory()
+    seed_active_rules(session)
+    session.close()
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/batches",
+        data={"created_by": "runtime-tester", "batch_no": "BATCH-RUNTIME-ATTACH-002"},
+        files=[
+            (
+                "files",
+                (
+                    "main-invoice.pdf",
+                    build_invoice_fixture_pdf(
+                        invoice_number="ATT-002",
+                        seller_name="Acme Supplies Ltd",
+                        invoice_amount="256.80",
+                        line_text="DETAIL LIST ATTACHED",
+                    ),
+                    "application/pdf",
+                ),
+            ),
+            (
+                "files",
+                (
+                    "detail-list-part-1.pdf",
+                    build_invoice_fixture_pdf(
+                        invoice_number="ATT-002",
+                        seller_name="Acme Supplies Ltd",
+                        invoice_amount="256.80",
+                        line_text="Office Supplies",
+                    ),
+                    "application/pdf",
+                ),
+            ),
+            (
+                "files",
+                (
+                    "detail-list-part-2.pdf",
+                    build_invoice_fixture_pdf(
+                        invoice_number="ATT-002",
+                        seller_name="Acme Supplies Ltd",
+                        invoice_amount="256.80",
+                        line_text="Printer Paper",
+                    ),
+                    "application/pdf",
+                ),
+            ),
+        ],
+    )
+
+    assert response.status_code == 200
+    batch_id = response.json()["item"]["id"]
+    final_progress = wait_for_batch_stage(client, batch_id, "completed")
+    assert final_progress["total_files"] == 1
+    assert final_progress["failed_files"] == 0
+
+    session = app.state.session_factory()
+    try:
+        batch = session.scalar(
+            select(Batch).where(Batch.batch_no == "BATCH-RUNTIME-ATTACH-002")
+        )
+        assert batch is not None
+        invoice = session.scalar(
+            select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id)
+        )
+        attachments = session.scalars(
+            select(AttachmentDocument)
+            .where(AttachmentDocument.batch_id == batch.id)
+            .order_by(AttachmentDocument.original_filename.asc())
+        ).all()
+        assert invoice is not None
+
+        assert invoice.processing_status == "completed"
+        assert invoice.system_decision == "suggested_pass"
+        assert len(attachments) == 2
+        assert [attachment.matched_invoice_id for attachment in attachments] == [
+            invoice.id,
+            invoice.id,
+        ]
+
+        detail_response = client.get(f"/api/invoices/{invoice.id}")
+        assert detail_response.status_code == 200
+        detail_payload = detail_response.json()["item"]
+        assert len(detail_payload["attachments"]) == 2
+        assert [item["original_filename"] for item in detail_payload["attachments"]] == [
+            "detail-list-part-1.pdf",
+            "detail-list-part-2.pdf",
+        ]
+    finally:
+        session.close()
+
+
 def test_attachment_parse_failure_does_not_create_invoice_runtime_failure(tmp_path):
     app = create_app(f"sqlite:///{tmp_path / 'runtime-attachment-fail.db'}")
     session = app.state.session_factory()
@@ -478,5 +575,236 @@ def test_attachment_match_stays_ambiguous_when_multiple_invoices_fit(tmp_path):
 
         assert attachment.attachment_status == "ambiguous"
         assert attachment.matched_invoice_id is None
+    finally:
+        session.close()
+
+
+def test_review_keyword_invoice_without_attachment_gets_missing_attachment_reason(
+    tmp_path,
+):
+    app = create_app(f"sqlite:///{tmp_path / 'runtime-attachment-missing.db'}")
+    session = app.state.session_factory()
+    seed_active_rules(session)
+    session.close()
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/batches",
+        data={
+            "created_by": "runtime-tester",
+            "batch_no": "BATCH-RUNTIME-ATTACH-MISSING-001",
+        },
+        files=[
+            (
+                "files",
+                (
+                    "main-invoice.pdf",
+                    build_invoice_fixture_pdf(
+                        invoice_number="ATT-MISSING-001",
+                        seller_name="Acme Supplies Ltd",
+                        invoice_amount="188.00",
+                        line_text="DETAIL LIST ATTACHED",
+                    ),
+                    "application/pdf",
+                ),
+            )
+        ],
+    )
+
+    assert response.status_code == 200
+    batch_id = response.json()["item"]["id"]
+    wait_for_batch_stage(client, batch_id, "completed")
+
+    session = app.state.session_factory()
+    try:
+        batch = session.scalar(
+            select(Batch).where(Batch.batch_no == "BATCH-RUNTIME-ATTACH-MISSING-001")
+        )
+        assert batch is not None
+        invoice = session.scalar(
+            select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id)
+        )
+        assert invoice is not None
+        invoice_id = invoice.id
+
+        assert invoice.system_decision == "review_required"
+        assert "attachment_missing" in json.loads(invoice.risk_flags or "[]")
+    finally:
+        session.close()
+
+    detail_response = client.get(f"/api/invoices/{invoice_id}")
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()["item"]
+    assert detail_payload["display_status"] == DISPLAY_STATUS_REVIEW
+    assert "缺少清单附件" in detail_payload["decision_reasons"]
+
+
+def test_unmatched_attachment_reason_flows_to_invoice_detail_and_export(tmp_path):
+    app = create_app(f"sqlite:///{tmp_path / 'runtime-attachment-unmatched.db'}")
+    session = app.state.session_factory()
+    seed_active_rules(session)
+    session.close()
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/batches",
+        data={
+            "created_by": "runtime-tester",
+            "batch_no": "BATCH-RUNTIME-ATTACH-UNMATCHED-001",
+        },
+        files=[
+            (
+                "files",
+                (
+                    "main-invoice.pdf",
+                    build_invoice_fixture_pdf(
+                        invoice_number="ATT-UNMATCHED-001",
+                        seller_name="Acme Supplies Ltd",
+                        invoice_amount="288.00",
+                        line_text="DETAIL LIST ATTACHED",
+                    ),
+                    "application/pdf",
+                ),
+            ),
+            (
+                "files",
+                (
+                    "detail-list.pdf",
+                    build_invoice_fixture_pdf(
+                        invoice_number="ATT-OTHER-001",
+                        seller_name="Acme Supplies Ltd",
+                        invoice_amount="288.00",
+                        line_text="Office Supplies",
+                    ),
+                    "application/pdf",
+                ),
+            ),
+        ],
+    )
+
+    assert response.status_code == 200
+    batch_id = response.json()["item"]["id"]
+    wait_for_batch_stage(client, batch_id, "completed")
+
+    session = app.state.session_factory()
+    try:
+        batch = session.scalar(
+            select(Batch).where(Batch.batch_no == "BATCH-RUNTIME-ATTACH-UNMATCHED-001")
+        )
+        assert batch is not None
+        invoice = session.scalar(
+            select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id)
+        )
+        attachment = session.scalar(
+            select(AttachmentDocument).where(AttachmentDocument.batch_id == batch.id)
+        )
+        assert invoice is not None
+        assert attachment is not None
+
+        assert invoice.system_decision == "review_required"
+        assert attachment.attachment_status == "unmatched"
+        assert "attachment_unmatched" in json.loads(invoice.risk_flags or "[]")
+
+        detail_response = client.get(f"/api/invoices/{invoice.id}")
+        assert detail_response.status_code == 200
+        detail_payload = detail_response.json()["item"]
+        assert "清单附件未匹配当前发票" in detail_payload["decision_reasons"]
+
+        export_result = ExportService(
+            session, storage_root=app.state.storage_root
+        ).create_export(
+            batch_id=batch.id,
+            export_type="excel_manifest",
+            created_by="runtime-tester",
+        )
+        with ZipFile(export_result.output_path) as workbook:
+            sheet_xml = workbook.read("xl/worksheets/sheet1.xml").decode("utf-8")
+        assert "清单附件未匹配当前发票" in sheet_xml
+    finally:
+        session.close()
+
+
+def test_low_confidence_attachment_reason_flows_to_invoice_detail_and_export(tmp_path):
+    app = create_app(f"sqlite:///{tmp_path / 'runtime-attachment-low-confidence.db'}")
+    session = app.state.session_factory()
+    seed_active_rules(session)
+    session.close()
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/batches",
+        data={
+            "created_by": "runtime-tester",
+            "batch_no": "BATCH-RUNTIME-ATTACH-LOW-CONF-001",
+        },
+        files=[
+            (
+                "files",
+                (
+                    "main-invoice.pdf",
+                    build_invoice_fixture_pdf(
+                        invoice_number="ATT-LOW-001",
+                        seller_name="Acme Supplies Ltd",
+                        invoice_amount="388.00",
+                        line_text="DETAIL LIST ATTACHED",
+                    ),
+                    "application/pdf",
+                ),
+            ),
+            (
+                "files",
+                (
+                    "detail-list.pdf",
+                    build_invoice_fixture_pdf(
+                        invoice_number="ATT-LOW-001",
+                        seller_name="Acme Supplies Ltd",
+                        invoice_amount="388.00",
+                        line_text="Office Supplies",
+                        overall_confidence="0.60",
+                    ),
+                    "application/pdf",
+                ),
+            ),
+        ],
+    )
+
+    assert response.status_code == 200
+    batch_id = response.json()["item"]["id"]
+    wait_for_batch_stage(client, batch_id, "completed")
+
+    session = app.state.session_factory()
+    try:
+        batch = session.scalar(
+            select(Batch).where(Batch.batch_no == "BATCH-RUNTIME-ATTACH-LOW-CONF-001")
+        )
+        assert batch is not None
+        invoice = session.scalar(
+            select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id)
+        )
+        attachment = session.scalar(
+            select(AttachmentDocument).where(AttachmentDocument.batch_id == batch.id)
+        )
+        assert invoice is not None
+        assert attachment is not None
+
+        assert invoice.system_decision == "review_required"
+        assert attachment.attachment_status == "matched"
+        assert "attachment_low_confidence" in json.loads(invoice.risk_flags or "[]")
+
+        detail_response = client.get(f"/api/invoices/{invoice.id}")
+        assert detail_response.status_code == 200
+        detail_payload = detail_response.json()["item"]
+        assert "清单附件识别置信度不足" in detail_payload["decision_reasons"]
+
+        export_result = ExportService(
+            session, storage_root=app.state.storage_root
+        ).create_export(
+            batch_id=batch.id,
+            export_type="excel_manifest",
+            created_by="runtime-tester",
+        )
+        with ZipFile(export_result.output_path) as workbook:
+            sheet_xml = workbook.read("xl/worksheets/sheet1.xml").decode("utf-8")
+        assert "清单附件识别置信度不足" in sheet_xml
     finally:
         session.close()

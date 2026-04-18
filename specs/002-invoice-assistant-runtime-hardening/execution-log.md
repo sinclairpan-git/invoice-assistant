@@ -1019,16 +1019,16 @@
 #### 2.4 代码审查结论
 
 - 宪章/规格对齐：部分通过；阶段推进、幂等保护和轮询细粒度状态已经落地并经测试锁定
-- 剩余差距：`backend/app/api/batches.py` 仍在创建批次后同步调用 `ProcessingService.process_batch(batch.id)`，尚未实现“批次创建后异步入队，后台逐票推进”的 API 入口语义
+- 历史剩余差距（已在后续批次补齐）：本批记录时认为 `backend/app/api/batches.py` 仍缺少“批次创建后异步入队，后台逐票推进”的 API 入口；当前代码已改为通过 `request.app.state.processing_runner.enqueue(batch.id)` 触发异步处理
 - 代码质量：通过；状态推进、当前 job/attempt 指针和证据绑定关系清晰，重复执行保护覆盖了核心持久化边界
 - 测试质量：通过；新增测试覆盖 T32 的阶段与幂等核心约束，并完成后端全量回归
-- 结论：T32 核心能力已完成，但任务仍保持未完成，待补异步入队入口后再关闭
+- 结论：T32 核心能力在本批范围内已完成；“异步入队入口待补”仅代表当时的历史状态，当前实现已关闭该差距
 
 #### 2.5 任务/计划同步状态
 
-- `tasks.md` 同步状态：已核对；`T32` 保持未完成，避免把同步入口误记为“异步入队”已完成
+- `tasks.md` 同步状态：此处为历史记录；本批当时保持 `T32` 未完成，当前状态以后续 close-out 与最新 `tasks.md` 为准
 - `related_plan`（如存在）同步状态：以 `plan.md` 为准
-- 关联 branch/worktree disposition 计划：继续在 `feature/002-invoice-assistant-runtime-hardening-dev` 上补齐批次创建后的异步触发
+- 关联 branch/worktree disposition 计划：历史计划是继续在 `feature/002-invoice-assistant-runtime-hardening-dev` 上补齐批次创建后的异步触发；当前代码事实已完成该项
 - 说明：本批先把 T32 中最容易回归的作业状态机、幂等边界与进度可见性落稳，再进入 API 入口改造
 
 #### 2.6 自动决策记录

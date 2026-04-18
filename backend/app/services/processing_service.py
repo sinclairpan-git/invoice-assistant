@@ -527,133 +527,342 @@ class ProcessingService:
             .where(AttachmentDocument.batch_id == batch.id)
             .order_by(AttachmentDocument.original_filename.asc())
         ).all()
-        if not attachments:
-            return
-
-        self._advance_batch_stage(batch=batch, stage_code="attachment_matching")
-
         completed_invoices = [
             invoice for invoice in invoices if invoice.processing_status == "completed"
         ]
         invoice_by_id = {invoice.id: invoice for invoice in completed_invoices}
         attachment_by_id = {attachment.id: attachment for attachment in attachments}
         attachment_evidence: dict[str, UnifiedDocumentEvidence] = {}
-        matched_invoice_ids: dict[str, str] = {}
         invoice_to_attachment_ids: dict[str, list[str]] = {}
-
-        for attachment in attachments:
-            attachment.matched_invoice_id = None
-            source_path = self._resolve_storage_path(attachment.storage_path_original)
-            try:
-                evidence = self._parse_document(source_path.read_bytes()).evidence
-            except Exception as exc:
-                attachment.attachment_status = "parse_failed"
-                attachment.match_reason = str(exc)
-                continue
-
-            attachment_evidence[attachment.id] = evidence
-            matches = self._find_attachment_matches(
-                evidence=evidence, invoices=completed_invoices
-            )
-            if not matches:
-                attachment.attachment_status = "unmatched"
-                attachment.match_reason = (
-                    "No same-batch invoice matched the attachment summary."
-                )
-                continue
-            if len(matches) > 1:
-                attachment.attachment_status = "ambiguous"
-                attachment.match_reason = self._format_ambiguous_attachment_reason(
-                    matches
-                )
-                continue
-
-            invoice_id, reason = matches[0]
-            attachment.attachment_status = "matched"
-            attachment.matched_invoice_id = invoice_id
-            attachment.match_reason = reason
-            matched_invoice_ids[attachment.id] = invoice_id
-            invoice_to_attachment_ids.setdefault(invoice_id, []).append(attachment.id)
-
-        for invoice_id, attachment_ids in invoice_to_attachment_ids.items():
-            if len(attachment_ids) < 2:
-                continue
-            for attachment_id in attachment_ids:
-                attachment = attachment_by_id[attachment_id]
-                attachment.attachment_status = "ambiguous"
-                attachment.matched_invoice_id = None
-                attachment.match_reason = "Multiple attachments matched the same invoice; manual review required."
-                matched_invoice_ids.pop(attachment_id, None)
-
         business_rules = self._snapshot_content(snapshot, "business_rules")
         tax_profile = self._snapshot_content(snapshot, "tax_profile")
+        buyer_validation_cache: dict[str, BuyerValidationResult] = {}
 
-        for attachment_id, invoice_id in matched_invoice_ids.items():
-            invoice = invoice_by_id.get(invoice_id)
-            attachment = attachment_by_id[attachment_id]
-            current_attachment_evidence = attachment_evidence.get(attachment_id)
-            if (
-                invoice is None
-                or current_attachment_evidence is None
-                or invoice.processing_status != "completed"
-                or invoice.system_decision != "review_required"
-            ):
+        if attachments:
+            self._advance_batch_stage(batch=batch, stage_code="attachment_matching")
+
+            for attachment in attachments:
+                attachment.matched_invoice_id = None
+                source_path = self._resolve_storage_path(attachment.storage_path_original)
+                try:
+                    evidence = self._parse_document(source_path.read_bytes()).evidence
+                except Exception as exc:
+                    attachment.attachment_status = "parse_failed"
+                    attachment.match_reason = str(exc)
+                    continue
+
+                attachment_evidence[attachment.id] = evidence
+                matches = self._find_attachment_matches(
+                    evidence=evidence, invoices=completed_invoices
+                )
+                if not matches:
+                    attachment.attachment_status = "unmatched"
+                    attachment.match_reason = (
+                        "No same-batch invoice matched the attachment summary."
+                    )
+                    continue
+                if len(matches) > 1:
+                    attachment.attachment_status = "ambiguous"
+                    attachment.match_reason = self._format_ambiguous_attachment_reason(
+                        matches
+                    )
+                    continue
+
+                invoice_id, reason = matches[0]
+                attachment.attachment_status = "matched"
+                attachment.matched_invoice_id = invoice_id
+                attachment.match_reason = reason
+                invoice_to_attachment_ids.setdefault(invoice_id, []).append(attachment.id)
+
+            for invoice_id, attachment_ids in invoice_to_attachment_ids.items():
+                invoice = invoice_by_id.get(invoice_id)
+                current_attachment_evidence = self._merge_attachment_evidence(
+                    [
+                        attachment_evidence[attachment_id]
+                        for attachment_id in attachment_ids
+                        if attachment_id in attachment_evidence
+                    ]
+                )
+                if (
+                    invoice is None
+                    or current_attachment_evidence is None
+                    or invoice.processing_status != "completed"
+                    or invoice.system_decision != "review_required"
+                ):
+                    continue
+
+                main_evidence = parsed_invoice_evidence.get(
+                    invoice_id
+                ) or self._parse_invoice_evidence(invoice)
+                parsed_invoice_evidence.setdefault(invoice_id, main_evidence)
+                buyer_validation = buyer_validation_cache.get(invoice_id)
+                if buyer_validation is None:
+                    buyer_validation = validate_buyer_fields(
+                        evidence=main_evidence,
+                        tax_profile=tax_profile,
+                    )
+                    buyer_validation_cache[invoice_id] = buyer_validation
+                risk_result = classify_risk(
+                    evidence=main_evidence,
+                    attachment_evidence=current_attachment_evidence,
+                    business_rules=business_rules,
+                    buyer_validation=buyer_validation,
+                )
+                current_risk_flags = json.loads(invoice.risk_flags or "[]")
+                if (
+                    risk_result.decision == invoice.system_decision
+                    and risk_result.risk_flags == current_risk_flags
+                ):
+                    continue
+
+                duplicate_result = detect_suspected_duplicate(
+                    invoice_data={
+                        "invoice_number": invoice.invoice_number,
+                        "invoice_code": invoice.invoice_code,
+                        "seller_name": invoice.seller_name,
+                        "invoice_date": invoice.invoice_date,
+                        "invoice_amount": invoice.invoice_amount,
+                        "system_decision": risk_result.decision,
+                        "risk_flags": risk_result.risk_flags,
+                    },
+                    history=self._build_history_excluding_invoice(
+                        invoices=invoices, invoice_id=invoice.id
+                    ),
+                )
+
+                invoice.system_decision = duplicate_result.decision
+                invoice.duplicate_flag = duplicate_result.duplicate_flag
+                invoice.duplicate_group_key = duplicate_result.duplicate_group_key
+                invoice.risk_flags = json.dumps(
+                    duplicate_result.risk_flags, ensure_ascii=False, sort_keys=True
+                )
+                invoice.display_status = derive_display_status(
+                    processing_status=invoice.processing_status,
+                    system_decision=invoice.system_decision,
+                    duplicate_flag=invoice.duplicate_flag,
+                )
+                invoice.problem_count = self._compute_problem_count(
+                    risk_flags=duplicate_result.risk_flags,
+                    buyer_validation=buyer_validation,
+                )
+                for attachment_id in attachment_ids:
+                    attachment = attachment_by_id[attachment_id]
+                    attachment.attachment_status = "consumed"
+                    attachment.match_reason = (
+                        f"{attachment.match_reason}; reclassified the invoice using "
+                        "attachment line items."
+                    )
+
+        for invoice in completed_invoices:
+            if invoice.processing_status != "completed":
                 continue
-
             main_evidence = parsed_invoice_evidence.get(
-                invoice_id
+                invoice.id
             ) or self._parse_invoice_evidence(invoice)
-            buyer_validation = validate_buyer_fields(
+            parsed_invoice_evidence.setdefault(invoice.id, main_evidence)
+            if not self._invoice_requires_attachment_evidence(
                 evidence=main_evidence,
-                tax_profile=tax_profile,
-            )
-            risk_result = classify_risk(
-                evidence=main_evidence,
-                attachment_evidence=current_attachment_evidence,
                 business_rules=business_rules,
-                buyer_validation=buyer_validation,
-            )
-            current_risk_flags = json.loads(invoice.risk_flags or "[]")
-            if (
-                risk_result.decision == invoice.system_decision
-                and risk_result.risk_flags == current_risk_flags
             ):
                 continue
+            if invoice.system_decision != "review_required":
+                continue
 
-            duplicate_result = detect_suspected_duplicate(
-                invoice_data={
-                    "invoice_number": invoice.invoice_number,
-                    "invoice_code": invoice.invoice_code,
-                    "seller_name": invoice.seller_name,
-                    "invoice_date": invoice.invoice_date,
-                    "invoice_amount": invoice.invoice_amount,
-                    "system_decision": risk_result.decision,
-                    "risk_flags": risk_result.risk_flags,
-                },
-                history=self._build_history_excluding_invoice(
-                    invoices=invoices, invoice_id=invoice.id
-                ),
+            attachment_review_flags = self._attachment_review_flags_for_invoice(
+                invoice_id=invoice.id,
+                attachments=attachments,
+                invoice_to_attachment_ids=invoice_to_attachment_ids,
+                attachment_evidence=attachment_evidence,
+                attachment_by_id=attachment_by_id,
+                business_rules=business_rules,
             )
+            if not attachment_review_flags:
+                continue
 
-            invoice.system_decision = duplicate_result.decision
-            invoice.duplicate_flag = duplicate_result.duplicate_flag
-            invoice.duplicate_group_key = duplicate_result.duplicate_group_key
-            invoice.risk_flags = json.dumps(
-                duplicate_result.risk_flags, ensure_ascii=False, sort_keys=True
-            )
-            invoice.display_status = derive_display_status(
-                processing_status=invoice.processing_status,
-                system_decision=invoice.system_decision,
-                duplicate_flag=invoice.duplicate_flag,
-            )
-            invoice.problem_count = self._compute_problem_count(
-                risk_flags=duplicate_result.risk_flags,
+            buyer_validation = buyer_validation_cache.get(invoice.id)
+            if buyer_validation is None:
+                buyer_validation = validate_buyer_fields(
+                    evidence=main_evidence,
+                    tax_profile=tax_profile,
+                )
+                buyer_validation_cache[invoice.id] = buyer_validation
+            self._merge_invoice_risk_flags(
+                invoice=invoice,
                 buyer_validation=buyer_validation,
+                extra_risk_flags=attachment_review_flags,
             )
-            attachment.attachment_status = "consumed"
-            attachment.match_reason = f"{attachment.match_reason}; reclassified the invoice using attachment line items."
 
         self.session.flush()
+
+    def _merge_attachment_evidence(
+        self, evidences: list[UnifiedDocumentEvidence]
+    ) -> UnifiedDocumentEvidence | None:
+        if not evidences:
+            return None
+        if len(evidences) == 1:
+            return evidences[0]
+
+        merged = evidences[0].model_copy(deep=True)
+        merged.raw_text = "\n".join(
+            raw_text.strip()
+            for raw_text in (evidence.raw_text or "" for evidence in evidences)
+            if raw_text.strip()
+        )
+        merged.pages = [
+            dict(page)
+            for evidence in evidences
+            for page in evidence.pages
+        ]
+        merged.text_blocks = [
+            block.model_copy(deep=True)
+            for evidence in evidences
+            for block in evidence.text_blocks
+        ]
+        merged.table_lines = [
+            dict(line)
+            for evidence in evidences
+            for line in evidence.table_lines
+        ]
+        merged.field_candidates = [
+            candidate.model_copy(deep=True)
+            for evidence in evidences
+            for candidate in evidence.field_candidates
+        ]
+        merged.confidence_summary.overall = min(
+            evidence.confidence_summary.overall for evidence in evidences
+        )
+        merged.confidence_summary.fields = {
+            field_name: max(
+                candidate.confidence
+                for evidence in evidences
+                for candidate in evidence.field_candidates
+                if candidate.field_name == field_name
+            )
+            for field_name in {
+                candidate.field_name
+                for evidence in evidences
+                for candidate in evidence.field_candidates
+            }
+        }
+        merged.confidence_summary.flags = list(
+            dict.fromkeys(
+                flag
+                for evidence in evidences
+                for flag in evidence.confidence_summary.flags
+            )
+        )
+        if any(evidence.source_type == "ocr" for evidence in evidences):
+            merged.source_type = "ocr"
+        provider_names = {evidence.provider_name for evidence in evidences}
+        if len(provider_names) > 1:
+            merged.provider_name = "aggregated"
+        provider_versions = {evidence.provider_version for evidence in evidences}
+        if len(provider_versions) > 1:
+            merged.provider_version = "multiple"
+        return merged
+
+    def _attachment_review_flags_for_invoice(
+        self,
+        *,
+        invoice_id: str,
+        attachments: list[AttachmentDocument],
+        invoice_to_attachment_ids: dict[str, list[str]],
+        attachment_evidence: dict[str, UnifiedDocumentEvidence],
+        attachment_by_id: dict[str, AttachmentDocument],
+        business_rules: dict[str, Any],
+    ) -> list[str]:
+        attachment_ids = invoice_to_attachment_ids.get(invoice_id, [])
+        if not attachment_ids:
+            if not attachments:
+                return ["attachment_missing"]
+            if any(
+                attachment.attachment_status == "parse_failed"
+                for attachment in attachments
+            ):
+                return ["attachment_parse_failed"]
+            if any(
+                attachment.attachment_status in {"unmatched", "ambiguous"}
+                for attachment in attachments
+            ):
+                return ["attachment_unmatched"]
+            return ["attachment_missing"]
+
+        merged_attachment_evidence = self._merge_attachment_evidence(
+            [
+                attachment_evidence[attachment_id]
+                for attachment_id in attachment_ids
+                if attachment_id in attachment_evidence
+            ]
+        )
+        if merged_attachment_evidence is None:
+            if any(
+                attachment_by_id[attachment_id].attachment_status == "parse_failed"
+                for attachment_id in attachment_ids
+                if attachment_id in attachment_by_id
+            ):
+                return ["attachment_parse_failed"]
+            return ["attachment_missing"]
+
+        minimum_confidence = float(business_rules.get("minimum_confidence", 0.75))
+        if merged_attachment_evidence.confidence_summary.overall < minimum_confidence:
+            return ["attachment_low_confidence"]
+        if any(
+            flag in {"low_confidence", "ocr_low_confidence"}
+            for flag in merged_attachment_evidence.confidence_summary.flags
+        ):
+            return ["attachment_low_confidence"]
+        return []
+
+    def _invoice_requires_attachment_evidence(
+        self,
+        *,
+        evidence: UnifiedDocumentEvidence,
+        business_rules: dict[str, Any],
+    ) -> bool:
+        review_keywords = {
+            self._normalize_rule_text(str(keyword))
+            for keyword in business_rules.get("review_keywords", [])
+            if str(keyword).strip()
+        }
+        if not review_keywords:
+            review_keywords = {"详见清单", "详见销货清单", "混合票", "混合项目"}
+
+        line_texts = [
+            self._normalize_rule_text(str(line.get("text") or ""))
+            for line in evidence.table_lines
+        ]
+        return any(
+            keyword and keyword in line_text
+            for keyword in review_keywords
+            for line_text in line_texts
+        )
+
+    def _merge_invoice_risk_flags(
+        self,
+        *,
+        invoice: InvoiceRecord,
+        buyer_validation: BuyerValidationResult,
+        extra_risk_flags: list[str],
+    ) -> None:
+        current_risk_flags = json.loads(invoice.risk_flags or "[]")
+        merged_risk_flags = list(
+            dict.fromkeys([*current_risk_flags, *extra_risk_flags])
+        )
+        if merged_risk_flags == current_risk_flags:
+            return
+
+        invoice.risk_flags = json.dumps(
+            merged_risk_flags, ensure_ascii=False, sort_keys=True
+        )
+        invoice.display_status = derive_display_status(
+            processing_status=invoice.processing_status,
+            system_decision=invoice.system_decision,
+            duplicate_flag=invoice.duplicate_flag,
+        )
+        invoice.problem_count = self._compute_problem_count(
+            risk_flags=merged_risk_flags,
+            buyer_validation=buyer_validation,
+        )
 
     def _find_attachment_matches(
         self,
@@ -1241,3 +1450,7 @@ class ProcessingService:
     @staticmethod
     def _coerce_bool(raw_value: Any) -> bool:
         return str(raw_value or "").strip().lower() in {"1", "true", "yes", "y"}
+
+    @staticmethod
+    def _normalize_rule_text(value: str) -> str:
+        return "".join(value.split()).strip()

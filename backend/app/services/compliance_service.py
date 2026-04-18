@@ -15,6 +15,10 @@ RISK_FLAG_LABELS = {
     "low_confidence": "低置信度",
     "fuzzy_line_items": "明细模糊",
     "suspected_duplicate": "疑似重复",
+    "attachment_missing": "缺少清单附件",
+    "attachment_unmatched": "清单附件未匹配当前发票",
+    "attachment_low_confidence": "清单附件识别置信度不足",
+    "attachment_parse_failed": "清单附件解析失败",
 }
 
 

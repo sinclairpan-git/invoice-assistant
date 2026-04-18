@@ -186,10 +186,15 @@ def test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent(tmp
     assert len(review_detail["evidence_items"]) == 1
     assert len(review_detail["extracted_fields"]) >= 6
     assert len(review_detail["field_checks"]) >= 2
-    assert set(review_detail["risk_flags"]) == {"low_confidence", "fuzzy_line_items"}
+    assert set(review_detail["risk_flags"]) == {
+        "attachment_missing",
+        "fuzzy_line_items",
+        "low_confidence",
+    }
     assert review_detail["basic_compliance_status"] == "通过"
     assert review_detail["business_compliance_status"] == "待人工复核"
     assert review_detail["final_decision"] == "需人工复核"
+    assert "缺少清单附件" in review_detail["decision_reasons"]
     assert "低置信度" in review_detail["decision_reasons"]
     assert "需人工复核后再导出" in review_detail["suggested_actions"]
     assert review_detail["review_actions"] == []

@@ -2,7 +2,7 @@
 
 **功能编号**：`005-attachment-list-recognition`
 **创建日期**：2026-04-18
-**状态**：执行中
+**状态**：已完成实现、回归验证与后续补丁归档
 
 ## 1. 归档规则
 
@@ -474,4 +474,70 @@
 - **提交哈希**：以当前 `HEAD` 为准
 - 当前批次 branch disposition 状态：merged
 - 当前批次 worktree disposition 状态：main 保留
+- 是否继续下一批：否
+
+### Batch 2026-04-19-005 | top-level backlog resweep truth sync
+
+#### 2.1 批次范围
+
+- 覆盖任务：`post-close truth sync`
+- 覆盖阶段：`close`
+- 预读范围：`发票整理助手_评审终版_重新生成.md`、`docs/superpowers/specs/2026-04-17-invoice-assistant-design.md`、`docs/invoice-assistant-gap-backlog.zh-CN.md`、`specs/001-invoice-assistant-mvp/spec.md`、`specs/002-invoice-assistant-runtime-hardening/spec.md`、`specs/003-financial-review-checks/spec.md`、`specs/004-controlled-review-export/spec.md`、`specs/005-attachment-list-recognition/spec.md`、`specs/005-attachment-list-recognition/tasks.md`、`specs/005-attachment-list-recognition/task-execution-log.md`
+- 激活的规则：顶层 backlog 先于局部结论；latest batch 必须落在文件末尾；文档状态必须服从当前代码与规格事实
+
+#### 2.2 统一验证命令
+
+- **验证画像**：docs-only + governance dry-run
+- **改动范围**：`docs/invoice-assistant-gap-backlog.zh-CN.md`、`specs/005-attachment-list-recognition/task-execution-log.md`
+- `V0`
+  - 命令：`python -m ai_sdlc adapter activate`
+  - 结果：PASS，当前 adapter 人工确认已记录为 `acknowledged`
+- `V1`
+  - 命令：`python -m ai_sdlc run --dry-run`
+  - 结果：PASS，输出 `Stage close: PASS`
+- `V2`
+  - 命令：`uv run pytest backend/tests -q`
+  - 结果：PASS，60 passed
+
+#### 2.3 任务记录
+
+##### post-close truth sync | 顶层复扫与 005 归档收平
+
+- 改动范围：`docs/invoice-assistant-gap-backlog.zh-CN.md`、`specs/005-attachment-list-recognition/task-execution-log.md`
+- 改动内容：基于顶层 PRD、设计文档、`specs/001-005` 与当前实现再次复扫；确认上一轮 backlog 已完成 `P1-P3`，未发现新的产品行为缺口；将本轮唯一剩余问题收敛为 `005` 执行日志状态漂移，并补齐 latest batch 归档。
+- 新增/调整的测试：无；本批为文档真值修正，仅复用 AI-SDLC dry-run 与后端全量回归作为 fresh 证据
+- 执行的命令：`python -m ai_sdlc adapter activate`、`python -m ai_sdlc run --dry-run`、`uv run pytest backend/tests -q`
+- 测试结果：通过
+- 是否符合任务目标：是
+
+#### 2.4 代码审查结论（Mandatory）
+
+- 宪章/规格对齐：通过；本批不新增 005 产品行为，只把顶层 backlog、规格状态与执行日志真值重新对齐
+- 代码质量：通过；未触碰运行时代码路径，上一轮已落地的多附件聚合与附件原因链保持不变
+- 测试质量：通过；fresh dry-run 与后端全量回归均通过，可证明文档收口未引入回退
+- 结论：005 当前剩余事项仅为归档层维护，不存在新的实现缺口
+
+#### 2.5 任务/计划同步状态（Mandatory）
+
+- `tasks.md` 同步状态：无需变更，`T11-T51` 保持完成；本批未重开任务
+- `related_plan`（如存在）同步状态：无需调整，仍以 `plan.md` 为准
+- 关联 branch/worktree disposition 计划：沿用当前工作区继续维护 backlog 文档，不新增分支处置动作
+- 说明：`.ai-sdlc/project/config/project-config.yaml` 仍是运行态变更，本批未触碰
+
+#### 2.6 自动决策记录（如有）
+
+- 选择不重开 005 任务，因为本轮发现的是文档真值漂移，不是新的产品实现缺口
+- 选择把“下一轮”复扫结果直接追加到顶层 backlog，而不是新建分散清单，保持单一顺序来源
+
+#### 2.7 批次结论
+
+- 下一轮复扫未发现新的顶层需求/设计实现缺口
+- `005-attachment-list-recognition` 当前最后一个遗留问题是执行日志头部状态与 latest batch 真值漂移，现已收口
+
+#### 2.8 归档后动作
+
+- 已完成 git 提交：否
+- 提交哈希：N/A
+- 当前批次 branch disposition 状态：沿用当前分支
+- 当前批次 worktree disposition 状态：沿用当前工作区
 - 是否继续下一批：否
