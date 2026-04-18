@@ -161,4 +161,4 @@ Batch 5: 回归验证与收口
   1. 005 相关定向测试通过。
   2. `python -m ai_sdlc run --dry-run` 通过，且无附件主路径回归不退化。
 - **验证**：`python -m pytest backend/tests -q`，`npm test`，`python -m ai_sdlc run --dry-run`
-- **状态**：未开始
+- **状态**：已完成

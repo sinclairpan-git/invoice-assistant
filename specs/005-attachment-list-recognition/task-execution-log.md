@@ -321,3 +321,65 @@
 - 当前批次 branch disposition 状态：进行中
 - 当前批次 worktree disposition 状态：沿用当前工作区
 - 是否继续下一批：是
+
+### Batch 2026-04-19-003 | T51
+
+#### 2.1 批次范围
+
+- 覆盖任务：`T51`
+- 覆盖阶段：Batch 5 回归验证与收口
+- 预读范围：`specs/005-attachment-list-recognition/spec.md`、`specs/005-attachment-list-recognition/plan.md`、`specs/005-attachment-list-recognition/tasks.md`、`specs/005-attachment-list-recognition/task-execution-log.md`、`.ai-sdlc/state/checkpoint.yml`
+- 激活的规则：先证据后结论、单批代码与归档合并提交、AI-SDLC 门禁状态与仓库真实执行结果对齐
+
+#### 2.2 统一验证命令
+
+- `R1`（红灯验证，如有 TDD）
+  - 命令：`python -m ai_sdlc run --dry-run`
+  - 结果：初始失败；`Stage execute: RETRY` / `Stage close: RETRY`，根因不是代码回归，而是 checkpoint 缺少 `execute_progress`，导致 execute gate 看不到本轮已完成的测试、构建、执行日志与提交事实
+- `V1`（全量回归）
+  - 命令：`uv run pytest backend/tests -q`、`npm test`
+  - 结果：通过（56 passed，7 passed）
+- `V2`（dry-run 收口）
+  - 命令：`python -m ai_sdlc adapter activate`、补齐 `development-summary.md` 与 checkpoint `execute_progress` 后执行 `python -m ai_sdlc run --dry-run`
+  - 结果：通过（`Stage execute: PASS`，`Stage close: PASS`）
+
+#### 2.3 任务记录
+
+##### T51 | 完成定向回归与 dry-run 收口
+
+- 改动范围：`specs/005-attachment-list-recognition/tasks.md`、`specs/005-attachment-list-recognition/task-execution-log.md`、`specs/005-attachment-list-recognition/development-summary.md`、`.ai-sdlc/state/checkpoint.yml`
+- 改动内容：执行后端全量与前端全量回归；确认附件 sidecar 结果展示、导出列和主票主路径均未退化；为 005 work item 补齐 `development-summary.md`，并把已发生的批次完成数、执行日志、提交哈希回填到 checkpoint 的 `execute_progress`，使 AI-SDLC dry-run 能识别真实完成状态。
+- 新增/调整的测试：无新增测试；执行全量后端/前端回归与 AI-SDLC dry-run 收口。
+- 执行的命令：`uv run pytest backend/tests -q`、`npm test`、`python -m ai_sdlc adapter activate`、`python -m ai_sdlc run --dry-run`
+- 测试结果：通过
+- 是否符合任务目标：是
+
+#### 2.4 代码审查结论（Mandatory）
+
+- 宪章/规格对齐：Batch 5 仅做回归与收口，没有扩展 005 业务边界。
+- 代码质量：附件 sidecar 方案经全量后端与前端测试回归，未把附件语义扩散到主票进度、失败口径和 004 导出门禁。
+- 测试质量：覆盖后端 56 项、前端 7 项，以及 AI-SDLC dry-run 门禁复核。
+- 结论：005 可以结束 execute，并具备进入 close/disposition 的文档与门禁证据。
+
+#### 2.5 任务/计划同步状态（Mandatory）
+
+- `tasks.md` 同步状态：已同步，T51 标记完成；005 全部任务完成
+- `related_plan`（如存在）同步状态：无需调整，仍以 `plan.md` 为准
+- 关联 branch/worktree disposition 计划：当前开发分支继续保留，等待后续 merge/disposition 动作
+- 说明：`.ai-sdlc/project/config/project-config.yaml` 与 `.ai-sdlc/project/config/project-state.yaml` 仍为运行态变更，未纳入代码提交
+
+#### 2.6 自动决策记录（如有）
+
+- 未调用 AI-SDLC 通用 executor 自动补账，避免它以占位执行器重写现有日志/提交；改为按真实执行结果手工补齐 checkpoint `execute_progress` 与 `development-summary.md`。
+
+#### 2.7 批次结论
+
+- Batch 5 已完成回归验证与 dry-run 收口，`005-attachment-list-recognition` 的实现、测试与规格归档现已闭环。
+
+#### 2.8 归档后动作
+
+- 已完成 git 提交：是
+- 提交哈希：见当前 `HEAD`（若在归档内写入精确哈希，会因 amend 再次变化）
+- 当前批次 branch disposition 状态：进行中
+- 当前批次 worktree disposition 状态：沿用当前工作区
+- 是否继续下一批：否
