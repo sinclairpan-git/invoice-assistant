@@ -383,3 +383,95 @@
 - 当前批次 branch disposition 状态：进行中
 - 当前批次 worktree disposition 状态：沿用当前工作区
 - 是否继续下一批：否
+
+### Batch 2026-04-19-004 | close-out lifecycle resolution
+
+#### 2.1 批次范围
+
+- 覆盖任务：`close-out`
+- 覆盖阶段：`close`
+- 预读范围：`AGENTS.md`、`.ai-sdlc/memory/constitution.md`、`specs/005-attachment-list-recognition/spec.md`、`specs/005-attachment-list-recognition/tasks.md`
+- 激活的规则：latest batch 必须位于文件末尾；先完成 merge / knowledge refresh，再以 close-out 文档落账 branch disposition 真相
+
+#### 2.2 统一验证命令
+
+- **验证画像**：docs-only
+- **改动范围**：`specs/005-attachment-list-recognition/task-execution-log.md`
+- 框架签名：`python -m ai_sdlc verify constraints`
+- `V1`
+  - 命令：`uv run pytest backend/tests -q`
+  - 结果：PASS，56 passed
+- `V2`
+  - 命令：`uv run ruff check .`
+  - 结果：PASS，All checks passed!
+- `V3`
+  - 命令：`uv run ruff format --check .`
+  - 结果：FAIL，仓库既有格式基线未收敛（41 files would be reformatted）；本批未做仓库级重排
+- `V4`
+  - 命令：`npm test`
+  - 结果：PASS，7 passed
+- `V5`
+  - 命令：`python - <<'PY' ... init_existing_project(Path('.').resolve()) ... PY`
+  - 结果：PASS，补齐 knowledge baseline，生成 15 个 `.ai-sdlc/project/**` 语料/索引文件（仅本地保留）
+- `V6`
+  - 命令：`python -m ai_sdlc refresh . --work-item-id 005-attachment-list-recognition --spec-changed ...`
+  - 结果：PASS，L3 refresh 完成；baseline 推进到 corpus v2 / index v2（生成物仅本地保留）
+- `V7`
+  - 命令：`git switch main`
+  - 结果：PASS，已切换到 `main`
+- `V8`
+  - 命令：`git merge --ff-only codex/005-attachment-list-recognition`
+  - 结果：PASS，`main` 已 fast-forward 到 `9969796`
+- `V9`
+  - 命令：`python -m ai_sdlc workitem branch-check --wi specs/005-attachment-list-recognition --json`
+  - 结果：PASS，associated branch `ahead_of_main=0`
+- `V10`
+  - 命令：`python -m ai_sdlc workitem close-check --wi specs/005-attachment-list-recognition --json`
+  - 结果：预期在本批文档提交且工作区清理后 PASS；当前 blocker 仅为 latest batch 尚未落账
+
+#### 2.3 任务记录
+
+##### close-out | 合并分支、执行 knowledge refresh 并补齐收口证据
+
+- 改动范围：`specs/005-attachment-list-recognition/task-execution-log.md`
+- 改动内容：
+  - 将 `codex/005-attachment-list-recognition` fast-forward 合并回 `main`
+  - 本地补齐 knowledge baseline 并执行 005 的 L3 refresh，完成 close checklist 要求的 knowledge refresh
+  - 在 latest batch 显式记录验证画像、git close-out 标记与合并后的 branch disposition 真相
+- 新增/调整的测试：无新增产品测试；本批复用后端/前端全量回归、静态检查与 close-stage 只读检查
+- 执行的命令：`V1`、`V2`、`V3`、`V4`、`V5`、`V6`、`V7`、`V8`、`V9`、`V10`
+- 测试结果：通过；`ruff format --check .` 暴露的是仓库既有格式基线，不属于本批新引入回归
+- 是否符合任务目标：是
+
+#### 2.4 代码审查结论（Mandatory）
+
+- 宪章/规格对齐：通过；本批不新增产品行为，只完成 005 的 close/disposition 与知识刷新证据收口
+- 代码质量：通过；`main` 已与 005 分支代码对齐，未引入额外 runtime 变更
+- 测试质量：通过；fresh backend/frontend/ruff check 证据齐备，close-stage blocker 已收敛到 latest batch 落账
+- 结论：允许在本批 git 提交后执行最终 `workitem close-check`
+
+#### 2.5 任务/计划同步状态（Mandatory）
+
+- `tasks.md` 同步状态：已同步，005 全部任务保持完成
+- `related_plan`（如存在）同步状态：无需调整，仍以 `plan.md` 为准
+- 关联 branch/worktree disposition 计划：`codex/005-attachment-list-recognition` 已合并到 `main`
+- 说明：knowledge refresh 生成的 `.ai-sdlc/project/**` 语料与索引仅作本地基线，不纳入本批 close-out 提交
+
+#### 2.6 自动决策记录（如有）
+
+- 选择本地 fast-forward merge，因为 `ahead_of_main` 清零即可满足 close-stage 的 branch lifecycle truth
+- 选择不提交首次生成的 `.ai-sdlc/project/**` corpus/index，避免在 005 收口时引入大体量全仓库扫描产物噪音
+- `ruff format --check .` 暴露 41 个既有格式差异，本批按“收口不做仓库级重排”处理
+
+#### 2.7 批次结论
+
+- `main` 已包含 005 实现与其依赖的历史提交
+- 005 的 close-stage 前置证据已齐备，下一步仅剩提交本批日志并在 clean tree 上执行最终 `workitem close-check`
+
+#### 2.8 归档后动作
+
+- 已完成 git 提交：是
+- 提交哈希：以当前 `HEAD` 为准
+- 当前批次 branch disposition 状态：merged
+- 当前批次 worktree disposition 状态：main 保留
+- 是否继续下一批：否
