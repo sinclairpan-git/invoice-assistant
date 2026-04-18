@@ -2,7 +2,7 @@
 
 **功能编号**：`005-attachment-list-recognition`
 **创建日期**：2026-04-18
-**状态**：草稿
+**状态**：执行中
 
 ## 1. 归档规则
 
@@ -97,6 +97,80 @@
 #### 2.7 批次结论
 
 - 005 的 formal 文档已从脚手架模板替换为可执行基线，下一步进入上传入口与数据模型实现。
+
+#### 2.8 归档后动作
+
+- 已完成 git 提交：否（须与 **本批唯一一次** commit 对齐）
+- 提交哈希：待本批提交后生成
+- 当前批次 branch disposition 状态：进行中
+- 当前批次 worktree disposition 状态：沿用当前工作区
+- 是否继续下一批：是
+
+### Batch 2026-04-18-002 | T21-T22
+
+#### 2.1 批次范围
+
+- 覆盖任务：`T21`、`T22`
+- 覆盖阶段：Batch 2 上传入口与数据模型
+- 预读范围：`specs/005-attachment-list-recognition/spec.md`、`specs/005-attachment-list-recognition/plan.md`、`specs/005-attachment-list-recognition/tasks.md`、`backend/app/db/models.py`、`backend/app/services/batch_service.py`、`backend/app/services/processing_service.py`、`backend/app/services/progress_service.py`、`backend/app/api/serializers.py`、`frontend/src/components/batch/UploadPanel.tsx`
+- 激活的规则：本地优先、可解释自动化、小步迭代、受控导出不回退
+
+#### 2.2 统一验证命令
+
+- `R1`（红灯验证，如有 TDD）
+  - 命令：`uv run pytest backend/tests/test_batch_storage.py -q`
+  - 结果：先红后绿；初始因 `AttachmentDocument` 未定义失败，补齐模型与分流逻辑后通过
+- `V1`（定向验证）
+  - 命令：`uv run pytest backend/tests/test_api_workflows.py -q`
+  - 结果：通过（9 passed）
+- `V2`（前端验证）
+  - 命令：`npm test -- tests/runtime-ui.test.tsx`
+  - 结果：通过（6 passed）
+- `V3`（构建验证）
+  - 命令：`npm run build`
+  - 结果：通过
+
+#### 2.3 任务记录
+
+##### T21 | 为批次文件建立附件候选类型与持久化结构
+
+- 改动范围：`backend/app/db/models.py`、`backend/app/services/batch_service.py`、`backend/tests/test_batch_storage.py`
+- 改动内容：新增 `AttachmentDocument` 模型与批次关联；批次创建时按文件名关键字将清单附件单独落库，不再混入 `InvoiceRecord`；同时把 `total_files` 收敛为进入识别流水线的主发票数，避免附件破坏现有进度语义；重复文件校验补齐附件表覆盖。
+- 新增/调整的测试：新增混合上传存储测试，断言主票/附件分流、附件状态为 `pending_match`，以及批次 `total_files` 仅统计主票。
+- 执行的命令：`uv run pytest backend/tests/test_batch_storage.py -q`
+- 测试结果：通过（4 passed）
+- 是否符合任务目标：是
+
+##### T22 | 扩展批次创建 API 与前端上传协议
+
+- 改动范围：`backend/app/api/serializers.py`、`backend/tests/test_api_workflows.py`、`frontend/src/app/types.ts`、`frontend/src/components/batch/UploadPanel.tsx`
+- 改动内容：批次序列化新增 `invoice_file_count` 与 `attachment_file_count`；异步创建批次接口用例改为混合上传并校验新字段；前端上传面板文案调整为支持“PDF 发票与清单附件”，保留最小提示而不引入人工关联步骤。
+- 新增/调整的测试：扩展现有异步 API 用例，验证混合上传时返回的发票数/附件数与进度统计口径；前端运行时 UI 用例保持通过。
+- 执行的命令：`uv run pytest backend/tests/test_api_workflows.py -q`、`npm test -- tests/runtime-ui.test.tsx`、`npm run build`
+- 测试结果：通过
+- 是否符合任务目标：是
+
+#### 2.4 代码审查结论（Mandatory）
+
+- 宪章/规格对齐：本批仅完成“上传入口与数据模型”，未提前进入附件解析和规则消费。
+- 代码质量：附件通过独立表建模，避免污染既有发票处理链；批次进度统计继续沿用“主票驱动”口径，新增附件数单独暴露。
+- 测试质量：覆盖了存储层分流、接口响应契约和前端运行时/构建回归。
+- 结论：可进入 Batch 3 的附件解析与匹配实现。
+
+#### 2.5 任务/计划同步状态（Mandatory）
+
+- `tasks.md` 同步状态：已同步，T21-T22 标记完成
+- `related_plan`（如存在）同步状态：无需调整，仍以 `plan.md` 为准
+- 关联 branch/worktree disposition 计划：继续在 `codex/005-attachment-list-recognition` 上推进 Batch 3
+- 说明：`.ai-sdlc/project/config/project-config.yaml` 与 `.ai-sdlc/project/config/project-state.yaml` 仍为运行态变更，未纳入本批提交
+
+#### 2.6 自动决策记录（如有）
+
+- 将 `total_files` 定义为“进入 OCR/规则流水线的主发票数”，附件数通过新增字段单独暴露，以保持 001/004 既有进度与导出约束不回退。
+
+#### 2.7 批次结论
+
+- Batch 2 已完成混合上传落库、接口计数扩展与前端最小提示，附件识别闭环的下一步阻塞点转为“附件解析与主票匹配”。
 
 #### 2.8 归档后动作
 

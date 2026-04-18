@@ -556,7 +556,10 @@ def test_create_batch_returns_without_waiting_for_processing_completion(tmp_path
             response_holder["response"] = client.post(
                 "/api/batches",
                 data={"created_by": "async-uploader", "batch_no": "BATCH-ASYNC-001"},
-                files=[("files", ("upload.pdf", b"%PDF-1.7\nupload fixture", "application/pdf"))],
+                files=[
+                    ("files", ("upload.pdf", b"%PDF-1.7\nupload fixture", "application/pdf")),
+                    ("files", ("upload-销货清单.pdf", b"%PDF-1.7\nattachment fixture", "application/pdf")),
+                ],
             )
 
         request_thread = threading.Thread(target=send_request)
@@ -570,6 +573,9 @@ def test_create_batch_returns_without_waiting_for_processing_completion(tmp_path
         assert response.status_code == 200
         payload = response.json()["item"]
         assert payload["batch_no"] == "BATCH-ASYNC-001"
+        assert payload["total_files"] == 1
+        assert payload["invoice_file_count"] == 1
+        assert payload["attachment_file_count"] == 1
         assert payload["progress"]["stage_code"] in {"queued", "processing"}
 
         session = app.state.session_factory()
@@ -577,6 +583,7 @@ def test_create_batch_returns_without_waiting_for_processing_completion(tmp_path
             batch = session.scalar(select(Batch).where(Batch.batch_no == "BATCH-ASYNC-001"))
             assert batch is not None
             assert batch.status in {"queued", "processing"}
+            assert batch.total_files == 1
         finally:
             session.close()
 

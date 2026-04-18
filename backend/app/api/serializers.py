@@ -48,6 +48,8 @@ def serialize_batch(
         "suggested_pass_count": batch.suggested_pass_count,
         "suggested_pass_total_amount": _serialize_scalar(batch.suggested_pass_total_amount),
         "export_manifest_path": batch.export_manifest_path,
+        "invoice_file_count": len(batch.invoices),
+        "attachment_file_count": len(batch.attachment_documents),
     }
     if progress is not None:
         payload["progress"] = progress.to_dict()

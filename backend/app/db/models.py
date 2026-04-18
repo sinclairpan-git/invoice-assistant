@@ -53,6 +53,9 @@ class Batch(Base):
     export_manifest_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     invoices: Mapped[list["InvoiceRecord"]] = relationship(back_populates="batch", cascade="all, delete-orphan")
+    attachment_documents: Mapped[list["AttachmentDocument"]] = relationship(
+        back_populates="batch", cascade="all, delete-orphan"
+    )
     processing_jobs: Mapped[list["ProcessingJob"]] = relationship(
         back_populates="batch", cascade="all, delete-orphan"
     )
@@ -112,6 +115,23 @@ class InvoiceRecord(Base):
     review_actions: Mapped[list["ReviewAction"]] = relationship(
         back_populates="invoice", cascade="all, delete-orphan"
     )
+
+
+class AttachmentDocument(Base):
+    __tablename__ = "attachment_documents"
+    __table_args__ = (UniqueConstraint("batch_id", "original_filename", name="uq_attachment_batch_original_name"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    batch_id: Mapped[str] = mapped_column(String(36), ForeignKey("batches.id"), nullable=False, index=True)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    storage_path_original: Mapped[str] = mapped_column(String(512), nullable=False)
+    file_sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    attachment_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending_match")
+    matched_invoice_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("invoice_records.id"), nullable=True)
+    match_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    batch: Mapped[Batch] = relationship(back_populates="attachment_documents")
+    matched_invoice: Mapped[InvoiceRecord | None] = relationship()
 
 
 class ProcessingJob(Base):

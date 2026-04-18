@@ -74,6 +74,8 @@ export interface Batch {
   suggested_pass_count: number;
   suggested_pass_total_amount: string;
   export_manifest_path: string | null;
+  invoice_file_count: number;
+  attachment_file_count: number;
   progress?: BatchProgress;
   snapshot?: ActiveSnapshot;
   export_jobs?: ExportJob[];

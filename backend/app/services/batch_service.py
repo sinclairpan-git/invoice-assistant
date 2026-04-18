@@ -8,7 +8,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.db.models import Batch, InvoiceRecord
+from backend.app.db.models import AttachmentDocument, Batch, InvoiceRecord
 from backend.app.services.config_service import ConfigService
 from backend.app.services.storage_service import DuplicateOriginalFileError, StorageService
 
@@ -38,11 +38,12 @@ class BatchService:
         batch_number = batch_no or self._generate_batch_no()
         self._assert_batch_import_is_allowed(batch_number=batch_number, files=files)
         snapshot = self.config_service.get_active_snapshot()
+        invoice_file_count = sum(0 if self._looks_like_attachment(item.filename) else 1 for item in files)
         batch = Batch(
             batch_no=batch_number,
             created_by=created_by,
             status="queued",
-            total_files=len(files),
+            total_files=invoice_file_count,
             completed_files=0,
             processing_files=0,
             failed_files=0,
@@ -58,16 +59,26 @@ class BatchService:
 
             for incoming_file in files:
                 stored = self.storage_service.save_original(batch_number, incoming_file.filename, incoming_file.content)
-                invoice = InvoiceRecord(
-                    batch_id=batch.id,
-                    original_filename=stored.original_filename,
-                    storage_path_original=stored.storage_path,
-                    file_sha256=stored.file_sha256,
-                    processing_status="queued",
-                    review_status="not_reviewed",
-                    artifact_status="original_only",
-                )
-                self.session.add(invoice)
+                if self._looks_like_attachment(incoming_file.filename):
+                    attachment = AttachmentDocument(
+                        batch_id=batch.id,
+                        original_filename=stored.original_filename,
+                        storage_path_original=stored.storage_path,
+                        file_sha256=stored.file_sha256,
+                        attachment_status="pending_match",
+                    )
+                    self.session.add(attachment)
+                else:
+                    invoice = InvoiceRecord(
+                        batch_id=batch.id,
+                        original_filename=stored.original_filename,
+                        storage_path_original=stored.storage_path,
+                        file_sha256=stored.file_sha256,
+                        processing_status="queued",
+                        review_status="not_reviewed",
+                        artifact_status="original_only",
+                    )
+                    self.session.add(invoice)
 
             self.session.commit()
             self.session.refresh(batch)
@@ -87,6 +98,11 @@ class BatchService:
                 select(InvoiceRecord.original_filename).where(InvoiceRecord.batch_id == existing_batch.id)
             ).all()
         }
+        existing_names.update(
+            self.session.scalars(
+                select(AttachmentDocument.original_filename).where(AttachmentDocument.batch_id == existing_batch.id)
+            ).all()
+        )
         incoming_names = {incoming_file.filename for incoming_file in files}
         duplicate_names = sorted(existing_names.intersection(incoming_names))
         if duplicate_names:
@@ -109,3 +125,9 @@ class BatchService:
         timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
         suffix = uuid4().hex[:6]
         return f"BATCH-{timestamp}-{suffix}"
+
+    @staticmethod
+    def _looks_like_attachment(filename: str) -> bool:
+        normalized = filename.casefold()
+        attachment_keywords = ("清单", "销货清单", "明细", "附件", "list")
+        return any(keyword in normalized for keyword in attachment_keywords)

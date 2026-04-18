@@ -77,7 +77,7 @@ Batch 5: 回归验证与收口
   1. 批次内能区分主发票文件和清单附件文件。
   2. 附件文件的原始信息、解析状态和主发票关联字段可落库。
 - **验证**：`python -m pytest backend/tests/test_batch_service.py -q`
-- **状态**：未开始
+- **状态**：已完成
 
 ### Task 2.2 扩展批次创建 API 与前端上传协议
 
@@ -90,7 +90,7 @@ Batch 5: 回归验证与收口
   1. 混合上传主发票与附件时，API 能正确接收、创建批次并返回附件状态。
   2. 前端上传面板对附件能力有最小可用提示，不要求用户先做人工关联。
 - **验证**：`python -m pytest backend/tests/test_batch_api.py -q`，`npm test -- UploadPanel`
-- **状态**：未开始
+- **状态**：已完成
 
 ## Batch 3：附件解析、匹配与分类
 

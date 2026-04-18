@@ -28,7 +28,7 @@ export function UploadPanel({ onCreated }: UploadPanelProps) {
     const files = fileList.flatMap((file) => (file.originFileObj ? [file.originFileObj as File] : []));
 
     if (files.length === 0) {
-      message.warning("请选择至少一张 PDF 发票");
+      message.warning("请选择至少一个 PDF 文件");
       return;
     }
 
@@ -51,7 +51,7 @@ export function UploadPanel({ onCreated }: UploadPanelProps) {
 
   return (
     <section className="workspace-block">
-      <SectionHeader title="新建批次" subtitle="仅接收 PDF 发票" />
+      <SectionHeader title="新建批次" subtitle="接收 PDF 发票与清单附件" />
       <Form form={form} layout="vertical" onFinish={handleSubmit}>
         <Typography.Text type="secondary">{`当前操作者：${defaultOperatorName}`}</Typography.Text>
         <div className="form-grid">
@@ -59,7 +59,7 @@ export function UploadPanel({ onCreated }: UploadPanelProps) {
             <Input placeholder="可选，留空则自动生成" maxLength={60} />
           </Form.Item>
         </div>
-        <Form.Item label="发票文件">
+        <Form.Item label="批次文件">
           <Upload.Dragger
             accept=".pdf"
             beforeUpload={() => false}
