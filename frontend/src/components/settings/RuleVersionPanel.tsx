@@ -17,7 +17,6 @@ interface RuleVersionPanelProps {
 }
 
 interface RuleVersionFormValues {
-  changedBy: string;
   changeSummary: string;
   changeReason: string;
   contentText: string;
@@ -38,10 +37,9 @@ export function RuleVersionPanel({
 
   useEffect(() => {
     form.setFieldsValue({
-      changedBy: defaultOperatorName,
       contentText: JSON.stringify(activeVersion?.content ?? {}, null, 2),
     });
-  }, [activeVersion, defaultOperatorName, form]);
+  }, [activeVersion, form]);
 
   const handleSubmit = async (values: RuleVersionFormValues) => {
     let parsedContent: Record<string, unknown>;
@@ -57,7 +55,6 @@ export function RuleVersionPanel({
       await createRuleVersion({
         kind,
         content: parsedContent,
-        changedBy: values.changedBy.trim(),
         changeSummary: values.changeSummary.trim(),
         changeReason: values.changeReason.trim(),
       });
@@ -80,10 +77,8 @@ export function RuleVersionPanel({
         actions={activeVersion ? <Tag color="green">{activeVersion.version_no}</Tag> : <Tag>未配置</Tag>}
       />
       <Form form={form} layout="vertical" onFinish={handleSubmit}>
+        <Typography.Text type="secondary">{`当前操作者：${defaultOperatorName}`}</Typography.Text>
         <div className="form-grid">
-          <Form.Item<RuleVersionFormValues> label="操作者" name="changedBy" rules={[{ required: true, message: "请输入操作者名" }]}>
-            <Input />
-          </Form.Item>
           <Form.Item<RuleVersionFormValues>
             label="变更摘要"
             name="changeSummary"

@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { createBatchRetry, createExport, getBatch, getErrorMessage, listBatchInvoices, listBatches } from "../app/api";
-import { useOperatorSettings } from "../app/operator-settings";
 import type { Batch, BatchInvoiceListing } from "../app/types";
 import { AsyncBoundary } from "../components/common/AsyncBoundary";
 import { SectionHeader } from "../components/common/SectionHeader";
@@ -23,7 +22,6 @@ export function BatchResults() {
   const { message } = App.useApp();
   const navigate = useNavigate();
   const { batchId } = useParams();
-  const { defaultOperatorName } = useOperatorSettings();
   const [batches, setBatches] = useState<Batch[]>([]);
   const [batchesLoading, setBatchesLoading] = useState(true);
   const [batchesError, setBatchesError] = useState<string | null>(null);
@@ -192,7 +190,6 @@ export function BatchResults() {
                       const result = await createExport({
                         batchId: resolvedBatchId,
                         exportType: "suggested_pass_zip",
-                        createdBy: defaultOperatorName,
                       });
                       message.success(`已生成 ${result.output_path}`);
                     } catch (error) {
@@ -211,7 +208,6 @@ export function BatchResults() {
                       const result = await createExport({
                         batchId: resolvedBatchId,
                         exportType: "issue_zip",
-                        createdBy: defaultOperatorName,
                       });
                       message.success(`已生成 ${result.output_path}`);
                     } catch (error) {
@@ -230,7 +226,6 @@ export function BatchResults() {
                       const result = await createExport({
                         batchId: resolvedBatchId,
                         exportType: "excel_manifest",
-                        createdBy: defaultOperatorName,
                       });
                       message.success(`已生成 ${result.output_path}`);
                     } catch (error) {

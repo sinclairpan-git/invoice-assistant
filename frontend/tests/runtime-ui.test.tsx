@@ -8,7 +8,10 @@ import { AppProviders } from "../src/app/providers";
 import { appRoutes } from "../src/app/router";
 import { BatchWorkbench } from "../src/pages/BatchWorkbench";
 import { BatchResults } from "../src/pages/BatchResults";
+import { UploadPanel } from "../src/components/batch/UploadPanel";
 import { InvoiceDrawer } from "../src/components/results/InvoiceDrawer";
+import { ReviewActions } from "../src/components/results/ReviewActions";
+import { RuleVersionPanel } from "../src/components/settings/RuleVersionPanel";
 
 
 const apiMocks = vi.hoisted(() => ({
@@ -20,6 +23,7 @@ const apiMocks = vi.hoisted(() => ({
   createInvoiceRetry: vi.fn(),
   createExport: vi.fn(),
   createReviewAction: vi.fn(),
+  getCurrentActor: vi.fn(),
   getErrorMessage: vi.fn((error: unknown) => (error instanceof Error ? error.message : "请求失败")),
   getInvoicePreviewUrl: vi.fn((invoiceId: string) => `/api/invoices/${invoiceId}/preview`),
 }));
@@ -36,6 +40,7 @@ vi.mock("../src/app/api", async () => {
     createInvoiceRetry: apiMocks.createInvoiceRetry,
     createExport: apiMocks.createExport,
     createReviewAction: apiMocks.createReviewAction,
+    getCurrentActor: apiMocks.getCurrentActor,
     getErrorMessage: apiMocks.getErrorMessage,
     getInvoicePreviewUrl: apiMocks.getInvoicePreviewUrl,
   };
@@ -69,6 +74,12 @@ describe("runtime UI", () => {
       output_path: "exports/manifest.xlsx",
       summary: {},
     });
+    apiMocks.getCurrentActor.mockResolvedValue({
+      actor_id: "trusted-actor-1",
+      display_name: "后端可信身份",
+      roles: ["config_admin", "reviewer", "exporter"],
+    });
+    window.localStorage.setItem("invoice-assistant/default-operator-name", "前端伪造姓名");
     vi.stubGlobal("getComputedStyle", () => ({
       getPropertyValue: () => "",
       overflow: "auto",
@@ -222,6 +233,38 @@ describe("runtime UI", () => {
     expect((await screen.findAllByText("BATCH-RECOVERY-UI-001")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("等待处理").length).toBeGreaterThan(0);
     expect(screen.queryByText("当前没有活跃批次")).not.toBeInTheDocument();
+  });
+
+  it("removes editable operator inputs from upload, review, and config forms", async () => {
+    const { rerender } = renderWithProviders(<UploadPanel onCreated={vi.fn()} />);
+    expect(await screen.findByText("新建批次")).toBeInTheDocument();
+    expect(screen.queryByLabelText("操作者")).not.toBeInTheDocument();
+
+    rerender(
+      <AppProviders>
+        <MemoryRouter>
+          <ReviewActions invoiceId="invoice-review-1" displayStatus="待复核" onSubmitted={vi.fn()} />
+        </MemoryRouter>
+      </AppProviders>,
+    );
+    expect(screen.queryByLabelText("操作者")).not.toBeInTheDocument();
+
+    rerender(
+      <AppProviders>
+        <MemoryRouter>
+          <RuleVersionPanel
+            kind="tax_profile"
+            title="公司税务档案"
+            subtitle="维护购方名称、税号等核验基线"
+            activeVersion={undefined}
+            versions={[]}
+            onUpdated={vi.fn()}
+          />
+        </MemoryRouter>
+      </AppProviders>,
+    );
+    expect(screen.queryByLabelText("操作者")).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue("前端伪造姓名")).not.toBeInTheDocument();
   });
 
   it("retries failed invoices from the batch results page", async () => {

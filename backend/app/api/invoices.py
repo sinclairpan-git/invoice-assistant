@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.dependencies import get_session
+from backend.app.api.dependencies import assert_actor_has_role, get_session, get_trusted_actor, resolve_actor
 from backend.app.api.serializers import serialize_invoice_detail, serialize_invoice_summary, serialize_review_action
 from backend.app.db.models import Batch, InvoiceRecord, ReviewAction
 from backend.app.services.retry_service import RetryService
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api", tags=["invoices"])
 class ReviewActionRequest(BaseModel):
     review_action: str
     review_note: str | None = None
-    reviewed_by: str
+    reviewed_by: str | None = None
 
 
 REVIEW_STATUS_BY_ACTION = {
@@ -167,10 +167,28 @@ def create_review_action(
     invoice_id: str,
     request: ReviewActionRequest,
     session: Session = Depends(get_session),
+    trusted_actor=Depends(get_trusted_actor),
 ) -> dict[str, object]:
     invoice = session.get(InvoiceRecord, invoice_id)
     if invoice is None:
         raise HTTPException(status_code=404, detail="Invoice not found.")
+
+    actor = resolve_actor(trusted_actor, fallback_display_name=request.reviewed_by)
+    assert_actor_has_role(
+        session=session,
+        actor=actor,
+        required_role="reviewer",
+        entity_type="invoice_review",
+        entity_id=invoice.id,
+        denied_action="review_denied",
+        denied_detail="当前操作者缺少 reviewer 角色。",
+        change_summary=f"review_action={request.review_action}",
+        change_reason=request.review_note or "missing reviewer role",
+        payload={
+            "invoice_id": invoice.id,
+            "review_action": request.review_action,
+        },
+    )
 
     if request.review_action not in REVIEW_STATUS_BY_ACTION:
         raise HTTPException(status_code=400, detail="Unsupported review action.")
@@ -183,7 +201,7 @@ def create_review_action(
         invoice_id=invoice.id,
         review_action=request.review_action,
         review_note=request.review_note,
-        reviewed_by=request.reviewed_by,
+        reviewed_by=actor.display_name,
     )
     invoice.review_status = REVIEW_STATUS_BY_ACTION[request.review_action]
 

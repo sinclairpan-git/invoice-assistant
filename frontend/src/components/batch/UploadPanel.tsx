@@ -1,7 +1,7 @@
 import { App, Button, Form, Input, Space, Typography, Upload } from "../../app/antd";
 import type { UploadFile } from "../../app/antd";
 import { InboxOutlined } from "../../app/icons";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { createBatch, getErrorMessage } from "../../app/api";
 import { useOperatorSettings } from "../../app/operator-settings";
@@ -14,7 +14,6 @@ interface UploadPanelProps {
 }
 
 interface UploadFormValues {
-  createdBy: string;
   batchNo?: string;
 }
 
@@ -24,10 +23,6 @@ export function UploadPanel({ onCreated }: UploadPanelProps) {
   const [form] = Form.useForm<UploadFormValues>();
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    form.setFieldValue("createdBy", defaultOperatorName);
-  }, [defaultOperatorName, form]);
 
   const handleSubmit = async (values: UploadFormValues) => {
     const files = fileList.flatMap((file) => (file.originFileObj ? [file.originFileObj as File] : []));
@@ -40,7 +35,6 @@ export function UploadPanel({ onCreated }: UploadPanelProps) {
     setSubmitting(true);
     try {
       const batch = await createBatch({
-        createdBy: values.createdBy.trim(),
         batchNo: values.batchNo?.trim() || undefined,
         files,
       });
@@ -58,11 +52,9 @@ export function UploadPanel({ onCreated }: UploadPanelProps) {
   return (
     <section className="workspace-block">
       <SectionHeader title="新建批次" subtitle="仅接收 PDF 发票" />
-      <Form form={form} layout="vertical" onFinish={handleSubmit} initialValues={{ createdBy: defaultOperatorName }}>
+      <Form form={form} layout="vertical" onFinish={handleSubmit}>
+        <Typography.Text type="secondary">{`当前操作者：${defaultOperatorName}`}</Typography.Text>
         <div className="form-grid">
-          <Form.Item<UploadFormValues> label="操作者" name="createdBy" rules={[{ required: true, message: "请输入操作者名" }]}>
-            <Input maxLength={40} />
-          </Form.Item>
           <Form.Item<UploadFormValues> label="批次号" name="batchNo">
             <Input placeholder="可选，留空则自动生成" maxLength={60} />
           </Form.Item>

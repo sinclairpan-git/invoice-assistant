@@ -3,6 +3,7 @@ import type {
   Batch,
   BatchInvoiceListing,
   BatchRetryResult,
+  CurrentActor,
   InvoiceDetail,
   InvoiceRetryResult,
   InvoiceSummary,
@@ -61,13 +62,16 @@ export async function getBatch(batchId: string): Promise<Batch> {
   return payload.item;
 }
 
+export async function getCurrentActor(): Promise<CurrentActor> {
+  const payload = await requestJson<{ item: CurrentActor }>("/api/me");
+  return payload.item;
+}
+
 export async function createBatch(params: {
-  createdBy: string;
   batchNo?: string;
   files: File[];
 }): Promise<Batch> {
   const formData = new FormData();
-  formData.append("created_by", params.createdBy);
   if (params.batchNo) {
     formData.append("batch_no", params.batchNo);
   }
@@ -99,7 +103,6 @@ export async function createReviewAction(params: {
   invoiceId: string;
   reviewAction: string;
   reviewNote?: string;
-  reviewedBy: string;
 }): Promise<{ item: ReviewAction; invoice: InvoiceSummary }> {
   return requestJson<{ item: ReviewAction; invoice: InvoiceSummary }>(
     `/api/invoices/${params.invoiceId}/review-actions`,
@@ -111,7 +114,6 @@ export async function createReviewAction(params: {
       body: JSON.stringify({
         review_action: params.reviewAction,
         review_note: params.reviewNote || undefined,
-        reviewed_by: params.reviewedBy,
       }),
     },
   );
@@ -147,7 +149,6 @@ export async function listRuleVersions(kind: RuleKind): Promise<RuleVersion[]> {
 export async function createRuleVersion(params: {
   kind: RuleKind;
   content: Record<string, unknown>;
-  changedBy: string;
   changeSummary: string;
   changeReason: string;
   activate?: boolean;
@@ -159,7 +160,6 @@ export async function createRuleVersion(params: {
     },
     body: JSON.stringify({
       content: params.content,
-      changed_by: params.changedBy,
       change_summary: params.changeSummary,
       change_reason: params.changeReason,
       activate: params.activate ?? true,
@@ -171,7 +171,6 @@ export async function createRuleVersion(params: {
 export async function createExport(params: {
   batchId: string;
   exportType: string;
-  createdBy: string;
 }): Promise<{
   job_id?: string;
   export_type: string;
@@ -194,7 +193,6 @@ export async function createExport(params: {
     },
     body: JSON.stringify({
       export_type: params.exportType,
-      created_by: params.createdBy,
     }),
   });
   return payload.item;

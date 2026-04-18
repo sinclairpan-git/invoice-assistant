@@ -1,5 +1,11 @@
 export type RuleKind = "tax_profile" | "business_rules" | "naming_rules";
 
+export interface CurrentActor {
+  actor_id: string;
+  display_name: string;
+  roles: string[];
+}
+
 export interface ProviderDiagnostic {
   provider_name?: string | null;
   provider_version?: string | null;

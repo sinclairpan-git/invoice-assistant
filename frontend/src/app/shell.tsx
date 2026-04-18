@@ -70,6 +70,7 @@ export function AppShell() {
             <Typography.Title level={3}>{resolveTitle(matches)}</Typography.Title>
           </div>
           <Space size="middle">
+            <Typography.Text type="secondary">可信上下文</Typography.Text>
             <Tag color="green">{defaultOperatorName}</Tag>
           </Space>
         </Header>

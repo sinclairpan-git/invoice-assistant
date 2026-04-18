@@ -7,7 +7,7 @@ from pathlib import Path
 from sqlalchemy import select
 from starlette.testclient import TestClient
 
-from backend.app.db.models import Batch, DocumentEvidence, ExtractedField, FieldCheck, InvoiceRecord, ProcessingAttempt, ProcessingJob
+from backend.app.db.models import AuditLog, Batch, DocumentEvidence, ExtractedField, FieldCheck, InvoiceRecord, ProcessingAttempt, ProcessingJob
 from backend.app.main import create_app
 from backend.app.services.batch_service import BatchService, IncomingFile
 from backend.app.services.config_service import ConfigService
@@ -230,6 +230,20 @@ def seed_failure_diagnostic_fixture(app):
     return fixture
 
 
+def set_trusted_actor(
+    app,
+    *,
+    actor_id: str = "trusted-actor-1",
+    display_name: str = "可信操作员",
+    roles: list[str] | None = None,
+):
+    app.state.trusted_actor = {
+        "actor_id": actor_id,
+        "display_name": display_name,
+        "roles": roles or [],
+    }
+
+
 def wait_for_batch_stage(client: TestClient, batch_id: str, expected_stage: str, *, timeout: float = 5.0) -> dict[str, object]:
     deadline = time.monotonic() + timeout
     last_payload: dict[str, object] | None = None
@@ -257,6 +271,131 @@ class StubProcessingRunner:
             return False
         self.enqueued_batch_ids.append(batch_id)
         return True
+
+
+def test_controlled_identity_comes_from_backend_actor_context(tmp_path):
+    app = create_app(f"sqlite:///{tmp_path / 'api-actor.db'}")
+    session = app.state.session_factory()
+    seed_active_rules(session)
+    session.close()
+    set_trusted_actor(app, display_name="财务复核员", roles=["config_admin", "reviewer", "exporter"])
+    client = TestClient(app)
+
+    actor_response = client.get("/api/me")
+    assert actor_response.status_code == 200
+    assert actor_response.json()["item"] == {
+        "actor_id": "trusted-actor-1",
+        "display_name": "财务复核员",
+        "roles": ["config_admin", "reviewer", "exporter"],
+    }
+
+    upload_response = client.post(
+        "/api/batches",
+        data={"created_by": "前端伪造姓名", "batch_no": "BATCH-ACTOR-001"},
+        files=[("files", ("upload.pdf", b"%PDF-1.7\nupload fixture", "application/pdf"))],
+    )
+    assert upload_response.status_code == 200
+    assert upload_response.json()["item"]["created_by"] == "财务复核员"
+
+    create_version_response = client.post(
+        "/api/config/tax_profile/versions",
+        json={
+            "content": {"buyer_name": "Shanghai Example Co", "buyer_tax_no": "91310000Y"},
+            "changed_by": "前端伪造姓名",
+            "change_summary": "adjust profile",
+            "change_reason": "test upgrade",
+            "activate": True,
+        },
+    )
+    assert create_version_response.status_code == 200
+    assert create_version_response.json()["item"]["changed_by"] == "财务复核员"
+
+
+def test_rule_version_requires_config_admin_and_records_denied_audit(tmp_path):
+    app = create_app(f"sqlite:///{tmp_path / 'api-config-role.db'}")
+    session = app.state.session_factory()
+    seed_active_rules(session)
+    session.close()
+    set_trusted_actor(app, display_name="普通复核员", roles=["reviewer"])
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/config/tax_profile/versions",
+        json={
+            "content": {"buyer_name": "Shanghai Example Co", "buyer_tax_no": "91310000Y"},
+            "change_summary": "adjust profile",
+            "change_reason": "test upgrade",
+            "activate": True,
+        },
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"] == "当前操作者缺少 config_admin 角色。"
+
+    session = app.state.session_factory()
+    try:
+        audits = session.scalars(
+            select(AuditLog)
+            .where(AuditLog.entity_type == "rule_version", AuditLog.action == "create_denied")
+            .order_by(AuditLog.changed_at.desc())
+        ).all()
+        assert len(audits) == 1
+        assert audits[0].changed_by == "普通复核员"
+    finally:
+        session.close()
+
+
+def test_review_action_requires_reviewer_and_records_denied_audit(tmp_path):
+    app = create_app(f"sqlite:///{tmp_path / 'api-review-role.db'}")
+    fixture = seed_batch_fixture(app)
+    set_trusted_actor(app, display_name="导出专员", roles=["exporter"])
+    client = TestClient(app)
+
+    response = client.post(
+        f"/api/invoices/{fixture['review_invoice_id']}/review-actions",
+        json={"review_action": "approve", "review_note": "manual ok"},
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"] == "当前操作者缺少 reviewer 角色。"
+
+    session = app.state.session_factory()
+    try:
+        audits = session.scalars(
+            select(AuditLog)
+            .where(AuditLog.entity_type == "invoice_review", AuditLog.action == "review_denied")
+            .order_by(AuditLog.changed_at.desc())
+        ).all()
+        assert len(audits) == 1
+        assert audits[0].entity_id == fixture["review_invoice_id"]
+        assert audits[0].changed_by == "导出专员"
+    finally:
+        session.close()
+
+
+def test_export_requires_exporter_and_records_denied_audit(tmp_path):
+    app = create_app(f"sqlite:///{tmp_path / 'api-export-role.db'}")
+    fixture = seed_batch_fixture(app)
+    set_trusted_actor(app, display_name="配置管理员", roles=["config_admin"])
+    client = TestClient(app)
+
+    response = client.post(
+        f"/api/batches/{fixture['batch_id']}/exports",
+        json={"export_type": "excel_manifest"},
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"] == "当前操作者缺少 exporter 角色。"
+
+    session = app.state.session_factory()
+    try:
+        audits = session.scalars(
+            select(AuditLog)
+            .where(AuditLog.entity_type == "export_job", AuditLog.action == "export_denied")
+            .order_by(AuditLog.changed_at.desc())
+        ).all()
+        assert len(audits) == 1
+        assert audits[0].entity_id == fixture["batch_id"]
+        assert audits[0].changed_by == "配置管理员"
+    finally:
+        session.close()
 
 
 def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_path):

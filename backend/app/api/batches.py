@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.dependencies import get_session
+from backend.app.api.dependencies import assert_actor_has_role, get_session, get_trusted_actor, resolve_actor
 from backend.app.api.serializers import serialize_batch
 from backend.app.db.models import Batch
 from backend.app.services.batch_service import BatchService, IncomingFile
@@ -27,7 +27,7 @@ def get_storage_root(request: Request) -> Path:
 
 class ExportRequest(BaseModel):
     export_type: str
-    created_by: str
+    created_by: str | None = None
 
 
 @router.get("")
@@ -63,10 +63,11 @@ def get_batch_progress(batch_id: str, session: Session = Depends(get_session)) -
 @router.post("")
 async def create_batch(
     request: Request,
-    created_by: str = Form(...),
+    created_by: str | None = Form(default=None),
     batch_no: str | None = Form(default=None),
     files: list[UploadFile] = File(...),
     session: Session = Depends(get_session),
+    trusted_actor=Depends(get_trusted_actor),
 ) -> dict[str, object]:
     if not files:
         raise HTTPException(status_code=400, detail="At least one file is required to create a batch.")
@@ -86,10 +87,11 @@ async def create_batch(
         storage_service=StorageService(get_storage_root(request)),
         config_service=ConfigService(session),
     )
+    actor = resolve_actor(trusted_actor, fallback_display_name=created_by)
     try:
         batch = service.create_batch(
             files=incoming_files,
-            created_by=created_by,
+            created_by=actor.display_name,
             batch_no=batch_no,
         )
         request.app.state.processing_runner.enqueue(batch.id)
@@ -106,13 +108,30 @@ def create_export(
     request: Request,
     payload: ExportRequest,
     session: Session = Depends(get_session),
+    trusted_actor=Depends(get_trusted_actor),
 ) -> dict[str, object]:
+    actor = resolve_actor(trusted_actor, fallback_display_name=payload.created_by)
+    assert_actor_has_role(
+        session=session,
+        actor=actor,
+        required_role="exporter",
+        entity_type="export_job",
+        entity_id=batch_id,
+        denied_action="export_denied",
+        denied_detail="当前操作者缺少 exporter 角色。",
+        change_summary=f"export_type={payload.export_type}",
+        change_reason="missing exporter role",
+        payload={
+            "batch_id": batch_id,
+            "export_type": payload.export_type,
+        },
+    )
     service = ExportService(session, storage_root=get_storage_root(request))
     try:
         result = service.create_export(
             batch_id=batch_id,
             export_type=payload.export_type,
-            created_by=payload.created_by,
+            created_by=actor.display_name,
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

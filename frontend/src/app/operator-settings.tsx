@@ -1,42 +1,57 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { PropsWithChildren } from "react";
 
+import { getCurrentActor, getErrorMessage } from "./api";
+import type { CurrentActor } from "./types";
 
-const STORAGE_KEY = "invoice-assistant/default-operator-name";
-const DEFAULT_OPERATOR_NAME = "本机管理员";
+const FALLBACK_ACTOR: CurrentActor = {
+  actor_id: "local-operator",
+  display_name: "本机管理员",
+  roles: [],
+};
 
 interface OperatorSettingsValue {
+  currentActor: CurrentActor;
   defaultOperatorName: string;
-  setDefaultOperatorName: (value: string) => void;
+  loading: boolean;
+  error: string | null;
+  refreshCurrentActor: () => Promise<void>;
 }
 
 const OperatorSettingsContext = createContext<OperatorSettingsValue | null>(null);
 
-function readInitialOperatorName(): string {
-  if (typeof window === "undefined") {
-    return DEFAULT_OPERATOR_NAME;
-  }
-  const saved = window.localStorage.getItem(STORAGE_KEY);
-  return saved?.trim() || DEFAULT_OPERATOR_NAME;
-}
-
 export function OperatorSettingsProvider({ children }: PropsWithChildren) {
-  const [defaultOperatorName, setDefaultOperatorNameState] = useState<string>(readInitialOperatorName);
+  const [currentActor, setCurrentActor] = useState<CurrentActor>(FALLBACK_ACTOR);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const setDefaultOperatorName = useCallback((value: string) => {
-    const nextValue = value.trim() || DEFAULT_OPERATOR_NAME;
-    setDefaultOperatorNameState(nextValue);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(STORAGE_KEY, nextValue);
+  const refreshCurrentActor = useCallback(async () => {
+    setLoading(true);
+    try {
+      const actor = await getCurrentActor();
+      setCurrentActor(actor);
+      setError(null);
+    } catch (loadError) {
+      setCurrentActor(FALLBACK_ACTOR);
+      setError(getErrorMessage(loadError));
+    } finally {
+      setLoading(false);
     }
   }, []);
 
+  useEffect(() => {
+    void refreshCurrentActor();
+  }, [refreshCurrentActor]);
+
   const contextValue = useMemo(
     () => ({
-      defaultOperatorName,
-      setDefaultOperatorName,
+      currentActor,
+      defaultOperatorName: currentActor.display_name,
+      loading,
+      error,
+      refreshCurrentActor,
     }),
-    [defaultOperatorName, setDefaultOperatorName],
+    [currentActor, error, loading, refreshCurrentActor],
   );
 
   return <OperatorSettingsContext.Provider value={contextValue}>{children}</OperatorSettingsContext.Provider>;

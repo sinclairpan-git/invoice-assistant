@@ -1,4 +1,4 @@
-import { App, Button, Form, Input, Space } from "../app/antd";
+import { Space, Tag, Typography } from "../app/antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { getActiveConfig, getErrorMessage, listRuleVersions } from "../app/api";
@@ -37,9 +37,7 @@ interface SettingsState {
 }
 
 export function Settings() {
-  const { message } = App.useApp();
-  const { defaultOperatorName, setDefaultOperatorName } = useOperatorSettings();
-  const [operatorForm] = Form.useForm<{ operatorName: string }>();
+  const { currentActor, defaultOperatorName, error: actorError, loading: actorLoading } = useOperatorSettings();
   const [state, setState] = useState<SettingsState>({
     loading: true,
     error: null,
@@ -81,10 +79,6 @@ export function Settings() {
   }, []);
 
   useEffect(() => {
-    operatorForm.setFieldValue("operatorName", defaultOperatorName);
-  }, [defaultOperatorName, operatorForm]);
-
-  useEffect(() => {
     void loadSettings();
   }, [loadSettings]);
 
@@ -93,27 +87,19 @@ export function Settings() {
   return (
     <div className="page-stack">
       <section className="workspace-block">
-        <SectionHeader title="默认操作者" subtitle="结果导出、复核和配置变更都会使用这里的默认姓名" />
-        <Form
-          form={operatorForm}
-          layout="inline"
-          onFinish={(values) => {
-            setDefaultOperatorName(values.operatorName);
-            message.success("默认操作者已更新");
-          }}
-        >
-          <Form.Item<{ operatorName: string }>
-            name="operatorName"
-            rules={[{ required: true, message: "请输入默认操作者名" }]}
-          >
-            <Input style={{ width: 280 }} maxLength={40} />
-          </Form.Item>
-          <Form.Item>
-            <Button type="primary" htmlType="submit">
-              保存
-            </Button>
-          </Form.Item>
-        </Form>
+        <SectionHeader title="当前操作者" subtitle="由后端可信上下文提供，用于复核、导出和配置变更审计" />
+        <Space direction="vertical" size={8} className="full-width">
+          <Typography.Text strong>{defaultOperatorName}</Typography.Text>
+          <Space wrap>
+            {currentActor.roles.length > 0 ? (
+              currentActor.roles.map((role) => <Tag key={role}>{role}</Tag>)
+            ) : (
+              <Typography.Text type="secondary">当前未分配受控角色</Typography.Text>
+            )}
+          </Space>
+          {actorLoading ? <Typography.Text type="secondary">正在读取后端可信身份…</Typography.Text> : null}
+          {actorError ? <Typography.Text type="danger">{actorError}</Typography.Text> : null}
+        </Space>
       </section>
 
       <AsyncBoundary loading={state.loading} error={state.error}>

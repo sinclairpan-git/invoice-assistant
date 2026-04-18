@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
+from backend.app.api.actors import router as actors_router
 from backend.app.api.batches import router as batches_router
 from backend.app.api.config import router as config_router
 from backend.app.api.invoices import router as invoices_router
@@ -52,6 +53,7 @@ def create_app(database_url: str = DEFAULT_DATABASE_URL) -> FastAPI:
         storage_root=app.state.storage_root,
     )
 
+    app.include_router(actors_router)
     app.include_router(batches_router)
     app.include_router(invoices_router)
     app.include_router(config_router)

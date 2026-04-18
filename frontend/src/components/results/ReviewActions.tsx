@@ -12,7 +12,6 @@ interface ReviewActionsProps {
 }
 
 interface ReviewFormValues {
-  reviewedBy: string;
   reviewAction: string;
   reviewNote?: string;
 }
@@ -31,9 +30,8 @@ export function ReviewActions({ invoiceId, displayStatus, onSubmitted }: ReviewA
   const reviewable = displayStatus === "待复核" || displayStatus === "疑似重复";
 
   useEffect(() => {
-    form.setFieldValue("reviewedBy", defaultOperatorName);
     form.setFieldValue("reviewAction", "approve");
-  }, [defaultOperatorName, form]);
+  }, [form]);
 
   if (!reviewable) {
     return <Typography.Text type="secondary">当前票据无需人工复核。</Typography.Text>;
@@ -46,7 +44,6 @@ export function ReviewActions({ invoiceId, displayStatus, onSubmitted }: ReviewA
         invoiceId,
         reviewAction: values.reviewAction,
         reviewNote: values.reviewNote,
-        reviewedBy: values.reviewedBy.trim(),
       });
       message.success("复核动作已记录");
       await onSubmitted();
@@ -59,9 +56,7 @@ export function ReviewActions({ invoiceId, displayStatus, onSubmitted }: ReviewA
 
   return (
     <Form form={form} layout="vertical" onFinish={handleSubmit}>
-      <Form.Item<ReviewFormValues> label="操作者" name="reviewedBy" rules={[{ required: true, message: "请输入操作者名" }]}>
-        <Input maxLength={40} />
-      </Form.Item>
+      <Typography.Text type="secondary">{`当前操作者：${defaultOperatorName}`}</Typography.Text>
       <Form.Item<ReviewFormValues> label="处理动作" name="reviewAction" rules={[{ required: true, message: "请选择处理动作" }]}>
         <Select options={ACTION_OPTIONS} />
       </Form.Item>
