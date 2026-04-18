@@ -121,6 +121,9 @@ describe("runtime UI", () => {
         suggested_pass_count: 1,
         suggested_pass_total_amount: "100.00",
         export_manifest_path: null,
+        invoice_file_count: 1,
+        attachment_file_count: 2,
+        attachment_status_counts: { consumed: 1, unmatched: 1 },
         progress: {
           batch_id: "batch-1",
           batch_no: "BATCH-RT-001",
@@ -154,6 +157,9 @@ describe("runtime UI", () => {
     expect((await screen.findAllByText("OCR 识别中")).length).toBeGreaterThan(0);
     expect(screen.getByText("broken.pdf")).toBeInTheDocument();
     expect(screen.getByText("OCR timed out")).toBeInTheDocument();
+    expect(screen.getByText("清单附件 2")).toBeInTheDocument();
+    expect(screen.getByText("已消费 1")).toBeInTheDocument();
+    expect(screen.getByText("未匹配 1")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "重试失败票" })).toBeInTheDocument();
   });
 
@@ -172,6 +178,9 @@ describe("runtime UI", () => {
         suggested_pass_count: 1,
         suggested_pass_total_amount: "88.00",
         export_manifest_path: null,
+        invoice_file_count: 3,
+        attachment_file_count: 0,
+        attachment_status_counts: {},
         progress: {
           batch_id: "batch-stage-1",
           batch_no: "BATCH-STAGE-001",
@@ -211,6 +220,9 @@ describe("runtime UI", () => {
         suggested_pass_count: 0,
         suggested_pass_total_amount: "0.00",
         export_manifest_path: null,
+        invoice_file_count: 2,
+        attachment_file_count: 1,
+        attachment_status_counts: { pending_match: 1 },
         progress: {
           batch_id: "batch-recovery-1",
           batch_no: "BATCH-RECOVERY-UI-001",
@@ -282,6 +294,9 @@ describe("runtime UI", () => {
         suggested_pass_count: 1,
         suggested_pass_total_amount: "100.00",
         export_manifest_path: null,
+        invoice_file_count: 1,
+        attachment_file_count: 2,
+        attachment_status_counts: { consumed: 1, unmatched: 1 },
       },
     ]);
     apiMocks.getBatch.mockResolvedValue({
@@ -297,6 +312,9 @@ describe("runtime UI", () => {
       suggested_pass_count: 1,
       suggested_pass_total_amount: "100.00",
       export_manifest_path: null,
+      invoice_file_count: 1,
+      attachment_file_count: 2,
+      attachment_status_counts: { consumed: 1, unmatched: 1 },
       progress: {
         batch_id: "batch-1",
         batch_no: "BATCH-RT-001",
@@ -367,6 +385,9 @@ describe("runtime UI", () => {
       </AppProviders>,
     );
 
+    expect(await screen.findByText("清单附件 2")).toBeInTheDocument();
+    expect(screen.getByText("已消费 1")).toBeInTheDocument();
+    expect(screen.getByText("未匹配 1")).toBeInTheDocument();
     const retryButton = await screen.findByRole("button", { name: "重试失败票" });
     fireEvent.click(retryButton);
 
@@ -413,6 +434,17 @@ describe("runtime UI", () => {
       problem_count: 1,
       failure_reason: "OCR timed out",
       preview_path: null,
+      attachments: [
+        {
+          id: "attachment-1",
+          batch_id: "batch-1",
+          original_filename: "broken-销货清单.pdf",
+          attachment_status: "parse_failed",
+          attachment_status_label: "解析失败",
+          matched_invoice_id: null,
+          match_reason: "OCR parser timed out while parsing attachment.",
+        },
+      ],
       parse_source: "ocr",
       last_error_stage: "ocr_processing",
       last_error_code: "ocr_timeout",
@@ -437,6 +469,9 @@ describe("runtime UI", () => {
     expect(screen.getAllByText("ocr_timeout").length).toBeGreaterThan(0);
     expect(screen.getAllByText("处理失败").length).toBeGreaterThan(0);
     expect(screen.getByText("修复失败原因后重试")).toBeInTheDocument();
+    expect(screen.getByText("broken-销货清单.pdf")).toBeInTheDocument();
+    expect(screen.getByText("解析失败")).toBeInTheDocument();
+    expect(screen.getByText("OCR parser timed out while parsing attachment.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "重试当前票" }));
 

@@ -76,9 +76,20 @@ export interface Batch {
   export_manifest_path: string | null;
   invoice_file_count: number;
   attachment_file_count: number;
+  attachment_status_counts: Record<string, number>;
   progress?: BatchProgress;
   snapshot?: ActiveSnapshot;
   export_jobs?: ExportJob[];
+}
+
+export interface AttachmentDocument {
+  id: string;
+  batch_id: string;
+  original_filename: string;
+  attachment_status: string;
+  attachment_status_label: string;
+  matched_invoice_id: string | null;
+  match_reason: string | null;
 }
 
 export interface InvoiceSummary {
@@ -112,6 +123,7 @@ export interface InvoiceSummary {
   problem_count: number;
   failure_reason: string | null;
   preview_path: string | null;
+  attachments: AttachmentDocument[];
 }
 
 export interface DocumentEvidence {

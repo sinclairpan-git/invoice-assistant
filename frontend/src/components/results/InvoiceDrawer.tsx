@@ -159,6 +159,25 @@ export function InvoiceDrawer({ invoiceId, open, onClose, onChanged }: InvoiceDr
               <Descriptions.Item label="Provider 错误">{invoice.provider_diagnostic.provider_error_code || "--"}</Descriptions.Item>
               <Descriptions.Item label="失败信息">{invoice.last_error_message || invoice.failure_reason || "--"}</Descriptions.Item>
             </Descriptions>
+            {(invoice.attachments ?? []).length > 0 ? (
+              <List
+                header="清单附件识别"
+                bordered
+                className="description-block"
+                dataSource={invoice.attachments}
+                renderItem={(item) => (
+                  <List.Item>
+                    <Space direction="vertical" size={2} className="full-width">
+                      <Space wrap>
+                        <Typography.Text strong>{item.original_filename}</Typography.Text>
+                        <Tag>{item.attachment_status_label}</Tag>
+                      </Space>
+                      <Typography.Text type="secondary">{item.match_reason || "无匹配依据"}</Typography.Text>
+                    </Space>
+                  </List.Item>
+                )}
+              />
+            ) : null}
             {invoice.retryable ? (
               <Space>
                 <Button

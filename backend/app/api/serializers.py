@@ -5,7 +5,17 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from backend.app.db.models import Batch, DocumentEvidence, ExportJob, ExtractedField, FieldCheck, InvoiceRecord, ReviewAction, RuleVersion
+from backend.app.db.models import (
+    AttachmentDocument,
+    Batch,
+    DocumentEvidence,
+    ExportJob,
+    ExtractedField,
+    FieldCheck,
+    InvoiceRecord,
+    ReviewAction,
+    RuleVersion,
+)
 from backend.app.services.compliance_service import serialize_invoice_compliance
 from backend.app.services.progress_service import BatchProgressSnapshot
 from backend.app.services.status_service import derive_display_status
@@ -26,6 +36,45 @@ def _serialize_scalar(value: Any) -> Any:
     if isinstance(value, (datetime, date)):
         return value.isoformat()
     return value
+
+
+ATTACHMENT_STATUS_LABELS = {
+    "pending_match": "待匹配",
+    "matched": "已匹配",
+    "consumed": "已消费",
+    "ambiguous": "匹配歧义",
+    "unmatched": "未匹配",
+    "parse_failed": "解析失败",
+}
+
+
+def _serialize_attachment_status_counts(batch: Batch) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for attachment in batch.attachment_documents:
+        counts[attachment.attachment_status] = counts.get(attachment.attachment_status, 0) + 1
+    return counts
+
+
+def _serialize_attachment_document(attachment: AttachmentDocument) -> dict[str, object]:
+    return {
+        "id": attachment.id,
+        "batch_id": attachment.batch_id,
+        "original_filename": attachment.original_filename,
+        "attachment_status": attachment.attachment_status,
+        "attachment_status_label": ATTACHMENT_STATUS_LABELS.get(attachment.attachment_status, attachment.attachment_status),
+        "matched_invoice_id": attachment.matched_invoice_id,
+        "match_reason": attachment.match_reason,
+    }
+
+
+def _serialize_invoice_attachments(invoice: InvoiceRecord) -> list[dict[str, object]]:
+    attachments = [
+        attachment
+        for attachment in invoice.batch.attachment_documents
+        if attachment.matched_invoice_id == invoice.id
+    ]
+    attachments.sort(key=lambda item: item.original_filename)
+    return [_serialize_attachment_document(attachment) for attachment in attachments]
 
 
 def serialize_batch(
@@ -50,6 +99,7 @@ def serialize_batch(
         "export_manifest_path": batch.export_manifest_path,
         "invoice_file_count": len(batch.invoices),
         "attachment_file_count": len(batch.attachment_documents),
+        "attachment_status_counts": _serialize_attachment_status_counts(batch),
     }
     if progress is not None:
         payload["progress"] = progress.to_dict()
@@ -104,6 +154,7 @@ def serialize_invoice_summary(invoice: InvoiceRecord) -> dict[str, object]:
         "problem_count": invoice.problem_count,
         "failure_reason": invoice.failure_reason,
         "preview_path": invoice.storage_path_renamed or invoice.storage_path_original,
+        "attachments": _serialize_invoice_attachments(invoice),
     }
     payload.update(serialize_invoice_compliance(invoice))
     return payload

@@ -250,3 +250,74 @@
 - 当前批次 branch disposition 状态：进行中
 - 当前批次 worktree disposition 状态：沿用当前工作区
 - 是否继续下一批：是
+
+### Batch 2026-04-19-002 | T41-T42
+
+#### 2.1 批次范围
+
+- 覆盖任务：`T41`、`T42`
+- 覆盖阶段：Batch 4 结果展示与导出对齐
+- 预读范围：`specs/005-attachment-list-recognition/spec.md`、`specs/005-attachment-list-recognition/plan.md`、`specs/005-attachment-list-recognition/tasks.md`、`backend/app/api/serializers.py`、`backend/app/services/export_service.py`、`frontend/src/components/results/InvoiceDrawer.tsx`、`frontend/src/pages/BatchWorkbench.tsx`、`frontend/src/pages/BatchResults.tsx`、`backend/tests/test_api_workflows.py`、`backend/tests/test_export_service.py`、`frontend/tests/runtime-ui.test.tsx`
+- 激活的规则：TDD 优先、附件 sidecar 保守暴露、004 导出角色边界不回退、结果态最小增量展示
+
+#### 2.2 统一验证命令
+
+- `R1`（红灯验证，如有 TDD）
+  - 命令：`uv run pytest backend/tests/test_api_workflows.py::test_batch_and_invoice_api_workflows_cover_summary_detail_and_review backend/tests/test_export_service.py::test_export_service_blocks_pending_review_pass_export_and_success_manifest_includes_compliance_fields -q`、`npm test -- tests/runtime-ui.test.tsx`
+  - 结果：先红后绿；后端初始因缺少 `attachment_status_counts` 与导出清单附件列失败，前端初始因结果页/抽屉未展示附件识别文本失败
+- `V1`（定向验证）
+  - 命令：`uv run pytest backend/tests/test_api_workflows.py::test_batch_and_invoice_api_workflows_cover_summary_detail_and_review backend/tests/test_export_service.py::test_export_service_blocks_pending_review_pass_export_and_success_manifest_includes_compliance_fields -q`、`npm test -- tests/runtime-ui.test.tsx`
+  - 结果：通过（2 passed，6 passed）
+- `V2`（回归验证）
+  - 命令：`uv run pytest backend/tests/test_api_workflows.py backend/tests/test_export_service.py -q`、`npm test -- tests/runtime-ui.test.tsx`、`npm run build`
+  - 结果：通过（13 passed，6 passed，build passed）
+
+#### 2.3 任务记录
+
+##### T41 | 扩展结果 API、详情抽屉与导出摘要
+
+- 改动范围：`backend/app/api/serializers.py`、`backend/app/services/export_service.py`、`backend/tests/test_api_workflows.py`、`backend/tests/test_export_service.py`、`frontend/src/app/types.ts`、`frontend/src/components/results/InvoiceDrawer.tsx`
+- 改动内容：批次/发票序列化新增附件状态统计与已匹配附件详情；详情抽屉展示附件文件名、识别状态和匹配依据/失败原因；导出清单补入精简的“清单附件 / 附件识别 / 附件匹配依据”列，仅输出与当前发票关联的 sidecar 结论，不改变 004 的角色控制或审核通过门槛。
+- 新增/调整的测试：扩展 API 工作流用例，校验批次状态统计与发票详情附件序列化；扩展导出服务用例，校验 Excel manifest 含附件列和值；抽屉类型同步更新以承接新字段。
+- 执行的命令：`uv run pytest backend/tests/test_api_workflows.py::test_batch_and_invoice_api_workflows_cover_summary_detail_and_review backend/tests/test_export_service.py::test_export_service_blocks_pending_review_pass_export_and_success_manifest_includes_compliance_fields -q`
+- 测试结果：通过（2 passed）
+- 是否符合任务目标：是
+
+##### T42 | 补齐前端混合上传与结果态提示
+
+- 改动范围：`frontend/src/pages/BatchWorkbench.tsx`、`frontend/src/pages/BatchResults.tsx`、`frontend/tests/runtime-ui.test.tsx`
+- 改动内容：批次工作台与结果页补充“清单附件 X”与附件状态标签，保持主票关键指标仍位于首位；仅在存在附件时展示附件统计，避免挤占无附件场景；结果抽屉展示单票附件识别细节，未匹配附件继续保留在批次级统计而不强塞进单票详情。
+- 新增/调整的测试：运行时 UI 用例补充工作台、结果页与发票抽屉的附件状态断言，覆盖 `已消费`、`未匹配`、`解析失败` 等文本。
+- 执行的命令：`npm test -- tests/runtime-ui.test.tsx`、`npm run build`
+- 测试结果：通过（6 passed，build passed）
+- 是否符合任务目标：是
+
+#### 2.4 代码审查结论（Mandatory）
+
+- 宪章/规格对齐：本批只做结果层暴露与导出摘要补齐，保持附件仍是 `ProcessingService` sidecar，不抬升为新的 processing 主实体。
+- 代码质量：批次级显示只暴露聚合状态计数，单票详情只展示已匹配附件，未匹配/歧义附件继续留在批次层，避免误导用户把附件当成主票。
+- 测试质量：红绿循环覆盖 API 契约、Excel manifest 文案、结果页状态条和详情抽屉，外加前端构建回归。
+- 结论：可进入 Batch 5 的回归验证与收口。
+
+#### 2.5 任务/计划同步状态（Mandatory）
+
+- `tasks.md` 同步状态：已同步，T41-T42 标记完成
+- `related_plan`（如存在）同步状态：无需调整，仍以 `plan.md` 为准
+- 关联 branch/worktree disposition 计划：继续在 `codex/005-attachment-list-recognition` 上推进 Batch 5
+- 说明：`.ai-sdlc/project/config/project-config.yaml` 与 `.ai-sdlc/project/config/project-state.yaml` 仍为运行态变更，未纳入本批提交
+
+#### 2.6 自动决策记录（如有）
+
+- 结果层仅暴露“附件状态计数 + 已匹配附件详情”；未匹配附件不挂到单张发票详情，避免把批次级匹配失败错误归因到某一主票。
+
+#### 2.7 批次结论
+
+- Batch 4 已完成结果展示与导出对齐，附件识别闭环现在已经覆盖上传、解析、风险消费、结果展示与导出摘要。
+
+#### 2.8 归档后动作
+
+- 已完成 git 提交：否（待本批代码与文档一起提交）
+- 提交哈希：N/A
+- 当前批次 branch disposition 状态：进行中
+- 当前批次 worktree disposition 状态：沿用当前工作区
+- 是否继续下一批：是

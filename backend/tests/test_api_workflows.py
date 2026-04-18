@@ -7,7 +7,17 @@ from pathlib import Path
 from sqlalchemy import select
 from starlette.testclient import TestClient
 
-from backend.app.db.models import AuditLog, Batch, DocumentEvidence, ExtractedField, FieldCheck, InvoiceRecord, ProcessingAttempt, ProcessingJob
+from backend.app.db.models import (
+    AttachmentDocument,
+    AuditLog,
+    Batch,
+    DocumentEvidence,
+    ExtractedField,
+    FieldCheck,
+    InvoiceRecord,
+    ProcessingAttempt,
+    ProcessingJob,
+)
 from backend.app.main import create_app
 from backend.app.services.batch_service import BatchService, IncomingFile
 from backend.app.services.config_service import ConfigService
@@ -95,6 +105,28 @@ def seed_batch_fixture(app):
     )
     session.add_all([pass_invoice, review_invoice])
     session.flush()
+
+    session.add_all(
+        [
+            AttachmentDocument(
+                batch_id=batch.id,
+                original_filename="duplicate-销货清单.pdf",
+                storage_path_original="storage/originals/BATCH-API-001/duplicate-销货清单.pdf",
+                file_sha256="attachment-consumed-sha",
+                attachment_status="consumed",
+                matched_invoice_id=review_invoice.id,
+                match_reason="Matched by invoice_number; reclassified the invoice using attachment line items.",
+            ),
+            AttachmentDocument(
+                batch_id=batch.id,
+                original_filename="unmatched-销货清单.pdf",
+                storage_path_original="storage/originals/BATCH-API-001/unmatched-销货清单.pdf",
+                file_sha256="attachment-unmatched-sha",
+                attachment_status="unmatched",
+                match_reason="No same-batch invoice matched the attachment summary.",
+            ),
+        ]
+    )
 
     session.add(
         DocumentEvidence(
@@ -412,6 +444,8 @@ def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_pat
     assert batch_item["total_files"] == 2
     assert batch_item["suggested_pass_count"] == 1
     assert batch_item["suggested_pass_total_amount"] == "100.00"
+    assert batch_item["attachment_file_count"] == 2
+    assert batch_item["attachment_status_counts"] == {"consumed": 1, "unmatched": 1}
     assert batch_item["progress"]["stage_code"] == "completed"
     assert batch_item["progress"]["suggested_pass_total_amount"] == "100.00"
 
@@ -420,6 +454,7 @@ def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_pat
     detail_payload = detail_response.json()["item"]
     assert detail_payload["snapshot"]["tax_profile"]["version_no"] == "v1"
     assert detail_payload["export_jobs"] == []
+    assert detail_payload["attachment_status_counts"] == {"consumed": 1, "unmatched": 1}
 
     filtered_response = client.get(
         f"/api/batches/{fixture['batch_id']}/invoices",
@@ -439,6 +474,11 @@ def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_pat
     invoice_detail = invoice_detail_response.json()["item"]
     assert invoice_detail["display_status"] == DISPLAY_STATUS_DUPLICATE
     assert invoice_detail["duplicate_flag"] is True
+    assert len(invoice_detail["attachments"]) == 1
+    assert invoice_detail["attachments"][0]["original_filename"] == "duplicate-销货清单.pdf"
+    assert invoice_detail["attachments"][0]["attachment_status"] == "consumed"
+    assert invoice_detail["attachments"][0]["attachment_status_label"] == "已消费"
+    assert "reclassified the invoice" in invoice_detail["attachments"][0]["match_reason"]
     assert len(invoice_detail["evidence_items"]) == 1
     assert len(invoice_detail["field_checks"]) == 1
     assert invoice_detail["risk_flags"] == ["suspected_duplicate"]

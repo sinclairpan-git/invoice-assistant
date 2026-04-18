@@ -6,7 +6,7 @@ from zipfile import ZipFile
 from sqlalchemy import select
 import pytest
 
-from backend.app.db.models import AuditLog, Batch, ExportJob, InvoiceRecord
+from backend.app.db.models import AttachmentDocument, AuditLog, Batch, ExportJob, InvoiceRecord
 from backend.app.db.session import create_database_engine, create_session_factory, init_db
 from backend.app.services.export_service import ExportService
 from backend.app.services.status_service import DISPLAY_STATUS_DUPLICATE, DISPLAY_STATUS_PASS
@@ -344,6 +344,17 @@ def test_export_service_blocks_pending_review_pass_export_and_success_manifest_i
         select(InvoiceRecord).where(InvoiceRecord.batch_id == batch.id, InvoiceRecord.original_filename == "review.pdf")
     )
     assert review_invoice is not None
+    session.add(
+        AttachmentDocument(
+            batch_id=batch.id,
+            original_filename="review-销货清单.pdf",
+            storage_path_original=str(review_file),
+            file_sha256="review-attachment-sha",
+            attachment_status="consumed",
+            matched_invoice_id=review_invoice.id,
+            match_reason="Matched by invoice_number; reclassified the invoice using attachment line items.",
+        )
+    )
     review_invoice.review_status = "manually_approved"
     session.commit()
 
@@ -373,6 +384,12 @@ def test_export_service_blocks_pending_review_pass_export_and_success_manifest_i
     assert "最终结论" in sheet_xml
     assert "结论原因" in sheet_xml
     assert "建议动作" in sheet_xml
+    assert "清单附件" in sheet_xml
+    assert "附件识别" in sheet_xml
+    assert "附件匹配依据" in sheet_xml
+    assert "review-销货清单.pdf" in sheet_xml
+    assert "已消费" in sheet_xml
+    assert "Matched by invoice_number" in sheet_xml
     assert "人工确认通过" in sheet_xml
     assert "纳入建议通过归档" in sheet_xml
 

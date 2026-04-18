@@ -133,7 +133,7 @@ Batch 5: 回归验证与收口
   1. 发票详情能看到附件状态、命中依据和失败原因。
   2. 导出摘要包含精简的附件识别结论，不破坏 004 的角色控制与字段边界。
 - **验证**：`python -m pytest backend/tests/test_export_service.py -q`，`npm test -- InvoiceDrawer`
-- **状态**：未开始
+- **状态**：已完成
 
 ### Task 4.2 补齐前端混合上传与结果态提示
 
@@ -146,7 +146,7 @@ Batch 5: 回归验证与收口
   1. 用户能在上传和结果页理解哪些附件已匹配、哪些仍待处理。
   2. 新增状态不会挤占现有批次关键指标。
 - **验证**：`npm test -- BatchWorkbench BatchResults`
-- **状态**：未开始
+- **状态**：已完成
 
 ## Batch 5：回归验证与收口
 

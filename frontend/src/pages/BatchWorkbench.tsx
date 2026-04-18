@@ -26,6 +26,14 @@ const ACTIVE_BATCH_STAGE_CODES = new Set([
   "duplicate_check",
   "finalization",
 ]);
+const ATTACHMENT_STATUS_LABELS: Record<string, string> = {
+  pending_match: "待匹配",
+  matched: "已匹配",
+  consumed: "已消费",
+  ambiguous: "匹配歧义",
+  unmatched: "未匹配",
+  parse_failed: "解析失败",
+};
 
 function isActiveBatch(item: Batch) {
   const stageCode = item.progress?.stage_code;
@@ -77,6 +85,7 @@ export function BatchWorkbench() {
 
   const activeFailures = activeBatch?.progress?.recent_failures ?? [];
   const retryableFailures = activeFailures.filter((item) => item.retryable !== false);
+  const attachmentStatusEntries = Object.entries(activeBatch?.attachment_status_counts ?? {}).filter(([, count]) => count > 0);
 
   useEffect(() => {
     if (!activeBatch) {
@@ -115,6 +124,11 @@ export function BatchWorkbench() {
                 <Tag color={activeBatch.progress?.stage_code === "completed" ? "green" : "gold"}>
                   {activeBatch.progress?.stage_text || "等待处理"}
                 </Tag>
+                <Typography.Text type="secondary">{`主票 ${activeBatch.invoice_file_count}`}</Typography.Text>
+                <Typography.Text type="secondary">{`清单附件 ${activeBatch.attachment_file_count}`}</Typography.Text>
+                {attachmentStatusEntries.map(([status, count]) => (
+                  <Tag key={status}>{`${ATTACHMENT_STATUS_LABELS[status] ?? status} ${count}`}</Tag>
+                ))}
                 <Typography.Text type="secondary">{`处理中 ${activeBatch.processing_files}`}</Typography.Text>
                 <Typography.Text type="secondary">{`失败 ${activeBatch.failed_files}`}</Typography.Text>
               </Space>

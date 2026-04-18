@@ -11,6 +11,14 @@ import { ResultTable } from "../components/results/ResultTable";
 
 
 const FILTER_OPTIONS = ["全部", "系统建议通过", "系统建议驳回", "待复核", "疑似重复", "处理失败"];
+const ATTACHMENT_STATUS_LABELS: Record<string, string> = {
+  pending_match: "待匹配",
+  matched: "已匹配",
+  consumed: "已消费",
+  ambiguous: "匹配歧义",
+  unmatched: "未匹配",
+  parse_failed: "解析失败",
+};
 
 interface InvoiceState {
   loading: boolean;
@@ -109,6 +117,8 @@ export function BatchResults() {
   const recentFailures = batchDetail?.progress?.recent_failures ?? [];
   const retryableFailures = recentFailures.filter((item) => item.retryable !== false);
   const failedCount = counts["处理失败"] ?? batchDetail?.failed_files ?? 0;
+  const attachmentStatusCounts = batchDetail?.attachment_status_counts ?? {};
+  const attachmentStatusEntries = Object.entries(attachmentStatusCounts).filter(([, count]) => count > 0);
 
   return (
     <div className="page-stack">
@@ -147,6 +157,14 @@ export function BatchResults() {
                   <Tag key={status}>{`${status} ${counts[status] ?? 0}`}</Tag>
                 ))}
               </Space>
+              {batchDetail.attachment_file_count > 0 ? (
+                <Space wrap className="status-strip">
+                  <Typography.Text strong>{`清单附件 ${batchDetail.attachment_file_count}`}</Typography.Text>
+                  {attachmentStatusEntries.map(([status, count]) => (
+                    <Tag key={status}>{`${ATTACHMENT_STATUS_LABELS[status] ?? status} ${count}`}</Tag>
+                  ))}
+                </Space>
+              ) : null}
               {failedCount > 0 ? (
                 <Space direction="vertical" size={8} className="full-width">
                   <Space wrap>

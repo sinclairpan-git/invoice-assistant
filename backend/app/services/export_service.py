@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_app_logger, log_event
-from backend.app.db.models import AuditLog, Batch, ExportJob, InvoiceRecord
+from backend.app.db.models import AttachmentDocument, AuditLog, Batch, ExportJob, InvoiceRecord
 from backend.app.services.compliance_service import build_invoice_compliance_summary, summarize_archiveable_pass
 from backend.app.services.status_service import derive_display_status
 
@@ -22,6 +22,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_STORAGE_ROOT = PROJECT_ROOT / "storage"
 SUPPORTED_EXPORT_TYPES = {"suggested_pass_zip", "issue_zip", "excel_manifest"}
 TERMINAL_BATCH_STATUSES = {"completed", "completed_with_failures", "failed"}
+ATTACHMENT_STATUS_LABELS = {
+    "pending_match": "待匹配",
+    "matched": "已匹配",
+    "consumed": "已消费",
+    "ambiguous": "匹配歧义",
+    "unmatched": "未匹配",
+    "parse_failed": "解析失败",
+}
 
 
 @dataclass(frozen=True)
@@ -274,8 +282,12 @@ class ExportService:
             "购方名称",
             "风险标记",
             "失败原因",
+            "清单附件",
+            "附件识别",
+            "附件匹配依据",
         ]
         rows: list[list[str]] = [headers]
+        attachments_by_invoice = self._group_attachments_by_invoice(batch)
 
         for invoice in invoices:
             display_status = derive_display_status(
@@ -284,6 +296,7 @@ class ExportService:
                 duplicate_flag=invoice.duplicate_flag,
             )
             compliance = build_invoice_compliance_summary(invoice)
+            attachments = attachments_by_invoice.get(invoice.id, [])
             rows.append(
                 [
                     batch.batch_no,
@@ -302,10 +315,24 @@ class ExportService:
                     invoice.buyer_name or "",
                     ",".join(json.loads(invoice.risk_flags or "[]")),
                     invoice.failure_reason or "",
+                    "；".join(attachment.original_filename for attachment in attachments),
+                    "；".join(ATTACHMENT_STATUS_LABELS.get(attachment.attachment_status, attachment.attachment_status) for attachment in attachments),
+                    "；".join(attachment.match_reason or "" for attachment in attachments),
                 ]
             )
 
         self._write_simple_xlsx(output_file, sheet_name="批次台账", rows=rows)
+
+    @staticmethod
+    def _group_attachments_by_invoice(batch: Batch) -> dict[str, list[AttachmentDocument]]:
+        grouped: dict[str, list[AttachmentDocument]] = {}
+        for attachment in batch.attachment_documents:
+            if not attachment.matched_invoice_id:
+                continue
+            grouped.setdefault(attachment.matched_invoice_id, []).append(attachment)
+        for items in grouped.values():
+            items.sort(key=lambda item: item.original_filename)
+        return grouped
 
     def _write_simple_xlsx(self, output_file: Path, *, sheet_name: str, rows: list[list[str]]) -> None:
         output_file.parent.mkdir(parents=True, exist_ok=True)
