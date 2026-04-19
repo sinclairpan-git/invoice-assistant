@@ -119,6 +119,7 @@ export function BatchResults() {
   const failedCount = counts["处理失败"] ?? batchDetail?.failed_files ?? 0;
   const attachmentStatusCounts = batchDetail?.attachment_status_counts ?? {};
   const attachmentStatusEntries = Object.entries(attachmentStatusCounts).filter(([, count]) => count > 0);
+  const exportJobs = batchDetail?.export_jobs ?? [];
 
   return (
     <div className="page-stack">
@@ -210,6 +211,8 @@ export function BatchResults() {
                         exportType: "suggested_pass_zip",
                       });
                       message.success(`已生成 ${result.output_path}`);
+                      await loadResults(resolvedBatchId, selectedFilter);
+                      await loadBatches();
                     } catch (error) {
                       message.error(getErrorMessage(error));
                     }
@@ -228,6 +231,8 @@ export function BatchResults() {
                         exportType: "issue_zip",
                       });
                       message.success(`已生成 ${result.output_path}`);
+                      await loadResults(resolvedBatchId, selectedFilter);
+                      await loadBatches();
                     } catch (error) {
                       message.error(getErrorMessage(error));
                     }
@@ -246,6 +251,8 @@ export function BatchResults() {
                         exportType: "excel_manifest",
                       });
                       message.success(`已生成 ${result.output_path}`);
+                      await loadResults(resolvedBatchId, selectedFilter);
+                      await loadBatches();
                     } catch (error) {
                       message.error(getErrorMessage(error));
                     }
@@ -254,6 +261,23 @@ export function BatchResults() {
                   导出 Excel 台账
                 </Button>
               </Space>
+              {batchDetail.export_manifest_path || exportJobs.length > 0 ? (
+                <Space direction="vertical" size={8} className="full-width">
+                  <Typography.Text strong>最近导出</Typography.Text>
+                  {batchDetail.export_manifest_path ? (
+                    <Typography.Text>{batchDetail.export_manifest_path}</Typography.Text>
+                  ) : null}
+                  {exportJobs.map((job) => (
+                    <Space key={job.id ?? `${job.export_type}-${job.output_path}`} wrap>
+                      <Tag>{job.export_type}</Tag>
+                      <Tag color={job.status === "completed" ? "green" : "gold"}>{job.status}</Tag>
+                      {job.output_path && job.output_path !== batchDetail.export_manifest_path ? (
+                        <Typography.Text>{job.output_path}</Typography.Text>
+                      ) : null}
+                    </Space>
+                  ))}
+                </Space>
+              ) : null}
             </div>
           ) : null}
         </AsyncBoundary>

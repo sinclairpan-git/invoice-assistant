@@ -8,17 +8,15 @@
 
 - 顶层 PRD：`发票整理助手_评审终版_重新生成.md`
 - Phase 1 设计基线：`docs/superpowers/specs/2026-04-17-invoice-assistant-design.md`
-- 当前 work items：`specs/001-invoice-assistant-mvp` 至 `specs/005-attachment-list-recognition`
+- 当前 work items：`specs/001-invoice-assistant-mvp` 至 `specs/009-export-audit-surface-refresh`
 - 当前实现：`backend/`、`frontend/`
 
 ## 总体结论
 
-- `001-004` 未发现新的顶层主路径实现缺口。
-- `005-attachment-list-recognition` 的 2 个行为缺口与 2 个文档真值缺口，已按本文件顺序完成收口。
-- 下一轮复扫未发现新的产品行为缺口，仅发现 `005-attachment-list-recognition/task-execution-log.md` 的收口状态漂移，已在本轮修正。
-- 继续按框架约束复扫后，新增发现 1 个 AI-SDLC 收口缺口：`005` latest batch 的 `verification profile` 不符合 `close-check` 要求；现已修正，并在 clean worktree 中确认 `001-005` 的 `workitem close-check` 全部通过。
-- 在运行态文件版本控制守卫落地后，新增发现 1 个工程门禁缺口：仓库还缺少远端 CI workflow；现已补齐，并让 GitHub Actions 与本地 `tracked-files` / 后端 / 前端校验保持一致。
-- 后续新增范围必须基于本文件继续追加，不再回到分散文档里重复建 backlog。
+- `P1-P10` 已全部完成，顶层 backlog 当前无剩余待收口缺口。
+- 经对抗 Agent 合议与本地复扫确认，当前仓库不存在新的主路径产品行为缺口；新增的 3 个后续缺口已经分别在 `006-009` 单独收口。
+- 当前 `specs/001-009` 的 `python -m ai_sdlc workitem close-check --wi ... --json` 均返回 `ok: true`，`python -m ai_sdlc run --dry-run` 继续通过。
+- 后续若再发现新的实现/治理缺口，只能继续在本文件追加新条目，而不是回写已完成条目的历史真相。
 
 ## 顺序执行清单
 
@@ -192,6 +190,27 @@
   - `uv run ai-sdlc verify constraints`：通过
   - `python -m ai_sdlc run --dry-run`：收口后通过
 
+### P10 收口结果页导出审计回显
+
+- **状态**：已完成（2026-04-19）
+- **来源规格**：
+  - `specs/004-controlled-review-export/spec.md` 要求导出后留下可追溯审计证据
+  - `docs/superpowers/specs/2026-04-17-invoice-assistant-design.md` 已将 `export_manifest_path` 纳入 `Batch` 核心对象
+- **现状**：
+  - 后端批次详情已经返回 `export_manifest_path` 与 `export_jobs`
+  - 前端结果页导出成功后只弹一次 toast，没有刷新详情，也没有把持久化导出状态展示给用户
+- **本轮目标**：
+  1. 导出成功后刷新批次详情与批次列表
+  2. 在结果页展示“最近导出”回显，消费现有的 `export_manifest_path` / `export_jobs`
+  3. 通过前端测试锁定回显行为，并完成 009 work item 收口
+- **完成证据**：
+  - `corepack pnpm --dir frontend test`：通过
+  - `corepack pnpm --dir frontend build`：通过
+  - `uv run pytest backend/tests/test_end_to_end_batch.py::test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent -q`：通过
+  - `uv run ruff check backend/tests/test_end_to_end_batch.py`：通过
+  - `uv run ai-sdlc verify constraints`：通过
+  - `python -m ai_sdlc run --dry-run`：收口后通过
+
 ## 本轮验证证据
 
 - `python -m ai_sdlc adapter activate`
@@ -207,6 +226,10 @@
 - `python -m ai_sdlc workitem close-check --wi specs/003-runtime-state-recovery --json`
 - `python -m ai_sdlc workitem close-check --wi specs/004-controlled-review-export --json`
 - `python -m ai_sdlc workitem close-check --wi specs/005-attachment-list-recognition --json`
+- `python -m ai_sdlc workitem close-check --wi specs/006-trusted-actor-fallback-hardening --json`
+- `python -m ai_sdlc workitem close-check --wi specs/007-excel-manifest-contract-completion --json`
+- `python -m ai_sdlc workitem close-check --wi specs/008-business-risk-terminology-alignment --json`
+- `python -m ai_sdlc workitem close-check --wi specs/009-export-audit-surface-refresh --json`
 
 ## 本轮验证结果
 
@@ -215,13 +238,13 @@
 - 2026-04-19：`python -m ai_sdlc run --dry-run` 通过，输出 `Stage close: PASS`
 - 2026-04-19：`uv run tracked-files` 通过，输出 `Tracked file policy: OK`
 - 2026-04-19：`uv run ruff check workspace_tools backend/tests backend/app` 通过，输出 `All checks passed!`
-- 2026-04-19：`uv run pytest backend/tests -q` 通过，结果 `67 passed`
-- 2026-04-19：`corepack pnpm --dir frontend test` 通过，结果 `7 passed`
+- 2026-04-19：`uv run pytest backend/tests -q` 通过，结果 `70 passed`
+- 2026-04-19：`corepack pnpm --dir frontend test` 通过，结果 `8 passed`
 - 2026-04-19：`corepack pnpm --dir frontend build` 通过
-- 2026-04-19：在 clean worktree 中，`001-005` 的 `python -m ai_sdlc workitem close-check --wi ... --json` 均返回 `ok: true`
+- 2026-04-19：在 clean worktree 中，`001-009` 的 `python -m ai_sdlc workitem close-check --wi ... --json` 均返回 `ok: true`
 
 ## 执行规则
 
-1. 严格按 `P1 -> P2 -> P3 -> P4 -> P5 -> P6 -> P7 -> P8 -> P9` 顺序执行。
+1. 严格按 `P1 -> P2 -> P3 -> P4 -> P5 -> P6 -> P7 -> P8 -> P9 -> P10` 顺序执行。
 2. 每个条目先补失败测试，再写最小实现，再跑对应回归。
 3. 如某条目实现过程中发现新的范围扩张，只能在本文件追加，不直接隐式扩 scope。
