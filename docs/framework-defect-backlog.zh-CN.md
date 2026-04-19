@@ -25,3 +25,29 @@
   1. 已在 `Ai_AutoSDLC` 的 `src/ai_sdlc/cli/workitem_cmd.py` 为 `workitem init` 增加 Git preflight。
   2. 已在 `Ai_AutoSDLC` 的 `src/ai_sdlc/core/workitem_scaffold.py` 增加 `preview_work_item_id()`，用于在写文件前解析目标 work item id。
   3. 已在 `Ai_AutoSDLC` 的 `tests/integration/test_cli_workitem_init.py` 增加 main 分支阻断与 dirty docs branch 阻断回归。
+
+## 2026-04-19 条目 002
+
+- 状态：已完成（2026-04-19）
+- 现象：框架实际 docs 分支策略已切到 `feature/<WI>-docs`，但 `refine.yaml`、`rules/git-branch.md`、`rules/pipeline.md`、`rules/scenario-routing.md` 仍以 `design/<WI>-docs` 作为主口径。
+- 触发场景：完成条目 001 后继续复扫规则文档与阶段说明，发现 CLI / `BranchManager` / `decisions.yml` 与规范文本不一致。
+- 影响范围：Stage 1 指引、分支切换说明、范围变更上升流程、checkpoint 示例都会给出过期分支名，导致用户和后续 agent 继续按旧规则操作。
+- 根因分类：规则文档漂移 + 兼容迁移收尾不完整。
+- 未来杜绝方案摘要：把 docs 分支命名真值固定为“首选 `feature/<WI>-docs`、兼容 `design/<WI>-docs`”，并用集成测试锁定 `stage show refine` 的对外展示口径。
+- 建议改动层级：workflow + rule / policy + eval
+- prompt / context：用户要求“继续”，上一轮已完成 `workitem init` preflight 修复；继续按框架 backlog 处理下一优先级时，发现规范文本仍落后于真实实现。
+- rule / policy：`pipeline.md` 第 12 条；`git-branch.md`；`scenario-routing.md` 中 EXECUTE 上升流程；`refine.yaml` 的 create_docs_branch 检查项。
+- middleware：无
+- workflow：已将 Stage 1-4 的主 docs 分支口径统一为 `feature/<WI>-docs`，并明确 legacy `design/<WI>-docs` 仅作兼容说明，不再作为主指令。
+- tool：`ai-sdlc stage show refine` 现在以 `feature/{id}-docs` 展示 Stage 1 docs branch 动作，不再把 `design/{id}-docs` 作为创建指令。
+- eval：已补 `tests/integration/test_cli_stage.py` 回归，锁定 `stage show refine` 必须输出“创建 `feature/{id}-docs` 分支”。
+- 风险等级：中
+- 可验证成功标准：
+  1. `stage show refine` 的输出主口径为 `feature/{id}-docs`。
+  2. `git-branch.md`、`pipeline.md`、`scenario-routing.md` 与 `BranchManager` 当前行为一致。
+  3. legacy `design/<WI>-docs` 仅以兼容说明出现，不再作为默认创建路径。
+- 是否需要回归测试补充：是
+- 本轮收口结果：
+  1. 已在 `Ai_AutoSDLC` 的 `src/ai_sdlc/stages/refine.yaml` 更新 Stage 1 docs branch 指令。
+  2. 已在 `Ai_AutoSDLC` 的 `src/ai_sdlc/rules/git-branch.md`、`pipeline.md`、`scenario-routing.md` 同步规则真值。
+  3. 已在 `Ai_AutoSDLC` 的 `tests/integration/test_cli_stage.py` 增加 docs branch 命名回归。
