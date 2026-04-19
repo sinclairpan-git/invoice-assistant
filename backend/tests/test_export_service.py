@@ -568,7 +568,7 @@ def test_export_service_blocks_pending_review_pass_export_and_success_manifest_i
     with ZipFile(excel_result.output_path) as workbook:
         sheet_xml = workbook.read("xl/worksheets/sheet1.xml").decode("utf-8")
     assert "基础合规" in sheet_xml
-    assert "业务合规" in sheet_xml
+    assert "业务风险分类" in sheet_xml
     assert "最终结论" in sheet_xml
     assert "结论原因" in sheet_xml
     assert "建议动作" in sheet_xml

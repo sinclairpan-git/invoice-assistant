@@ -465,6 +465,7 @@ describe("runtime UI", () => {
       <InvoiceDrawer invoiceId="invoice-failed" open onClose={() => undefined} onChanged={onChanged} />,
     );
 
+    expect(await screen.findByText("业务风险分类")).toBeInTheDocument();
     expect(await screen.findByText("rapidocr-onnxruntime")).toBeInTheDocument();
     expect(screen.getAllByText("ocr_timeout").length).toBeGreaterThan(0);
     expect(screen.getAllByText("处理失败").length).toBeGreaterThan(0);

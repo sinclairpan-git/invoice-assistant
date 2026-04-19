@@ -170,6 +170,28 @@
   - `uv run ruff check backend/app/services/export_service.py backend/tests/test_export_service.py`：通过
   - `python -m ai_sdlc run --dry-run`：收口后通过
 
+### P9 收口“业务风险分类”术语漂移
+
+- **状态**：已完成（2026-04-19）
+- **来源规格**：
+  - `specs/001-invoice-assistant-mvp/spec.md` 已明确要求用户可见规则层命名必须使用“业务风险分类”
+  - `docs/superpowers/specs/2026-04-17-invoice-assistant-design.md` 作为设计基线，已把“业务风险分类”定义为权威术语
+  - 对抗 Agent 合议结论：只修复用户可见术语，不改内部/API 键 `business_compliance_status`
+- **现状**：
+  - `frontend/src/components/results/InvoiceDrawer.tsx` 详情标签仍显示“业务合规”
+  - `backend/app/services/export_service.py` 的 `excel_manifest` 列头仍显示“业务合规”
+  - `specs/002`、`specs/004` 当前正式规格仍保留旧 wording，和 `001` / 设计基线冲突
+- **本轮目标**：
+  1. 把详情标签与 Excel manifest 列头统一回“业务风险分类”
+  2. 用前后端回归测试锁定术语，不让实现再次漂回旧文案
+  3. 同步收口 `002/004` 正式规格与 008 work item 归档
+- **完成证据**：
+  - `uv run pytest backend/tests/test_export_service.py::test_export_service_blocks_pending_review_pass_export_and_success_manifest_includes_compliance_fields backend/tests/test_end_to_end_batch.py::test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent -q`：通过
+  - `corepack pnpm --dir frontend test`：通过
+  - `corepack pnpm --dir frontend build`：通过
+  - `uv run ai-sdlc verify constraints`：通过
+  - `python -m ai_sdlc run --dry-run`：收口后通过
+
 ## 本轮验证证据
 
 - `python -m ai_sdlc adapter activate`
@@ -200,6 +222,6 @@
 
 ## 执行规则
 
-1. 严格按 `P1 -> P2 -> P3 -> P4 -> P5 -> P6` 顺序执行。
+1. 严格按 `P1 -> P2 -> P3 -> P4 -> P5 -> P6 -> P7 -> P8 -> P9` 顺序执行。
 2. 每个条目先补失败测试，再写最小实现，再跑对应回归。
 3. 如某条目实现过程中发现新的范围扩张，只能在本文件追加，不直接隐式扩 scope。

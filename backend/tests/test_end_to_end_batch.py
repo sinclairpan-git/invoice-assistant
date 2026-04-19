@@ -295,7 +295,7 @@ def test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent(tmp
         sheet_xml = workbook.read("xl/worksheets/sheet1.xml").decode("utf-8")
     assert "BATCH-E2E-001" in sheet_xml
     assert "基础合规" in sheet_xml
-    assert "业务合规" in sheet_xml
+    assert "业务风险分类" in sheet_xml
     assert "最终结论" in sheet_xml
     assert "03-review-required.pdf" in sheet_xml
     assert "04-duplicate.pdf" in sheet_xml
