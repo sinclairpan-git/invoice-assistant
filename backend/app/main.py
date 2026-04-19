@@ -35,11 +35,17 @@ def resolve_storage_root(database_url: str) -> Path:
     return BACKEND_ROOT / "data" / "storage"
 
 
-def configure_trusted_actor(app: FastAPI) -> None:
-    app.state.trusted_actor = dict(LOCAL_TRUSTED_ACTOR)
+def configure_trusted_actor(
+    app: FastAPI, actor_payload: dict[str, object] = LOCAL_TRUSTED_ACTOR
+) -> None:
+    app.state.trusted_actor = dict(actor_payload)
 
 
-def create_app(database_url: str = DEFAULT_DATABASE_URL) -> FastAPI:
+def create_app(
+    database_url: str = DEFAULT_DATABASE_URL,
+    *,
+    trusted_actor: dict[str, object] | None = LOCAL_TRUSTED_ACTOR,
+) -> FastAPI:
     engine = create_database_engine(database_url)
     init_db(engine)
     session_factory = create_session_factory(engine)
@@ -69,6 +75,8 @@ def create_app(database_url: str = DEFAULT_DATABASE_URL) -> FastAPI:
         session_factory=session_factory,
         storage_root=app.state.storage_root,
     )
+    if trusted_actor is not None:
+        configure_trusted_actor(app, trusted_actor)
 
     app.include_router(actors_router)
     app.include_router(batches_router)
@@ -83,4 +91,3 @@ def create_app(database_url: str = DEFAULT_DATABASE_URL) -> FastAPI:
 
 
 app = create_app()
-configure_trusted_actor(app)

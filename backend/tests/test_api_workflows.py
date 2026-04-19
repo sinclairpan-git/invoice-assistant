@@ -292,7 +292,10 @@ def set_trusted_actor(
 
 
 def test_missing_trusted_actor_returns_config_error_for_read_and_write_paths(tmp_path):
-    app = create_app(f"sqlite:///{tmp_path / 'api-missing-actor.db'}")
+    app = create_app(
+        f"sqlite:///{tmp_path / 'api-missing-actor.db'}",
+        trusted_actor=None,
+    )
     fixture = seed_batch_fixture(app)
     client = TestClient(app)
 
