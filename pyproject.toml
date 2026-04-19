@@ -9,6 +9,7 @@ dependencies = [
 [project.scripts]
 pytest = "workspace_tools.cli:pytest_main"
 ruff = "workspace_tools.cli:ruff_main"
+tracked-files = "workspace_tools.cli:tracked_files_main"
 
 [build-system]
 requires = ["setuptools>=68.0.0"]

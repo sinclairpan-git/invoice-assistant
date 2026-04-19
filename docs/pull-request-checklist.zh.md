@@ -5,8 +5,10 @@
 - 适用画像：`docs-only`、`rules-only`、`truth-only`、`code-change`
 - 约束命令：`uv run ai-sdlc verify constraints`
 - truth 同步预演：`python -m ai_sdlc program truth sync --dry-run`
+- 跟踪文件边界：`uv run tracked-files`
 - 代码变更验证：`uv run pytest`
 - 代码变更静态检查：`uv run ruff check`
+- `uv run pytest` / `uv run ruff check` 默认先校验 tracked-file policy，再进入测试或静态检查
 
 ## 提交范围
 

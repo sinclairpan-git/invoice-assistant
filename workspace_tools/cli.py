@@ -5,9 +5,26 @@ import subprocess
 import sys
 from pathlib import Path
 
+from workspace_tools.version_control_policy import git_tracked_file_policy_violations
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
+
+
+def _tracked_file_policy_violations() -> list[str]:
+    return git_tracked_file_policy_violations(_repo_root())
+
+
+def _enforce_tracked_file_policy() -> None:
+    violations = _tracked_file_policy_violations()
+    if not violations:
+        return
+
+    sys.stderr.write("Tracked file policy violations:\n")
+    for violation in violations:
+        sys.stderr.write(f"- {violation}\n")
+    raise SystemExit(2)
 
 
 def _run(command: list[str]) -> None:
@@ -20,6 +37,7 @@ def _run(command: list[str]) -> None:
 
 
 def pytest_main() -> None:
+    _enforce_tracked_file_policy()
     _run(
         [
             "uv",
@@ -37,6 +55,7 @@ def pytest_main() -> None:
 
 
 def ruff_main() -> None:
+    _enforce_tracked_file_policy()
     _run(
         [
             "uvx",
@@ -48,3 +67,15 @@ def ruff_main() -> None:
             *sys.argv[1:],
         ]
     )
+
+
+def tracked_files_main() -> None:
+    violations = _tracked_file_policy_violations()
+    if violations:
+        sys.stderr.write("Tracked file policy violations:\n")
+        for violation in violations:
+            sys.stderr.write(f"- {violation}\n")
+        raise SystemExit(2)
+
+    print("Tracked file policy: OK")
+    raise SystemExit(0)
