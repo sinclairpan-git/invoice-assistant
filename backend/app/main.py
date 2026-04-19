@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
+from backend.app.api.dependencies import CONTROLLED_ROLES
 from backend.app.api.actors import router as actors_router
 from backend.app.api.batches import router as batches_router
 from backend.app.api.config import router as config_router
@@ -20,12 +21,22 @@ from backend.app.core.logging import get_app_logger
 from backend.app.services.processing_runner import InProcessBatchRunner
 from backend.app.services.recovery_service import RecoveryService
 
+LOCAL_TRUSTED_ACTOR = {
+    "actor_id": "local-admin",
+    "display_name": "本机管理员",
+    "roles": list(CONTROLLED_ROLES),
+}
+
 
 def resolve_storage_root(database_url: str) -> Path:
     if database_url.startswith("sqlite:///") and database_url != "sqlite:///:memory:":
         sqlite_path = Path(database_url.removeprefix("sqlite:///")).expanduser()
         return sqlite_path.parent / "storage"
     return BACKEND_ROOT / "data" / "storage"
+
+
+def configure_trusted_actor(app: FastAPI) -> None:
+    app.state.trusted_actor = dict(LOCAL_TRUSTED_ACTOR)
 
 
 def create_app(database_url: str = DEFAULT_DATABASE_URL) -> FastAPI:
@@ -72,3 +83,4 @@ def create_app(database_url: str = DEFAULT_DATABASE_URL) -> FastAPI:
 
 
 app = create_app()
+configure_trusted_actor(app)
