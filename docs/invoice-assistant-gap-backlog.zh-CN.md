@@ -126,6 +126,31 @@
   3. Frontend job 现在执行 `corepack pnpm --dir frontend test` 与 `corepack pnpm --dir frontend build`
   4. 已新增 `backend/tests/test_ci_workflow.py` 锁定 workflow 的关键门禁命令，避免后续漂移
 
+### P7 收口 trusted actor fallback 真值
+
+- **状态**：已完成（2026-04-19）
+- **来源规格**：
+  - `specs/004-controlled-review-export/spec.md` 要求未配置后端可信操作者上下文时，受控写操作不得回退到匿名或前端自由输入，而应返回明确配置错误
+  - 对抗式评审合议结论：当前真实最高优先级缺口是 trusted actor fallback 失真；`default_operator_name` 不再单独立项，Excel 字段完整性和术语漂移后置
+- **现状**：
+  - `backend/app/api/dependencies.py` 在 `app.state.trusted_actor` 缺失时，会回退到带 `config_admin`、`reviewer`、`exporter` 全角色的伪造本机管理员
+  - `backend/app/api/batches.py`、`backend/app/api/config.py`、`backend/app/api/invoices.py` 仍会把请求体里的 `created_by` / `changed_by` / `reviewed_by` 用作 fallback 显示名
+  - 现有回归只覆盖“trusted actor 已配置时的角色控制”，尚未锁定“trusted actor 缺失时必须失败”的治理真值
+- **本轮目标**：
+  1. 新建 `006-trusted-actor-fallback-hardening` work item，把修复范围从旧工单中切出并单独承接
+  2. 收口 trusted actor 缺失时的依赖行为，禁止全角色 fallback 和前端姓名回填
+  3. 以定向红绿测试锁定 `/api/me` 与受控写接口的配置错误真值
+- **计划收口标准**：
+  1. 未配置 trusted actor 时，`/api/me` 与受控写接口稳定返回明确配置错误
+  2. 已配置 trusted actor 时，请求体伪造姓名不再影响后端记录的操作者身份
+  3. 本条缺口完成后，再重新评估 Excel manifest 字段完整性与术语对齐
+- **完成证据**：
+  - `uv run pytest backend/tests -q`：`69 passed`
+  - `uv run ruff check`：通过
+  - `uv run ai-sdlc verify constraints`：`no BLOCKERs`
+  - `python -m ai_sdlc recover --reconcile`
+  - `python -m ai_sdlc run --dry-run`：`Stage close: PASS`
+
 ## 本轮验证证据
 
 - `python -m ai_sdlc adapter activate`

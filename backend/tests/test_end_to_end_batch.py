@@ -65,6 +65,20 @@ def load_fixture_uploads() -> list[tuple[str, tuple[str, bytes, str]]]:
     return uploads
 
 
+def set_trusted_actor(
+    app,
+    *,
+    actor_id: str = "trusted-actor-1",
+    display_name: str = "可信操作员",
+    roles: list[str] | None = None,
+):
+    app.state.trusted_actor = {
+        "actor_id": actor_id,
+        "display_name": display_name,
+        "roles": roles or [],
+    }
+
+
 def wait_for_batch_stage(
     client: TestClient, batch_id: str, expected_stage: str, *, timeout: float = 5.0
 ) -> dict[str, object]:
@@ -93,6 +107,7 @@ def test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent(tmp
     session = app.state.session_factory()
     seed_active_rules(session)
     session.close()
+    set_trusted_actor(app, display_name="端到端操作员", roles=["reviewer", "exporter"])
 
     client = TestClient(app)
 
