@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from zipfile import ZipFile
@@ -10,8 +11,12 @@ from backend.app.db.models import (
     AttachmentDocument,
     AuditLog,
     Batch,
+    DocumentEvidence,
     ExportJob,
+    ExtractedField,
     InvoiceRecord,
+    ProcessingAttempt,
+    ProcessingJob,
 )
 from backend.app.db.session import (
     create_database_engine,
@@ -147,6 +152,151 @@ def test_export_service_generates_zip_and_excel_outputs_with_consistent_summary(
 
     session.refresh(batch)
     assert batch.export_manifest_path == excel_result.output_path
+
+
+def test_excel_manifest_includes_required_contract_columns(tmp_path):
+    session = build_session(tmp_path)
+
+    invoice_file = tmp_path / "manifest.pdf"
+    write_pdf(invoice_file)
+
+    batch = Batch(
+        batch_no="BATCH-MANIFEST-001",
+        created_by="tester",
+        snapshot_json="{}",
+        status="completed",
+        total_files=1,
+        completed_files=1,
+        processing_files=0,
+        failed_files=0,
+    )
+    session.add(batch)
+    session.flush()
+
+    invoice = InvoiceRecord(
+        batch_id=batch.id,
+        original_filename="manifest.pdf",
+        storage_path_original=str(invoice_file),
+        file_sha256="manifest-sha",
+        invoice_number="MANIFEST-001",
+        invoice_amount=Decimal("188.00"),
+        seller_name="Acme Supplies Ltd",
+        buyer_name="Shanghai Example Co",
+        buyer_tax_no="91310000X",
+        invoice_date=date(2026, 4, 17),
+        processing_status="completed",
+        system_decision="review_required",
+        review_status="not_reviewed",
+        artifact_status="original_only",
+        duplicate_flag=True,
+        duplicate_group_key="dup-manifest-001",
+        risk_flags='["suspected_duplicate"]',
+        problem_count=1,
+    )
+    session.add(invoice)
+    session.flush()
+
+    job = ProcessingJob(
+        batch_id=batch.id,
+        status="completed",
+        current_stage="finalization",
+        total_items=1,
+        completed_items=1,
+        failed_items=0,
+    )
+    session.add(job)
+    session.flush()
+
+    attempt = ProcessingAttempt(
+        job_id=job.id,
+        invoice_id=invoice.id,
+        attempt_no=1,
+        status="completed",
+        stage="finalization",
+        completed_at=datetime(2026, 4, 19, 9, 30, tzinfo=UTC),
+        diagnostic_json="{}",
+    )
+    session.add(attempt)
+    session.flush()
+
+    session.add(
+        DocumentEvidence(
+            invoice_id=invoice.id,
+            attempt_id=attempt.id,
+            source_type="text",
+            raw_text="Office Supplies",
+            text_blocks_json=json.dumps([{"page_no": 1, "text": "Office Supplies"}]),
+            table_lines_json=json.dumps(
+                [{"page_no": 1, "row_no": 1, "text": "Office Supplies"}]
+            ),
+            field_candidates_json="[]",
+            confidence_summary_json="{}",
+        )
+    )
+    session.add_all(
+        [
+            ExtractedField(
+                invoice_id=invoice.id,
+                attempt_id=attempt.id,
+                field_name="buyer_address",
+                extracted_value="上海市浦东新区世纪大道100号",
+                normalized_value="上海市浦东新区世纪大道100号",
+            ),
+            ExtractedField(
+                invoice_id=invoice.id,
+                attempt_id=attempt.id,
+                field_name="buyer_phone",
+                extracted_value="021-12345678",
+                normalized_value="02112345678",
+            ),
+            ExtractedField(
+                invoice_id=invoice.id,
+                attempt_id=attempt.id,
+                field_name="buyer_bank",
+                extracted_value="中国银行上海分行",
+                normalized_value="中国银行上海分行",
+            ),
+            ExtractedField(
+                invoice_id=invoice.id,
+                attempt_id=attempt.id,
+                field_name="buyer_account",
+                extracted_value="6222000000001234",
+                normalized_value="6222000000001234",
+            ),
+        ]
+    )
+    session.commit()
+
+    service = ExportService(session, storage_root=tmp_path / "storage")
+    excel_result = service.create_export(
+        batch_id=batch.id,
+        export_type="excel_manifest",
+        created_by="tester",
+    )
+
+    with ZipFile(excel_result.output_path) as workbook:
+        sheet_xml = workbook.read("xl/worksheets/sheet1.xml").decode("utf-8")
+
+    assert "疑似重复标记" in sheet_xml
+    assert "购方税号" in sheet_xml
+    assert "购方地址" in sheet_xml
+    assert "购方电话" in sheet_xml
+    assert "开户银行" in sheet_xml
+    assert "银行账户" in sheet_xml
+    assert "开票日期" in sheet_xml
+    assert "销售方名称" in sheet_xml
+    assert "发票明细摘要" in sheet_xml
+    assert "处理时间" in sheet_xml
+    assert "是" in sheet_xml
+    assert "91310000X" in sheet_xml
+    assert "上海市浦东新区世纪大道100号" in sheet_xml
+    assert "021-12345678" in sheet_xml
+    assert "中国银行上海分行" in sheet_xml
+    assert "6222000000001234" in sheet_xml
+    assert "2026-04-17" in sheet_xml
+    assert "Acme Supplies Ltd" in sheet_xml
+    assert "Office Supplies" in sheet_xml
+    assert "2026-04-19T09:30:00" in sheet_xml
 
 
 def test_export_service_cleans_partial_file_on_failure(tmp_path, monkeypatch):

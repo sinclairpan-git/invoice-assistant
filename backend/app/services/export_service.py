@@ -301,6 +301,7 @@ class ExportService:
             "显示状态",
             "系统判定",
             "人工复核状态",
+            "疑似重复标记",
             "基础合规",
             "业务合规",
             "最终结论",
@@ -309,11 +310,20 @@ class ExportService:
             "金额",
             "发票号码",
             "购方名称",
+            "购方税号",
+            "购方地址",
+            "购方电话",
+            "开户银行",
+            "银行账户",
+            "开票日期",
+            "销售方名称",
+            "发票明细摘要",
             "风险标记",
             "失败原因",
             "清单附件",
             "附件识别",
             "附件匹配依据",
+            "处理时间",
         ]
         rows: list[list[str]] = [headers]
         attachments_by_invoice = self._group_attachments_by_invoice(batch)
@@ -334,6 +344,7 @@ class ExportService:
                     display_status,
                     invoice.system_decision or "",
                     invoice.review_status,
+                    "是" if invoice.duplicate_flag else "否",
                     compliance.basic_compliance_status,
                     compliance.business_compliance_status,
                     compliance.final_decision,
@@ -344,6 +355,14 @@ class ExportService:
                     else f"{Decimal(str(invoice.invoice_amount)):.2f}",
                     invoice.invoice_number or "",
                     invoice.buyer_name or "",
+                    invoice.buyer_tax_no or "",
+                    self._manifest_field_value(invoice, "buyer_address"),
+                    self._manifest_field_value(invoice, "buyer_phone"),
+                    self._manifest_field_value(invoice, "buyer_bank"),
+                    self._manifest_field_value(invoice, "buyer_account"),
+                    self._serialize_manifest_date(invoice.invoice_date),
+                    invoice.seller_name or "",
+                    self._manifest_line_summary(invoice),
                     ",".join(json.loads(invoice.risk_flags or "[]")),
                     invoice.failure_reason or "",
                     "；".join(
@@ -358,10 +377,95 @@ class ExportService:
                     "；".join(
                         attachment.match_reason or "" for attachment in attachments
                     ),
+                    self._manifest_processing_time(invoice),
                 ]
             )
 
         self._write_simple_xlsx(output_file, sheet_name="批次台账", rows=rows)
+
+    @staticmethod
+    def _manifest_field_value(invoice: InvoiceRecord, field_name: str) -> str:
+        extracted_values = [
+            field
+            for field in invoice.extracted_fields
+            if field.field_name == field_name
+            and ((field.extracted_value or "").strip() or (field.normalized_value or "").strip())
+        ]
+        if extracted_values:
+            extracted_values.sort(
+                key=lambda item: (
+                    item.confidence is not None,
+                    item.confidence or Decimal("0"),
+                    item.id,
+                ),
+                reverse=True,
+            )
+            chosen = extracted_values[0]
+            return (chosen.extracted_value or chosen.normalized_value or "").strip()
+
+        checks = [
+            check
+            for check in invoice.field_checks
+            if check.field_name == field_name and (check.actual_value or "").strip()
+        ]
+        if checks:
+            return (checks[0].actual_value or "").strip()
+        return ""
+
+    @staticmethod
+    def _serialize_manifest_date(value) -> str:
+        if value is None:
+            return ""
+        return str(value.isoformat())
+
+    @staticmethod
+    def _manifest_line_summary(invoice: InvoiceRecord) -> str:
+        candidates: list[str] = []
+        for evidence in invoice.evidence_items:
+            for row in json.loads(evidence.table_lines_json or "[]"):
+                text = str(row.get("text") or "").strip()
+                if text:
+                    candidates.append(text)
+            if candidates:
+                break
+
+        if not candidates:
+            for evidence in invoice.evidence_items:
+                for block in json.loads(evidence.text_blocks_json or "[]"):
+                    text = str(block.get("text") or "").strip()
+                    if text:
+                        candidates.append(text)
+                if candidates:
+                    break
+
+        if not candidates:
+            for evidence in invoice.evidence_items:
+                text = (evidence.raw_text or "").strip()
+                if text:
+                    candidates.append(text.splitlines()[0].strip())
+                    break
+
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            deduped.append(candidate)
+            if len(deduped) >= 3:
+                break
+        return "；".join(deduped)
+
+    @staticmethod
+    def _manifest_processing_time(invoice: InvoiceRecord) -> str:
+        completed_attempts = [
+            attempt.completed_at
+            for attempt in invoice.processing_attempts
+            if attempt.completed_at is not None
+        ]
+        if not completed_attempts:
+            return ""
+        return max(completed_attempts).isoformat()
 
     @staticmethod
     def _group_attachments_by_invoice(

@@ -151,6 +151,25 @@
   - `python -m ai_sdlc recover --reconcile`
   - `python -m ai_sdlc run --dry-run`：`Stage close: PASS`
 
+### P8 补齐 excel manifest 台账字段契约
+
+- **状态**：已完成（2026-04-19）
+- **来源规格**：
+  - `docs/superpowers/specs/2026-04-17-invoice-assistant-design.md` 第 14 节要求 Excel 台账至少包含疑似重复标记、购方税号、购方地址/电话/开户银行/银行账户、开票日期、销售方名称、发票明细摘要、处理时间
+  - `specs/004-controlled-review-export/spec.md` 要求导出台账与单票解释口径保持一致
+- **现状**：
+  - `backend/app/services/export_service.py` 旧版 manifest 只输出基础状态、合规解释、金额、发票号码、购方名称、风险标记和附件字段
+  - 设计基线中已承诺的买方扩展字段、重复标记、销方、明细摘要与处理时间尚未进入导出台账
+- **本轮目标**：
+  1. 新建 `007-excel-manifest-contract-completion` work item，单独承接 manifest 契约补齐
+  2. 以红灯测试锁定缺失列头和值
+  3. 在不改 schema 的前提下，复用 `InvoiceRecord`、`ExtractedField`、`DocumentEvidence`、`ProcessingAttempt` 补齐缺列
+- **完成证据**：
+  - `uv run pytest backend/tests/test_export_service.py::test_excel_manifest_includes_required_contract_columns -q`：通过
+  - `uv run pytest backend/tests/test_export_service.py backend/tests/test_end_to_end_batch.py::test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent -q`：`6 passed`
+  - `uv run ruff check backend/app/services/export_service.py backend/tests/test_export_service.py`：通过
+  - `python -m ai_sdlc run --dry-run`：收口后通过
+
 ## 本轮验证证据
 
 - `python -m ai_sdlc adapter activate`
