@@ -9,6 +9,7 @@
 - 代码变更验证：`uv run pytest`
 - 代码变更静态检查：`uv run ruff check`
 - `uv run pytest` / `uv run ruff check` 默认先校验 tracked-file policy，再进入测试或静态检查
+- 远端门禁由 `.github/workflows/ci.yml` 同步执行 `tracked-files`、后端校验与前端测试/构建
 
 ## 提交范围
 
@@ -29,6 +30,7 @@
 - 后端全量测试通过
 - 前端测试通过
 - 前端构建通过
+- GitHub Actions CI 与本地门禁命令保持一致
 - `python -m ai_sdlc workitem close-check --wi specs/001-invoice-assistant-mvp` 无阻塞项
 
 ## 核心业务回归

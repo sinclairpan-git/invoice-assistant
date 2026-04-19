@@ -121,6 +121,7 @@
 4. 核对 `specs/002-invoice-assistant-runtime-hardening/execution-log.md` 与 `task-execution-log.md` 一致，确认遗留镜像未发生漂移
 5. 新增 `workspace_tools/version_control_policy.py` 与 `backend/tests/test_git_tracked_policy.py`，把运行态文件版本控制边界固化为自动回归守卫
 6. 新增 repo 根命令 `uv run tracked-files`，并让 `uv run pytest`、`uv run ruff check` 在执行前先校验 tracked-file policy
+7. 新增 `.github/workflows/ci.yml`，让远端 PR / main 分支也执行 `uv run tracked-files`、`uv run ruff check workspace_tools backend/tests backend/app`、`uv run pytest backend/tests -q`，并补上前端测试与构建门禁
 
 ## 后续约束
 

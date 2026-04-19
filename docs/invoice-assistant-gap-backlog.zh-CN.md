@@ -17,6 +17,7 @@
 - `005-attachment-list-recognition` 的 2 个行为缺口与 2 个文档真值缺口，已按本文件顺序完成收口。
 - 下一轮复扫未发现新的产品行为缺口，仅发现 `005-attachment-list-recognition/task-execution-log.md` 的收口状态漂移，已在本轮修正。
 - 继续按框架约束复扫后，新增发现 1 个 AI-SDLC 收口缺口：`005` latest batch 的 `verification profile` 不符合 `close-check` 要求；现已修正，并在 clean worktree 中确认 `001-005` 的 `workitem close-check` 全部通过。
+- 在运行态文件版本控制守卫落地后，新增发现 1 个工程门禁缺口：仓库还缺少远端 CI workflow；现已补齐，并让 GitHub Actions 与本地 `tracked-files` / 后端 / 前端校验保持一致。
 - 后续新增范围必须基于本文件继续追加，不再回到分散文档里重复建 backlog。
 
 ## 顺序执行清单
@@ -105,12 +106,36 @@
   2. 在 clean worktree 中，`001-005` 的 `python -m ai_sdlc workitem close-check --wi ... --json` 全部返回 `ok: true`
   3. 当前主工作区继续保留 `.ai-sdlc/project/config/project-config.yaml` 这类运行态变更，不把它混入功能/归档提交
 
+### P6 补齐远端 CI 门禁并与本地校验对齐
+
+- **状态**：已完成
+- **来源规格**：
+  - `docs/pull-request-checklist.zh.md`
+  - `docs/ai-sdlc-runtime-file-versioning.zh-CN.md`
+  - 本地已存在 `uv run tracked-files`、`uv run ruff check`、`uv run pytest` 门禁包装
+- **现状**：
+  - 仓库此前没有 `.github/workflows/ci.yml`
+  - 本地质量门禁已存在，但 PR / `main` 分支没有远端自动校验
+- **本轮目标**：
+  1. 为 PR 和 `main` 推送补齐 GitHub Actions workflow
+  2. 远端同步执行 tracked-file policy、后端静态检查、后端测试
+  3. 将前端测试与构建纳入同一条远端门禁
+- **收口结果**：
+  1. 已新增 `.github/workflows/ci.yml`，对 `pull_request` 和 `main` push 生效
+  2. Python job 现在执行 `uv run tracked-files`、`uv run ruff check workspace_tools backend/tests backend/app`、`uv run pytest backend/tests -q`
+  3. Frontend job 现在执行 `corepack pnpm --dir frontend test` 与 `corepack pnpm --dir frontend build`
+  4. 已新增 `backend/tests/test_ci_workflow.py` 锁定 workflow 的关键门禁命令，避免后续漂移
+
 ## 本轮验证证据
 
 - `python -m ai_sdlc adapter activate`
 - `uv run ai-sdlc verify constraints`
 - `python -m ai_sdlc run --dry-run`
+- `uv run tracked-files`
+- `uv run ruff check workspace_tools backend/tests backend/app`
 - `uv run pytest backend/tests -q`
+- `corepack pnpm --dir frontend test`
+- `corepack pnpm --dir frontend build`
 - `python -m ai_sdlc workitem close-check --wi specs/001-invoice-assistant-mvp --json`
 - `python -m ai_sdlc workitem close-check --wi specs/002-invoice-assistant-runtime-hardening --json`
 - `python -m ai_sdlc workitem close-check --wi specs/003-runtime-state-recovery --json`
@@ -122,11 +147,15 @@
 - 2026-04-19：`python -m ai_sdlc adapter activate` 已记录当前 adapter 人工确认（`acknowledged`）
 - 2026-04-19：`uv run ai_sdlc verify constraints` 通过，输出 `verify constraints: no BLOCKERs.`
 - 2026-04-19：`python -m ai_sdlc run --dry-run` 通过，输出 `Stage close: PASS`
-- 2026-04-19：`uv run pytest backend/tests -q` 通过，结果 `60 passed`
+- 2026-04-19：`uv run tracked-files` 通过，输出 `Tracked file policy: OK`
+- 2026-04-19：`uv run ruff check workspace_tools backend/tests backend/app` 通过，输出 `All checks passed!`
+- 2026-04-19：`uv run pytest backend/tests -q` 通过，结果 `67 passed`
+- 2026-04-19：`corepack pnpm --dir frontend test` 通过，结果 `7 passed`
+- 2026-04-19：`corepack pnpm --dir frontend build` 通过
 - 2026-04-19：在 clean worktree 中，`001-005` 的 `python -m ai_sdlc workitem close-check --wi ... --json` 均返回 `ok: true`
 
 ## 执行规则
 
-1. 严格按 `P1 -> P2 -> P3 -> P4 -> P5` 顺序执行。
+1. 严格按 `P1 -> P2 -> P3 -> P4 -> P5 -> P6` 顺序执行。
 2. 每个条目先补失败测试，再写最小实现，再跑对应回归。
 3. 如某条目实现过程中发现新的范围扩张，只能在本文件追加，不直接隐式扩 scope。
