@@ -13,7 +13,6 @@ from backend.app.api.dependencies import (
     assert_actor_has_role,
     get_session,
     get_trusted_actor,
-    resolve_actor,
 )
 from backend.app.api.serializers import (
     serialize_invoice_detail,
@@ -192,7 +191,7 @@ def create_review_action(
     if invoice is None:
         raise HTTPException(status_code=404, detail="Invoice not found.")
 
-    actor = resolve_actor(trusted_actor, fallback_display_name=request.reviewed_by)
+    actor = trusted_actor
     assert_actor_has_role(
         session=session,
         actor=actor,

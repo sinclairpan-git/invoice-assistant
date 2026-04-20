@@ -11,7 +11,6 @@ from backend.app.api.dependencies import (
     assert_actor_has_role,
     get_session,
     get_trusted_actor,
-    resolve_actor,
 )
 from backend.app.api.serializers import serialize_rule_version
 from backend.app.db.models import RuleVersion
@@ -65,7 +64,7 @@ def create_rule_version(
     session: Session = Depends(get_session),
     trusted_actor=Depends(get_trusted_actor),
 ) -> dict[str, object]:
-    actor = resolve_actor(trusted_actor, fallback_display_name=request.changed_by)
+    actor = trusted_actor
     assert_actor_has_role(
         session=session,
         actor=actor,

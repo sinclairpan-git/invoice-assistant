@@ -291,6 +291,86 @@ def set_trusted_actor(
     }
 
 
+def test_missing_trusted_actor_returns_config_error_for_read_and_write_paths(tmp_path):
+    app = create_app(
+        f"sqlite:///{tmp_path / 'api-missing-actor.db'}",
+        trusted_actor=None,
+    )
+    fixture = seed_batch_fixture(app)
+    client = TestClient(app)
+
+    actor_response = client.get("/api/me")
+    assert actor_response.status_code == 503
+    assert actor_response.json()["detail"] == "后端未配置可信操作者上下文。"
+
+    batch_response = client.post(
+        "/api/batches",
+        data={"created_by": "前端伪造姓名", "batch_no": "BATCH-MISSING-ACTOR-001"},
+        files=[
+            ("files", ("upload.pdf", b"%PDF-1.7\nupload fixture", "application/pdf"))
+        ],
+    )
+    assert batch_response.status_code == 503
+    assert batch_response.json()["detail"] == "后端未配置可信操作者上下文。"
+
+    config_response = client.post(
+        "/api/config/tax_profile/versions",
+        json={
+            "content": {
+                "buyer_name": "Shanghai Example Co",
+                "buyer_tax_no": "91310000Y",
+            },
+            "changed_by": "前端伪造姓名",
+            "change_summary": "adjust profile",
+            "change_reason": "test upgrade",
+            "activate": True,
+        },
+    )
+    assert config_response.status_code == 503
+    assert config_response.json()["detail"] == "后端未配置可信操作者上下文。"
+
+    review_response = client.post(
+        f"/api/invoices/{fixture['review_invoice_id']}/review-actions",
+        json={
+            "review_action": "approve",
+            "review_note": "manual ok",
+            "reviewed_by": "前端伪造姓名",
+        },
+    )
+    assert review_response.status_code == 503
+    assert review_response.json()["detail"] == "后端未配置可信操作者上下文。"
+
+    export_response = client.post(
+        f"/api/batches/{fixture['batch_id']}/exports",
+        json={"export_type": "excel_manifest", "created_by": "前端伪造姓名"},
+    )
+    assert export_response.status_code == 503
+    assert export_response.json()["detail"] == "后端未配置可信操作者上下文。"
+
+    session = app.state.session_factory()
+    try:
+        assert (
+            session.scalar(
+                select(Batch).where(Batch.batch_no == "BATCH-MISSING-ACTOR-001")
+            )
+            is None
+        )
+        assert (
+            session.scalar(
+                select(AuditLog)
+                .where(
+                    AuditLog.action.in_(
+                        ["create_denied", "review_denied", "export_denied"]
+                    )
+                )
+                .limit(1)
+            )
+            is None
+        )
+    finally:
+        session.close()
+
+
 def wait_for_batch_stage(
     client: TestClient, batch_id: str, expected_stage: str, *, timeout: float = 5.0
 ) -> dict[str, object]:
@@ -368,6 +448,26 @@ def test_controlled_identity_comes_from_backend_actor_context(tmp_path):
     )
     assert create_version_response.status_code == 200
     assert create_version_response.json()["item"]["changed_by"] == "财务复核员"
+
+
+def test_review_action_uses_trusted_actor_even_when_request_spoofs_name(tmp_path):
+    app = create_app(f"sqlite:///{tmp_path / 'api-review-actor.db'}")
+    fixture = seed_batch_fixture(app)
+    set_trusted_actor(app, display_name="财务复核员", roles=["reviewer"])
+    client = TestClient(app)
+
+    review_response = client.post(
+        f"/api/invoices/{fixture['review_invoice_id']}/review-actions",
+        json={
+            "review_action": "approve",
+            "review_note": "manual ok",
+            "reviewed_by": "前端伪造姓名",
+        },
+    )
+    assert review_response.status_code == 200
+    review_payload = review_response.json()
+    assert review_payload["item"]["reviewed_by"] == "财务复核员"
+    assert review_payload["invoice"]["review_status"] == "manually_approved"
 
 
 def test_rule_version_requires_config_admin_and_records_denied_audit(tmp_path):
@@ -471,6 +571,9 @@ def test_export_requires_exporter_and_records_denied_audit(tmp_path):
 def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_path):
     app = create_app(f"sqlite:///{tmp_path / 'api.db'}")
     fixture = seed_batch_fixture(app)
+    set_trusted_actor(
+        app, display_name="财务复核员", roles=["config_admin", "reviewer", "exporter"]
+    )
     client = TestClient(app)
 
     list_response = client.get("/api/batches")
@@ -653,6 +756,7 @@ def test_create_batch_returns_without_waiting_for_processing_completion(
     session = app.state.session_factory()
     seed_active_rules(session)
     session.close()
+    set_trusted_actor(app, display_name="异步上传员")
 
     processing_started = threading.Event()
     release_processing = threading.Event()

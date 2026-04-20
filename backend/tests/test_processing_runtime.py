@@ -126,6 +126,20 @@ def wait_for_batch_stage(
     )
 
 
+def set_trusted_actor(
+    app,
+    *,
+    actor_id: str = "trusted-actor-1",
+    display_name: str = "可信操作员",
+    roles: list[str] | None = None,
+):
+    app.state.trusted_actor = {
+        "actor_id": actor_id,
+        "display_name": display_name,
+        "roles": roles or [],
+    }
+
+
 def test_parse_document_uses_real_pdf_text_provider_for_electronic_fixture(tmp_path):
     app = create_app(f"sqlite:///{tmp_path / 'runtime-text.db'}")
     session = app.state.session_factory()
@@ -167,6 +181,7 @@ def test_low_confidence_ocr_fixture_is_review_required(tmp_path):
     session = app.state.session_factory()
     seed_active_rules(session)
     session.close()
+    set_trusted_actor(app, display_name="运行时上传员")
 
     client = TestClient(app)
     response = client.post(
@@ -229,6 +244,7 @@ def test_invalid_pdf_records_structured_failure_reason(tmp_path):
     session = app.state.session_factory()
     seed_active_rules(session)
     session.close()
+    set_trusted_actor(app, display_name="运行时上传员")
 
     client = TestClient(app)
     response = client.post(
@@ -272,6 +288,7 @@ def test_attachment_match_can_reclassify_review_keyword_invoice(tmp_path):
     session = app.state.session_factory()
     seed_active_rules(session)
     session.close()
+    set_trusted_actor(app, display_name="运行时上传员")
 
     client = TestClient(app)
     response = client.post(
@@ -342,6 +359,7 @@ def test_multiple_attachments_for_same_invoice_are_preserved_and_exposed(tmp_pat
     session = app.state.session_factory()
     seed_active_rules(session)
     session.close()
+    set_trusted_actor(app, display_name="运行时上传员")
 
     client = TestClient(app)
     response = client.post(
@@ -424,7 +442,9 @@ def test_multiple_attachments_for_same_invoice_are_preserved_and_exposed(tmp_pat
         assert detail_response.status_code == 200
         detail_payload = detail_response.json()["item"]
         assert len(detail_payload["attachments"]) == 2
-        assert [item["original_filename"] for item in detail_payload["attachments"]] == [
+        assert [
+            item["original_filename"] for item in detail_payload["attachments"]
+        ] == [
             "detail-list-part-1.pdf",
             "detail-list-part-2.pdf",
         ]
@@ -437,6 +457,7 @@ def test_attachment_parse_failure_does_not_create_invoice_runtime_failure(tmp_pa
     session = app.state.session_factory()
     seed_active_rules(session)
     session.close()
+    set_trusted_actor(app, display_name="运行时上传员")
 
     client = TestClient(app)
     response = client.post(
@@ -497,6 +518,7 @@ def test_attachment_match_stays_ambiguous_when_multiple_invoices_fit(tmp_path):
     session = app.state.session_factory()
     seed_active_rules(session)
     session.close()
+    set_trusted_actor(app, display_name="运行时上传员")
 
     client = TestClient(app)
     response = client.post(
@@ -586,6 +608,7 @@ def test_review_keyword_invoice_without_attachment_gets_missing_attachment_reaso
     session = app.state.session_factory()
     seed_active_rules(session)
     session.close()
+    set_trusted_actor(app, display_name="运行时上传员")
 
     client = TestClient(app)
     response = client.post(
@@ -644,6 +667,7 @@ def test_unmatched_attachment_reason_flows_to_invoice_detail_and_export(tmp_path
     session = app.state.session_factory()
     seed_active_rules(session)
     session.close()
+    set_trusted_actor(app, display_name="运行时上传员")
 
     client = TestClient(app)
     response = client.post(
@@ -729,6 +753,7 @@ def test_low_confidence_attachment_reason_flows_to_invoice_detail_and_export(tmp
     session = app.state.session_factory()
     seed_active_rules(session)
     session.close()
+    set_trusted_actor(app, display_name="运行时上传员")
 
     client = TestClient(app)
     response = client.post(

@@ -8,17 +8,15 @@
 
 - 顶层 PRD：`发票整理助手_评审终版_重新生成.md`
 - Phase 1 设计基线：`docs/superpowers/specs/2026-04-17-invoice-assistant-design.md`
-- 当前 work items：`specs/001-invoice-assistant-mvp` 至 `specs/005-attachment-list-recognition`
+- 当前 work items：`specs/001-invoice-assistant-mvp` 至 `specs/009-export-audit-surface-refresh`
 - 当前实现：`backend/`、`frontend/`
 
 ## 总体结论
 
-- `001-004` 未发现新的顶层主路径实现缺口。
-- `005-attachment-list-recognition` 的 2 个行为缺口与 2 个文档真值缺口，已按本文件顺序完成收口。
-- 下一轮复扫未发现新的产品行为缺口，仅发现 `005-attachment-list-recognition/task-execution-log.md` 的收口状态漂移，已在本轮修正。
-- 继续按框架约束复扫后，新增发现 1 个 AI-SDLC 收口缺口：`005` latest batch 的 `verification profile` 不符合 `close-check` 要求；现已修正，并在 clean worktree 中确认 `001-005` 的 `workitem close-check` 全部通过。
-- 在运行态文件版本控制守卫落地后，新增发现 1 个工程门禁缺口：仓库还缺少远端 CI workflow；现已补齐，并让 GitHub Actions 与本地 `tracked-files` / 后端 / 前端校验保持一致。
-- 后续新增范围必须基于本文件继续追加，不再回到分散文档里重复建 backlog。
+- `P1-P10` 已全部完成，顶层 backlog 当前无剩余待收口缺口。
+- 经对抗 Agent 合议与本地复扫确认，当前仓库不存在新的主路径产品行为缺口；新增的 3 个后续缺口已经分别在 `006-009` 单独收口。
+- 当前 `specs/001-009` 的 `python -m ai_sdlc workitem close-check --wi ... --json` 均返回 `ok: true`，`python -m ai_sdlc run --dry-run` 继续通过。
+- 后续若再发现新的实现/治理缺口，只能继续在本文件追加新条目，而不是回写已完成条目的历史真相。
 
 ## 顺序执行清单
 
@@ -126,6 +124,93 @@
   3. Frontend job 现在执行 `corepack pnpm --dir frontend test` 与 `corepack pnpm --dir frontend build`
   4. 已新增 `backend/tests/test_ci_workflow.py` 锁定 workflow 的关键门禁命令，避免后续漂移
 
+### P7 收口 trusted actor fallback 真值
+
+- **状态**：已完成（2026-04-19）
+- **来源规格**：
+  - `specs/004-controlled-review-export/spec.md` 要求未配置后端可信操作者上下文时，受控写操作不得回退到匿名或前端自由输入，而应返回明确配置错误
+  - 对抗式评审合议结论：当前真实最高优先级缺口是 trusted actor fallback 失真；`default_operator_name` 不再单独立项，Excel 字段完整性和术语漂移后置
+- **现状**：
+  - `backend/app/api/dependencies.py` 在 `app.state.trusted_actor` 缺失时，会回退到带 `config_admin`、`reviewer`、`exporter` 全角色的伪造本机管理员
+  - `backend/app/api/batches.py`、`backend/app/api/config.py`、`backend/app/api/invoices.py` 仍会把请求体里的 `created_by` / `changed_by` / `reviewed_by` 用作 fallback 显示名
+  - 现有回归只覆盖“trusted actor 已配置时的角色控制”，尚未锁定“trusted actor 缺失时必须失败”的治理真值
+- **本轮目标**：
+  1. 新建 `006-trusted-actor-fallback-hardening` work item，把修复范围从旧工单中切出并单独承接
+  2. 收口 trusted actor 缺失时的依赖行为，禁止全角色 fallback 和前端姓名回填
+  3. 以定向红绿测试锁定 `/api/me` 与受控写接口的配置错误真值
+- **计划收口标准**：
+  1. 未配置 trusted actor 时，`/api/me` 与受控写接口稳定返回明确配置错误
+  2. 已配置 trusted actor 时，请求体伪造姓名不再影响后端记录的操作者身份
+  3. 本条缺口完成后，再重新评估 Excel manifest 字段完整性与术语对齐
+- **完成证据**：
+  - `uv run pytest backend/tests -q`：`69 passed`
+  - `uv run ruff check`：通过
+  - `uv run ai-sdlc verify constraints`：`no BLOCKERs`
+  - `python -m ai_sdlc recover --reconcile`
+  - `python -m ai_sdlc run --dry-run`：`Stage close: PASS`
+
+### P8 补齐 excel manifest 台账字段契约
+
+- **状态**：已完成（2026-04-19）
+- **来源规格**：
+  - `docs/superpowers/specs/2026-04-17-invoice-assistant-design.md` 第 14 节要求 Excel 台账至少包含疑似重复标记、购方税号、购方地址/电话/开户银行/银行账户、开票日期、销售方名称、发票明细摘要、处理时间
+  - `specs/004-controlled-review-export/spec.md` 要求导出台账与单票解释口径保持一致
+- **现状**：
+  - `backend/app/services/export_service.py` 旧版 manifest 只输出基础状态、合规解释、金额、发票号码、购方名称、风险标记和附件字段
+  - 设计基线中已承诺的买方扩展字段、重复标记、销方、明细摘要与处理时间尚未进入导出台账
+- **本轮目标**：
+  1. 新建 `007-excel-manifest-contract-completion` work item，单独承接 manifest 契约补齐
+  2. 以红灯测试锁定缺失列头和值
+  3. 在不改 schema 的前提下，复用 `InvoiceRecord`、`ExtractedField`、`DocumentEvidence`、`ProcessingAttempt` 补齐缺列
+- **完成证据**：
+  - `uv run pytest backend/tests/test_export_service.py::test_excel_manifest_includes_required_contract_columns -q`：通过
+  - `uv run pytest backend/tests/test_export_service.py backend/tests/test_end_to_end_batch.py::test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent -q`：`6 passed`
+  - `uv run ruff check backend/app/services/export_service.py backend/tests/test_export_service.py`：通过
+  - `python -m ai_sdlc run --dry-run`：收口后通过
+
+### P9 收口“业务风险分类”术语漂移
+
+- **状态**：已完成（2026-04-19）
+- **来源规格**：
+  - `specs/001-invoice-assistant-mvp/spec.md` 已明确要求用户可见规则层命名必须使用“业务风险分类”
+  - `docs/superpowers/specs/2026-04-17-invoice-assistant-design.md` 作为设计基线，已把“业务风险分类”定义为权威术语
+  - 对抗 Agent 合议结论：只修复用户可见术语，不改内部/API 键 `business_compliance_status`
+- **现状**：
+  - `frontend/src/components/results/InvoiceDrawer.tsx` 详情标签仍显示“业务合规”
+  - `backend/app/services/export_service.py` 的 `excel_manifest` 列头仍显示“业务合规”
+  - `specs/002`、`specs/004` 当前正式规格仍保留旧 wording，和 `001` / 设计基线冲突
+- **本轮目标**：
+  1. 把详情标签与 Excel manifest 列头统一回“业务风险分类”
+  2. 用前后端回归测试锁定术语，不让实现再次漂回旧文案
+  3. 同步收口 `002/004` 正式规格与 008 work item 归档
+- **完成证据**：
+  - `uv run pytest backend/tests/test_export_service.py::test_export_service_blocks_pending_review_pass_export_and_success_manifest_includes_compliance_fields backend/tests/test_end_to_end_batch.py::test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent -q`：通过
+  - `corepack pnpm --dir frontend test`：通过
+  - `corepack pnpm --dir frontend build`：通过
+  - `uv run ai-sdlc verify constraints`：通过
+  - `python -m ai_sdlc run --dry-run`：收口后通过
+
+### P10 收口结果页导出审计回显
+
+- **状态**：已完成（2026-04-19）
+- **来源规格**：
+  - `specs/004-controlled-review-export/spec.md` 要求导出后留下可追溯审计证据
+  - `docs/superpowers/specs/2026-04-17-invoice-assistant-design.md` 已将 `export_manifest_path` 纳入 `Batch` 核心对象
+- **现状**：
+  - 后端批次详情已经返回 `export_manifest_path` 与 `export_jobs`
+  - 前端结果页导出成功后只弹一次 toast，没有刷新详情，也没有把持久化导出状态展示给用户
+- **本轮目标**：
+  1. 导出成功后刷新批次详情与批次列表
+  2. 在结果页展示“最近导出”回显，消费现有的 `export_manifest_path` / `export_jobs`
+  3. 通过前端测试锁定回显行为，并完成 009 work item 收口
+- **完成证据**：
+  - `corepack pnpm --dir frontend test`：通过
+  - `corepack pnpm --dir frontend build`：通过
+  - `uv run pytest backend/tests/test_end_to_end_batch.py::test_end_to_end_batch_upload_to_export_keeps_ui_export_and_db_consistent -q`：通过
+  - `uv run ruff check backend/tests/test_end_to_end_batch.py`：通过
+  - `uv run ai-sdlc verify constraints`：通过
+  - `python -m ai_sdlc run --dry-run`：收口后通过
+
 ## 本轮验证证据
 
 - `python -m ai_sdlc adapter activate`
@@ -141,6 +226,10 @@
 - `python -m ai_sdlc workitem close-check --wi specs/003-runtime-state-recovery --json`
 - `python -m ai_sdlc workitem close-check --wi specs/004-controlled-review-export --json`
 - `python -m ai_sdlc workitem close-check --wi specs/005-attachment-list-recognition --json`
+- `python -m ai_sdlc workitem close-check --wi specs/006-trusted-actor-fallback-hardening --json`
+- `python -m ai_sdlc workitem close-check --wi specs/007-excel-manifest-contract-completion --json`
+- `python -m ai_sdlc workitem close-check --wi specs/008-business-risk-terminology-alignment --json`
+- `python -m ai_sdlc workitem close-check --wi specs/009-export-audit-surface-refresh --json`
 
 ## 本轮验证结果
 
@@ -149,13 +238,13 @@
 - 2026-04-19：`python -m ai_sdlc run --dry-run` 通过，输出 `Stage close: PASS`
 - 2026-04-19：`uv run tracked-files` 通过，输出 `Tracked file policy: OK`
 - 2026-04-19：`uv run ruff check workspace_tools backend/tests backend/app` 通过，输出 `All checks passed!`
-- 2026-04-19：`uv run pytest backend/tests -q` 通过，结果 `67 passed`
-- 2026-04-19：`corepack pnpm --dir frontend test` 通过，结果 `7 passed`
+- 2026-04-19：`uv run pytest backend/tests -q` 通过，结果 `70 passed`
+- 2026-04-19：`corepack pnpm --dir frontend test` 通过，结果 `8 passed`
 - 2026-04-19：`corepack pnpm --dir frontend build` 通过
-- 2026-04-19：在 clean worktree 中，`001-005` 的 `python -m ai_sdlc workitem close-check --wi ... --json` 均返回 `ok: true`
+- 2026-04-19：在 clean worktree 中，`001-009` 的 `python -m ai_sdlc workitem close-check --wi ... --json` 均返回 `ok: true`
 
 ## 执行规则
 
-1. 严格按 `P1 -> P2 -> P3 -> P4 -> P5 -> P6` 顺序执行。
+1. 严格按 `P1 -> P2 -> P3 -> P4 -> P5 -> P6 -> P7 -> P8 -> P9 -> P10` 顺序执行。
 2. 每个条目先补失败测试，再写最小实现，再跑对应回归。
 3. 如某条目实现过程中发现新的范围扩张，只能在本文件追加，不直接隐式扩 scope。

@@ -18,6 +18,7 @@ def get_session(request: Request) -> Generator[Session, None, None]:
 
 
 CONTROLLED_ROLES = ("config_admin", "reviewer", "exporter")
+TRUSTED_ACTOR_CONFIG_ERROR = "后端未配置可信操作者上下文。"
 
 
 @dataclass(frozen=True)
@@ -37,23 +38,23 @@ class TrustedActor:
 
 def get_trusted_actor(request: Request) -> TrustedActor:
     actor_payload = getattr(request.app.state, "trusted_actor", None)
-    if isinstance(actor_payload, dict):
-        return TrustedActor(
-            actor_id=str(actor_payload.get("actor_id") or "trusted-actor"),
-            display_name=str(actor_payload.get("display_name") or "本机管理员"),
-            roles=tuple(
-                str(role)
-                for role in actor_payload.get("roles", [])
-                if str(role).strip()
-            ),
-            trusted=True,
-        )
+    if not isinstance(actor_payload, dict):
+        raise HTTPException(status_code=503, detail=TRUSTED_ACTOR_CONFIG_ERROR)
+
+    actor_id = str(actor_payload.get("actor_id") or "").strip()
+    display_name = str(actor_payload.get("display_name") or "").strip()
+    raw_roles = actor_payload.get("roles", [])
+
+    if not actor_id or not display_name:
+        raise HTTPException(status_code=503, detail=TRUSTED_ACTOR_CONFIG_ERROR)
+    if not isinstance(raw_roles, (list, tuple, set)):
+        raise HTTPException(status_code=503, detail=TRUSTED_ACTOR_CONFIG_ERROR)
 
     return TrustedActor(
-        actor_id="local-operator",
-        display_name="本机管理员",
-        roles=CONTROLLED_ROLES,
-        trusted=False,
+        actor_id=actor_id,
+        display_name=display_name,
+        roles=tuple(str(role) for role in raw_roles if str(role).strip()),
+        trusted=True,
     )
 
 
@@ -62,16 +63,7 @@ def resolve_actor(
     *,
     fallback_display_name: str | None = None,
 ) -> TrustedActor:
-    if actor.trusted:
-        return actor
-    if not fallback_display_name or not fallback_display_name.strip():
-        return actor
-    return TrustedActor(
-        actor_id=actor.actor_id,
-        display_name=fallback_display_name.strip(),
-        roles=actor.roles,
-        trusted=False,
-    )
+    return actor
 
 
 def assert_actor_has_role(

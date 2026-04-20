@@ -396,6 +396,125 @@ describe("runtime UI", () => {
     });
   });
 
+  it("refreshes and shows persisted export state after export succeeds", async () => {
+    const messageSuccess = vi.fn();
+    vi.spyOn(AntdApp, "useApp").mockReturnValue({
+      message: { success: messageSuccess, error: vi.fn(), warning: vi.fn(), info: vi.fn(), open: vi.fn(), destroy: vi.fn(), loading: vi.fn() },
+      notification: {} as never,
+      modal: {} as never,
+    });
+
+    apiMocks.listBatches.mockResolvedValue([
+      {
+        id: "batch-export-1",
+        batch_no: "BATCH-EXPORT-001",
+        created_at: "2026-04-19T09:00:00Z",
+        created_by: "tester",
+        status: "completed",
+        total_files: 2,
+        completed_files: 2,
+        processing_files: 0,
+        failed_files: 0,
+        suggested_pass_count: 1,
+        suggested_pass_total_amount: "88.00",
+        export_manifest_path: null,
+        invoice_file_count: 2,
+        attachment_file_count: 0,
+        attachment_status_counts: {},
+      },
+    ]);
+
+    const batchWithoutExports = {
+      id: "batch-export-1",
+      batch_no: "BATCH-EXPORT-001",
+      created_at: "2026-04-19T09:00:00Z",
+      created_by: "tester",
+      status: "completed",
+      total_files: 2,
+      completed_files: 2,
+      processing_files: 0,
+      failed_files: 0,
+      suggested_pass_count: 1,
+      suggested_pass_total_amount: "88.00",
+      export_manifest_path: null,
+      invoice_file_count: 2,
+      attachment_file_count: 0,
+      attachment_status_counts: {},
+      progress: {
+        batch_id: "batch-export-1",
+        batch_no: "BATCH-EXPORT-001",
+        stage_code: "completed",
+        stage_text: "处理完成",
+        progress_percent: 100,
+        total_files: 2,
+        completed_files: 2,
+        processing_files: 0,
+        failed_files: 0,
+        suggested_pass_count: 1,
+        suggested_pass_total_amount: "88.00",
+        recent_failures: [],
+      },
+      export_jobs: [],
+    };
+
+    const batchWithExport = {
+      ...batchWithoutExports,
+      export_manifest_path: "exports/BATCH-EXPORT-001/manifest.xlsx",
+      export_jobs: [
+        {
+          id: "export-job-1",
+          export_type: "excel_manifest",
+          status: "completed",
+          output_path: "exports/BATCH-EXPORT-001/manifest.xlsx",
+          created_by: "后端可信身份",
+          created_at: "2026-04-19T09:05:00Z",
+          summary: { invoice_count: 2 },
+        },
+      ],
+    };
+
+    const batchResponses = [batchWithoutExports, batchWithExport];
+    apiMocks.getBatch.mockImplementation(async () => batchResponses.shift() ?? batchWithExport);
+    apiMocks.listBatchInvoices.mockResolvedValue({
+      items: [],
+      status_counts: {},
+      batch_summary: { count: 1, total_amount: "88.00" },
+      filtered_summary: { count: 1, total_amount: "88.00" },
+    });
+    apiMocks.createExport.mockResolvedValue({
+      export_type: "excel_manifest",
+      status: "completed",
+      output_path: "exports/BATCH-EXPORT-001/manifest.xlsx",
+      summary: { invoice_count: 2 },
+    });
+
+    const router = createMemoryRouter(appRoutes, {
+      initialEntries: ["/results/batch-export-1"],
+    });
+
+    render(
+      <AppProviders>
+        <RouterProvider router={router} />
+      </AppProviders>,
+    );
+
+    expect(await screen.findByText("BATCH-EXPORT-001")).toBeInTheDocument();
+    expect(screen.queryByText("最近导出")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "导出 Excel 台账" }));
+
+    await waitFor(() => {
+      expect(apiMocks.createExport).toHaveBeenCalledWith({
+        batchId: "batch-export-1",
+        exportType: "excel_manifest",
+      });
+    });
+
+    expect(await screen.findByText("最近导出")).toBeInTheDocument();
+    expect(screen.getByText("exports/BATCH-EXPORT-001/manifest.xlsx")).toBeInTheDocument();
+    expect(screen.getByText("excel_manifest")).toBeInTheDocument();
+  });
+
   it("shows invoice diagnostic details and retries a single failed invoice", async () => {
     const onChanged = vi.fn();
     const messageSuccess = vi.fn();
@@ -465,6 +584,7 @@ describe("runtime UI", () => {
       <InvoiceDrawer invoiceId="invoice-failed" open onClose={() => undefined} onChanged={onChanged} />,
     );
 
+    expect(await screen.findByText("业务风险分类")).toBeInTheDocument();
     expect(await screen.findByText("rapidocr-onnxruntime")).toBeInTheDocument();
     expect(screen.getAllByText("ocr_timeout").length).toBeGreaterThan(0);
     expect(screen.getAllByText("处理失败").length).toBeGreaterThan(0);

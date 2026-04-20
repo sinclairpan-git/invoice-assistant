@@ -11,7 +11,6 @@ from backend.app.api.dependencies import (
     assert_actor_has_role,
     get_session,
     get_trusted_actor,
-    resolve_actor,
 )
 from backend.app.api.serializers import serialize_batch
 from backend.app.db.models import Batch
@@ -104,7 +103,7 @@ async def create_batch(
         storage_service=StorageService(get_storage_root(request)),
         config_service=ConfigService(session),
     )
-    actor = resolve_actor(trusted_actor, fallback_display_name=created_by)
+    actor = trusted_actor
     try:
         batch = service.create_batch(
             files=incoming_files,
@@ -127,7 +126,7 @@ def create_export(
     session: Session = Depends(get_session),
     trusted_actor=Depends(get_trusted_actor),
 ) -> dict[str, object]:
-    actor = resolve_actor(trusted_actor, fallback_display_name=payload.created_by)
+    actor = trusted_actor
     assert_actor_has_role(
         session=session,
         actor=actor,

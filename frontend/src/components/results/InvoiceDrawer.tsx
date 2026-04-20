@@ -140,7 +140,7 @@ export function InvoiceDrawer({ invoiceId, open, onClose, onChanged }: InvoiceDr
             </Descriptions>
             <Descriptions bordered size="small" column={2} className="description-block">
               <Descriptions.Item label="基础合规">{invoice.basic_compliance_status || "--"}</Descriptions.Item>
-              <Descriptions.Item label="业务合规">{invoice.business_compliance_status || "--"}</Descriptions.Item>
+              <Descriptions.Item label="业务风险分类">{invoice.business_compliance_status || "--"}</Descriptions.Item>
               <Descriptions.Item label="最终结论">{invoice.final_decision || "--"}</Descriptions.Item>
               <Descriptions.Item label="建议动作">
                 {invoice.suggested_actions.length > 0 ? invoice.suggested_actions.join("，") : "--"}
