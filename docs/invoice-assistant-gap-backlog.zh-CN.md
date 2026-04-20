@@ -112,8 +112,8 @@
   - `docs/ai-sdlc-runtime-file-versioning.zh-CN.md`
   - 本地已存在 `uv run tracked-files`、`uv run ruff check`、`uv run pytest` 门禁包装
 - **现状**：
-  - 仓库此前没有 `.github/workflows/ci.yml`
-  - 本地质量门禁已存在，但 PR / `main` 分支没有远端自动校验
+  - 启动本轮收口前，仓库没有 `.github/workflows/ci.yml`
+  - 启动本轮收口前，本地质量门禁已存在，但 PR / `main` 分支没有远端自动校验
 - **本轮目标**：
   1. 为 PR 和 `main` 推送补齐 GitHub Actions workflow
   2. 远端同步执行 tracked-file policy、后端静态检查、后端测试
