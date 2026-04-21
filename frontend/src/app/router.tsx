@@ -20,19 +20,13 @@ const Settings = lazy(async () => {
   return { default: module.Settings };
 });
 
+const SetupWizard = lazy(async () => {
+  const module = await import("../pages/SetupWizard");
+  return { default: module.SetupWizard };
+});
+
 function withRouteSuspense(element: ReactNode) {
   return <Suspense fallback={<div>加载中...</div>}>{element}</Suspense>;
-}
-
-function SetupPlaceholder() {
-  return (
-    <div className="page-stack">
-      <section className="workspace-block">
-        <h2>初始设置</h2>
-        <p>安装包首次启动后，从这里补齐运行环境。</p>
-      </section>
-    </div>
-  );
 }
 
 export const appRoutes: RouteObject[] = [
@@ -62,8 +56,8 @@ export const appRoutes: RouteObject[] = [
       },
       {
         path: "setup",
-        element: <SetupPlaceholder />,
-        handle: { title: "初始设置" },
+        element: withRouteSuspense(<SetupWizard />),
+        handle: { title: "首次配置" },
       },
     ],
   },

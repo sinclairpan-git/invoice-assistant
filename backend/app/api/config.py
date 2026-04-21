@@ -28,6 +28,15 @@ class CreateRuleVersionRequest(BaseModel):
     activate: bool = True
 
 
+class CreateInitialSetupRequest(BaseModel):
+    tax_profile: dict[str, object]
+    business_rules: dict[str, object]
+    naming_rules: dict[str, object]
+    changed_by: str | None = None
+    change_summary: str
+    change_reason: str
+
+
 @router.get("")
 def get_active_config(session: Session = Depends(get_session)) -> dict[str, object]:
     service = ConfigService(session)
@@ -56,6 +65,46 @@ def list_rule_versions(
         .order_by(RuleVersion.changed_at.desc())
     ).all()
     return {"items": [serialize_rule_version(version) for version in versions]}
+
+
+@router.post("/setup")
+def create_initial_setup(
+    request: CreateInitialSetupRequest,
+    session: Session = Depends(get_session),
+    trusted_actor=Depends(get_trusted_actor),
+) -> dict[str, object]:
+    actor = trusted_actor
+    assert_actor_has_role(
+        session=session,
+        actor=actor,
+        required_role="config_admin",
+        entity_type="rule_version",
+        entity_id=str(uuid4()),
+        denied_action="create_denied",
+        denied_detail="当前操作者缺少 config_admin 角色。",
+        change_summary=request.change_summary,
+        change_reason=request.change_reason,
+        payload={"kinds": list(RULE_KINDS), "atomic": True},
+    )
+    service = ConfigService(session)
+    try:
+        versions = service.create_initial_setup(
+            tax_profile=request.tax_profile,
+            business_rules=request.business_rules,
+            naming_rules=request.naming_rules,
+            changed_by=actor.display_name,
+            change_summary=request.change_summary,
+            change_reason=request.change_reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "items": {
+            kind: serialize_rule_version(version) for kind, version in versions.items()
+        },
+        "setup_status": service.get_setup_status(),
+    }
 
 
 @router.post("/{kind}/versions")

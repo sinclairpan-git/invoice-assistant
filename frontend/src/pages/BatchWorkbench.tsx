@@ -2,8 +2,8 @@ import { App, Button, Empty, Progress, Space, Tag, Typography } from "../app/ant
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { createBatchRetry, getErrorMessage, listBatches } from "../app/api";
-import type { Batch } from "../app/types";
+import { createBatchRetry, getActiveConfig, getErrorMessage, listBatches } from "../app/api";
+import type { ActiveConfigPayload, Batch, ConfigLoadState } from "../app/types";
 import { BatchList } from "../components/batch/BatchList";
 import { UploadPanel } from "../components/batch/UploadPanel";
 import { AsyncBoundary } from "../components/common/AsyncBoundary";
@@ -51,6 +51,9 @@ export function BatchWorkbench() {
     error: null,
     items: [],
   });
+  const [config, setConfig] = useState<ActiveConfigPayload | null | undefined>(undefined);
+  const [configState, setConfigState] = useState<ConfigLoadState>("loading");
+  const [configError, setConfigError] = useState<string | null>(null);
   const [retryingBatch, setRetryingBatch] = useState(false);
 
   const loadBatches = useCallback(async () => {
@@ -79,6 +82,38 @@ export function BatchWorkbench() {
     void loadBatches();
   }, [loadBatches]);
 
+  useEffect(() => {
+    let disposed = false;
+
+    async function loadConfig() {
+      try {
+        const payload = await getActiveConfig();
+        if (!disposed) {
+          setConfig(payload);
+          setConfigError(null);
+          setConfigState("ready");
+        }
+      } catch (error) {
+        if (!disposed) {
+          setConfig(null);
+          setConfigError(getErrorMessage(error));
+          setConfigState("error");
+        }
+      }
+    }
+
+    void loadConfig();
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (configState === "ready" && config && !config.setup_status.complete) {
+      navigate("/setup");
+    }
+  }, [config, configState, navigate]);
+
   const activeBatch = useMemo(() => {
     return state.items.find((item) => isActiveBatch(item)) ?? null;
   }, [state.items]);
@@ -100,6 +135,10 @@ export function BatchWorkbench() {
   return (
     <div className="page-stack">
       <UploadPanel
+        setupReady={configState === "ready"}
+        setupComplete={config?.setup_status.complete === true}
+        setupError={configState === "error" ? configError : null}
+        onOpenSetup={() => navigate("/setup")}
         onCreated={(batch) => {
           void loadBatches();
           navigate(`/results/${batch.id}`);

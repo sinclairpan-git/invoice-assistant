@@ -841,6 +841,81 @@ def test_create_batch_rejects_upload_until_setup_is_complete(tmp_path):
     assert upload_response.json()["detail"] == "请先完成首次配置向导，再开始上传发票。"
 
 
+def test_initial_setup_endpoint_persists_three_active_versions_atomically(tmp_path):
+    app = create_app(f"sqlite:///{tmp_path / 'api-setup-submit.db'}")
+    set_trusted_actor(app, display_name="配置管理员", roles=["config_admin"])
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/config/setup",
+        json={
+            "tax_profile": {
+                "company_name": "Shanghai Example Co",
+                "buyer_name": "Shanghai Example Co",
+                "buyer_tax_no": "91310000X",
+            },
+            "business_rules": {
+                "template_name": "regular",
+                "display_name": "常规模板",
+                "minimum_confidence": 0.82,
+            },
+            "naming_rules": {
+                "pattern": "{date}_{amount}_{number}",
+            },
+            "change_summary": "首次配置",
+            "change_reason": "首次配置向导",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["items"]["business_rules"]["content"]["minimum_confidence"] == 0.82
+    assert payload["setup_status"]["complete"] is True
+
+    config_response = client.get("/api/config")
+    assert config_response.status_code == 200
+    config_payload = config_response.json()
+    assert config_payload["setup_status"]["complete"] is True
+    assert config_payload["active_snapshot"]["naming_rules"]["content"]["pattern"] == (
+        "{date}_{amount}_{number}"
+    )
+
+
+def test_initial_setup_endpoint_rejects_invalid_minimum_confidence_without_partial_state(
+    tmp_path,
+):
+    app = create_app(f"sqlite:///{tmp_path / 'api-setup-submit-invalid.db'}")
+    set_trusted_actor(app, display_name="配置管理员", roles=["config_admin"])
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/config/setup",
+        json={
+            "tax_profile": {
+                "company_name": "Shanghai Example Co",
+                "buyer_name": "Shanghai Example Co",
+                "buyer_tax_no": "91310000X",
+            },
+            "business_rules": {
+                "template_name": "regular",
+                "display_name": "常规模板",
+                "minimum_confidence": "NaN",
+            },
+            "naming_rules": {
+                "pattern": "{date}_{amount}_{number}",
+            },
+            "change_summary": "首次配置",
+            "change_reason": "首次配置向导",
+        },
+    )
+    assert response.status_code == 400
+    assert "minimum_confidence" in response.json()["detail"]
+
+    config_response = client.get("/api/config")
+    assert config_response.status_code == 200
+    assert config_response.json()["setup_status"]["complete"] is False
+    assert config_response.json()["active_versions"] == {}
+
+
 def test_create_batch_allows_upload_with_legacy_business_rules_shape(tmp_path):
     app = create_app(f"sqlite:///{tmp_path / 'api-legacy-setup-gate.db'}")
     session = app.state.session_factory()

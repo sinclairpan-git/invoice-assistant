@@ -1,5 +1,6 @@
 import json
 
+import pytest
 from sqlalchemy import select
 
 from backend.app.db.models import AuditLog, Batch, RuleVersion
@@ -217,3 +218,69 @@ def test_setup_status_accepts_legacy_business_rules_shape(tmp_path):
         "business_rules": [],
         "naming_rules": [],
     }
+
+
+def test_create_initial_setup_creates_three_active_versions_atomically(tmp_path):
+    session = build_session(tmp_path)
+    config_service = ConfigService(session)
+
+    created_versions = config_service.create_initial_setup(
+        tax_profile={
+            "buyer_name": "Shanghai Example Co",
+            "buyer_tax_no": "91310000X",
+            "company_name": "Shanghai Example Co",
+        },
+        business_rules={
+            "template_name": "regular",
+            "display_name": "常规模板",
+            "minimum_confidence": 0.85,
+        },
+        naming_rules={"pattern": "{date}_{amount}_{number}"},
+        changed_by="ops-admin",
+        change_summary="首次配置",
+        change_reason="首次配置向导",
+    )
+
+    assert set(created_versions.keys()) == {
+        "tax_profile",
+        "business_rules",
+        "naming_rules",
+    }
+
+    versions = session.scalars(select(RuleVersion).order_by(RuleVersion.kind)).all()
+    assert len(versions) == 3
+    assert all(version.is_active is True for version in versions)
+    assert [version.version_no for version in versions] == ["v1", "v1", "v1"]
+
+    setup_status = config_service.get_setup_status()
+    assert setup_status["complete"] is True
+    assert setup_status["missing_required_fields"] == {
+        "tax_profile": [],
+        "business_rules": [],
+        "naming_rules": [],
+    }
+
+
+def test_create_initial_setup_rolls_back_everything_when_validation_fails(tmp_path):
+    session = build_session(tmp_path)
+    config_service = ConfigService(session)
+
+    with pytest.raises(ValueError, match="minimum_confidence"):
+        config_service.create_initial_setup(
+            tax_profile={
+                "buyer_name": "Shanghai Example Co",
+                "buyer_tax_no": "91310000X",
+            },
+            business_rules={
+                "template_name": "regular",
+                "display_name": "常规模板",
+                "minimum_confidence": "NaN",
+            },
+            naming_rules={"pattern": "{date}_{amount}_{number}"},
+            changed_by="ops-admin",
+            change_summary="首次配置",
+            change_reason="首次配置向导",
+        )
+
+    assert session.scalars(select(RuleVersion)).all() == []
+    assert session.scalars(select(AuditLog)).all() == []

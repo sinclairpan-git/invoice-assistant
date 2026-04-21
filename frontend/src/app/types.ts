@@ -233,3 +233,10 @@ export interface ActiveConfigPayload {
   active_versions: Partial<Record<RuleKind, RuleVersion>>;
   setup_status: SetupStatus;
 }
+
+export interface InitialSetupPayload {
+  items: Record<RuleKind, RuleVersion>;
+  setup_status: SetupStatus;
+}
+
+export type ConfigLoadState = "loading" | "ready" | "error";

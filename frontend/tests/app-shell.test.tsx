@@ -31,6 +31,42 @@ describe("App shell", () => {
             headers: { "Content-Type": "application/json" },
           });
         }
+        if (url.includes("/api/config")) {
+          return new Response(JSON.stringify({
+            active_snapshot: {},
+            active_versions: {
+              tax_profile: {
+                id: "tax-draft",
+                kind: "tax_profile",
+                version_no: "tax-draft",
+                content: {},
+                is_active: false,
+                change_summary: "草稿",
+                changed_by: "后端可信身份",
+                changed_at: "2026-04-20T10:02:00Z",
+                change_reason: "首次配置",
+              },
+            },
+            setup_status: {
+              complete: false,
+              default_business_rule_templates: {
+                strict_v1: {
+                  template_name: "strict_v1",
+                  display_name: "严格校验",
+                  minimum_confidence: 0.92,
+                },
+              },
+              missing_required_fields: {
+                tax_profile: ["buyer_name"],
+                business_rules: ["template_name"],
+                naming_rules: ["pattern"],
+              },
+            },
+          }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
         return new Response(JSON.stringify({ detail: "not mocked" }), {
           status: 404,
           headers: { "Content-Type": "application/json" },
@@ -41,7 +77,7 @@ describe("App shell", () => {
 
   it("renders navigation and workbench title", async () => {
     const router = createMemoryRouter(appRoutes, {
-      initialEntries: ["/"],
+      initialEntries: ["/results"],
     });
 
     render(
@@ -51,9 +87,9 @@ describe("App shell", () => {
     );
 
     expect(await screen.findAllByText("批次工作台")).not.toHaveLength(0);
-    expect(screen.getByText("批次结果")).toBeInTheDocument();
+    expect(screen.getAllByText("批次结果").length).toBeGreaterThan(0);
     expect(screen.getByText("配置中心")).toBeInTheDocument();
-    expect(await screen.findByText("新建批次")).toBeInTheDocument();
+    expect(await screen.findByText("当前公司配置")).toBeInTheDocument();
     expect(await screen.findByText("后端可信身份")).toBeInTheDocument();
     expect(screen.queryByText("前端伪造姓名")).not.toBeInTheDocument();
   });
@@ -68,9 +104,61 @@ describe("App shell", () => {
       </AppProviders>,
     );
 
-    expect(await screen.findAllByText("初始设置")).toHaveLength(2);
-    expect(await screen.findByText("安装包首次启动后，从这里补齐运行环境。")).toBeInTheDocument();
+    expect(await screen.findByText("首次配置向导")).toBeInTheDocument();
+    expect(await screen.findByText("首次配置未完成")).toBeInTheDocument();
     expect(screen.getByText("配置中心").closest("li")).toHaveClass("ant-menu-item-selected");
     expect(screen.getByText("批次工作台").closest("li")).not.toHaveClass("ant-menu-item-selected");
+  });
+
+  it("shows unknown config status when /api/config read fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/api/me")) {
+          return new Response(JSON.stringify({
+            item: {
+              actor_id: "trusted-actor-1",
+              display_name: "后端可信身份",
+              roles: ["reviewer", "exporter"],
+            },
+          }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url.includes("/api/config")) {
+          return new Response(JSON.stringify({ detail: "配置读取失败" }), {
+            status: 503,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url.includes("/api/batches")) {
+          return new Response(JSON.stringify({ items: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ detail: "not mocked" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+
+    const router = createMemoryRouter(appRoutes, {
+      initialEntries: ["/"],
+    });
+
+    render(
+      <AppProviders>
+        <RouterProvider router={router} />
+      </AppProviders>,
+    );
+
+    expect(await screen.findByText("当前无法确认首次配置状态")).toBeInTheDocument();
+    expect(screen.getByText("当前公司配置")).toBeInTheDocument();
+    expect(screen.getByText("配置状态未知")).toBeInTheDocument();
+    expect(screen.queryByText("首次配置未完成")).not.toBeInTheDocument();
   });
 });

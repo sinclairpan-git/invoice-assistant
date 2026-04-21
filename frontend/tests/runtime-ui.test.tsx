@@ -8,10 +8,13 @@ import { AppProviders } from "../src/app/providers";
 import { appRoutes } from "../src/app/router";
 import { BatchWorkbench } from "../src/pages/BatchWorkbench";
 import { BatchResults } from "../src/pages/BatchResults";
+import { Settings } from "../src/pages/Settings";
+import { SetupWizard } from "../src/pages/SetupWizard";
 import { UploadPanel } from "../src/components/batch/UploadPanel";
 import { InvoiceDrawer } from "../src/components/results/InvoiceDrawer";
 import { ReviewActions } from "../src/components/results/ReviewActions";
 import { RuleVersionPanel } from "../src/components/settings/RuleVersionPanel";
+import { SetupStatusCard } from "../src/components/settings/SetupStatusCard";
 
 
 const apiMocks = vi.hoisted(() => ({
@@ -24,8 +27,16 @@ const apiMocks = vi.hoisted(() => ({
   createExport: vi.fn(),
   createReviewAction: vi.fn(),
   getCurrentActor: vi.fn(),
+  getActiveConfig: vi.fn(),
+  listRuleVersions: vi.fn(),
+  createRuleVersion: vi.fn(),
+  createInitialSetup: vi.fn(),
   getErrorMessage: vi.fn((error: unknown) => (error instanceof Error ? error.message : "请求失败")),
   getInvoicePreviewUrl: vi.fn((invoiceId: string) => `/api/invoices/${invoiceId}/preview`),
+}));
+
+const routerMocks = vi.hoisted(() => ({
+  useNavigate: vi.fn(),
 }));
 
 vi.mock("../src/app/api", async () => {
@@ -41,8 +52,20 @@ vi.mock("../src/app/api", async () => {
     createExport: apiMocks.createExport,
     createReviewAction: apiMocks.createReviewAction,
     getCurrentActor: apiMocks.getCurrentActor,
+    getActiveConfig: apiMocks.getActiveConfig,
+    listRuleVersions: apiMocks.listRuleVersions,
+    createRuleVersion: apiMocks.createRuleVersion,
+    createInitialSetup: apiMocks.createInitialSetup,
     getErrorMessage: apiMocks.getErrorMessage,
     getInvoicePreviewUrl: apiMocks.getInvoicePreviewUrl,
+  };
+});
+
+vi.mock("react-router-dom", async () => {
+  const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
+  return {
+    ...actual,
+    useNavigate: routerMocks.useNavigate,
   };
 });
 
@@ -57,6 +80,7 @@ function renderWithProviders(node: ReactNode) {
 describe("runtime UI", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    routerMocks.useNavigate.mockReturnValue(vi.fn());
     apiMocks.listBatches.mockResolvedValue([]);
     apiMocks.getBatch.mockResolvedValue(null);
     apiMocks.listBatchInvoices.mockResolvedValue({
@@ -78,6 +102,167 @@ describe("runtime UI", () => {
       actor_id: "trusted-actor-1",
       display_name: "后端可信身份",
       roles: ["config_admin", "reviewer", "exporter"],
+    });
+    apiMocks.getActiveConfig.mockResolvedValue({
+      active_snapshot: {
+        tax_profile: {
+          id: "tax-v1",
+          version_no: "tax-v1",
+          content: {
+            company_name: "示例科技有限公司",
+            buyer_name: "示例科技有限公司",
+            buyer_tax_no: "91310000123456789X",
+          },
+          changed_by: "后端可信身份",
+          change_summary: "初始化税务档案",
+          change_reason: "首次配置",
+        },
+        business_rules: {
+          id: "rules-v1",
+          version_no: "rules-v1",
+          content: {
+            template_name: "strict_v1",
+            display_name: "严格校验",
+            minimum_confidence: 0.92,
+          },
+          changed_by: "后端可信身份",
+          change_summary: "初始化业务规则",
+          change_reason: "首次配置",
+        },
+        naming_rules: {
+          id: "naming-v1",
+          version_no: "naming-v1",
+          content: {
+            pattern: "{{date}}-{{seller}}-{{amount}}",
+          },
+          changed_by: "后端可信身份",
+          change_summary: "初始化命名规则",
+          change_reason: "首次配置",
+        },
+      },
+      active_versions: {
+        tax_profile: {
+          id: "tax-v1",
+          kind: "tax_profile",
+          version_no: "tax-v1",
+          content: {},
+          is_active: true,
+          change_summary: "初始化税务档案",
+          changed_by: "后端可信身份",
+          changed_at: "2026-04-20T10:00:00Z",
+          change_reason: "首次配置",
+        },
+        business_rules: {
+          id: "rules-v1",
+          kind: "business_rules",
+          version_no: "rules-v1",
+          content: {},
+          is_active: true,
+          change_summary: "初始化业务规则",
+          changed_by: "后端可信身份",
+          changed_at: "2026-04-20T10:01:00Z",
+          change_reason: "首次配置",
+        },
+        naming_rules: {
+          id: "naming-v1",
+          kind: "naming_rules",
+          version_no: "naming-v1",
+          content: {},
+          is_active: true,
+          change_summary: "初始化命名规则",
+          changed_by: "后端可信身份",
+          changed_at: "2026-04-20T10:02:00Z",
+          change_reason: "首次配置",
+        },
+      },
+      setup_status: {
+        complete: true,
+        default_business_rule_templates: {
+          strict_v1: {
+            template_name: "strict_v1",
+            display_name: "严格校验",
+            minimum_confidence: 0.92,
+          },
+          balanced_v1: {
+            template_name: "balanced_v1",
+            display_name: "平衡模式",
+            minimum_confidence: 0.85,
+          },
+        },
+        missing_required_fields: {
+          tax_profile: [],
+          business_rules: [],
+          naming_rules: [],
+        },
+      },
+    });
+    apiMocks.listRuleVersions.mockResolvedValue([]);
+    apiMocks.createRuleVersion.mockImplementation(async ({ kind, content }: { kind: string; content: Record<string, unknown> }) => ({
+      id: `${kind}-new`,
+      kind,
+      version_no: `${kind}-new`,
+      content,
+      is_active: true,
+      change_summary: "首次配置",
+      changed_by: "后端可信身份",
+      changed_at: "2026-04-21T09:00:00Z",
+      change_reason: "首次配置",
+    }));
+    apiMocks.createInitialSetup.mockResolvedValue({
+      items: {
+        tax_profile: {
+          id: "tax_profile-new",
+          kind: "tax_profile",
+          version_no: "tax_profile-new",
+          content: {
+            company_name: "示例科技有限公司",
+            buyer_name: "示例科技有限公司",
+            buyer_tax_no: "91310000123456789X",
+          },
+          is_active: true,
+          change_summary: "首次配置",
+          changed_by: "后端可信身份",
+          changed_at: "2026-04-21T09:00:00Z",
+          change_reason: "首次配置",
+        },
+        business_rules: {
+          id: "business_rules-new",
+          kind: "business_rules",
+          version_no: "business_rules-new",
+          content: {
+            template_name: "balanced_v1",
+            display_name: "平衡模式",
+            minimum_confidence: 0.88,
+          },
+          is_active: true,
+          change_summary: "首次配置",
+          changed_by: "后端可信身份",
+          changed_at: "2026-04-21T09:00:00Z",
+          change_reason: "首次配置",
+        },
+        naming_rules: {
+          id: "naming_rules-new",
+          kind: "naming_rules",
+          version_no: "naming_rules-new",
+          content: {
+            pattern: "{{date}}-{{buyer}}-{{amount}}",
+          },
+          is_active: true,
+          change_summary: "首次配置",
+          changed_by: "后端可信身份",
+          changed_at: "2026-04-21T09:00:00Z",
+          change_reason: "首次配置",
+        },
+      },
+      setup_status: {
+        complete: true,
+        default_business_rule_templates: {},
+        missing_required_fields: {
+          tax_profile: [],
+          business_rules: [],
+          naming_rules: [],
+        },
+      },
     });
     window.localStorage.setItem("invoice-assistant/default-operator-name", "前端伪造姓名");
     vi.stubGlobal("getComputedStyle", () => ({
@@ -245,6 +430,221 @@ describe("runtime UI", () => {
     expect((await screen.findAllByText("BATCH-RECOVERY-UI-001")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("等待处理").length).toBeGreaterThan(0);
     expect(screen.queryByText("当前没有活跃批次")).not.toBeInTheDocument();
+  });
+
+  it("guides operators to finish setup before creating a batch", async () => {
+    let resolveConfig: ((value: unknown) => void) | null = null;
+    apiMocks.getActiveConfig.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveConfig = resolve;
+        }),
+    );
+
+    const navigateMock = vi.fn();
+    routerMocks.useNavigate.mockReturnValue(navigateMock);
+
+    renderWithProviders(<BatchWorkbench />);
+
+    expect(await screen.findByText("正在检查首次配置状态")).toBeInTheDocument();
+    expect(screen.getByText("首次配置状态未确认前，上传入口会保持禁用。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "创建批次" })).toBeDisabled();
+
+    resolveConfig?.({
+      active_snapshot: {},
+      active_versions: {
+        tax_profile: {
+          id: "tax-draft",
+          kind: "tax_profile",
+          version_no: "tax-draft",
+          content: {},
+          is_active: false,
+          change_summary: "草稿",
+          changed_by: "后端可信身份",
+          changed_at: "2026-04-20T10:02:00Z",
+          change_reason: "首次配置",
+        },
+      },
+      setup_status: {
+        complete: false,
+        default_business_rule_templates: {
+          strict_v1: {
+            template_name: "strict_v1",
+            display_name: "严格校验",
+            minimum_confidence: 0.92,
+          },
+        },
+        missing_required_fields: {
+          tax_profile: ["buyer_name", "buyer_tax_no"],
+          business_rules: ["template_name"],
+          naming_rules: ["pattern"],
+        },
+      },
+    });
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith("/setup");
+    });
+    expect(await screen.findByText("首次配置未完成")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "前往首次配置" })).toBeInTheDocument();
+  });
+
+  it("completes the first-run setup wizard through the atomic setup endpoint", async () => {
+    const messageSuccess = vi.fn();
+    vi.spyOn(AntdApp, "useApp").mockReturnValue({
+      message: { success: messageSuccess, error: vi.fn(), warning: vi.fn(), info: vi.fn(), open: vi.fn(), destroy: vi.fn(), loading: vi.fn() },
+      notification: {} as never,
+      modal: {} as never,
+    });
+
+    apiMocks.getActiveConfig.mockResolvedValue({
+      active_snapshot: {},
+      active_versions: {
+        tax_profile: {
+          id: "tax-draft",
+          kind: "tax_profile",
+          version_no: "tax-draft",
+          content: {},
+          is_active: false,
+          change_summary: "草稿",
+          changed_by: "后端可信身份",
+          changed_at: "2026-04-20T10:02:00Z",
+          change_reason: "首次配置",
+        },
+      },
+      setup_status: {
+        complete: false,
+        default_business_rule_templates: {
+          strict_v1: {
+            template_name: "strict_v1",
+            display_name: "严格校验",
+            minimum_confidence: 0.92,
+          },
+          balanced_v1: {
+            template_name: "balanced_v1",
+            display_name: "平衡模式",
+            minimum_confidence: 0.85,
+          },
+        },
+        missing_required_fields: {
+          tax_profile: ["buyer_name", "buyer_tax_no"],
+          business_rules: ["template_name"],
+          naming_rules: ["pattern"],
+        },
+      },
+    });
+
+    const navigateMock = vi.fn();
+    routerMocks.useNavigate.mockReturnValue(navigateMock);
+
+    renderWithProviders(<SetupWizard />);
+
+    expect(await screen.findByText("首次配置向导")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("公司名称"), { target: { value: "示例科技有限公司" } });
+    fireEvent.change(screen.getByLabelText("购方名称"), { target: { value: "示例科技有限公司" } });
+    fireEvent.change(screen.getByLabelText("购方税号"), { target: { value: "91310000123456789X" } });
+    fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    expect(await screen.findByText("业务规则模板")).toBeInTheDocument();
+    expect(screen.getByText("这一步会影响风险分类阈值与系统建议通过判断。")).toBeInTheDocument();
+    expect(screen.getByText("保守模板：更容易把可疑票据拦下来，误放行更少，但需要人工复核的票会更多。")).toBeInTheDocument();
+    expect(screen.getByText("常规模板：更适合日常批量处理，拦截和放行更均衡，人工复核量通常更可控。")).toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByLabelText("模板方案"));
+    fireEvent.click(await screen.findByText("平衡模式"));
+    fireEvent.change(screen.getByLabelText("最低置信度阈值"), { target: { value: "0.88" } });
+    fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    expect(await screen.findByText("命名规则")).toBeInTheDocument();
+    expect(screen.getByText("这一步会影响归档文件名与后续人工检索。")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("文件命名规则"), { target: { value: "{{date}}-{{buyer}}-{{amount}}" } });
+    fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    expect(await screen.findByText("摘要确认")).toBeInTheDocument();
+    expect(screen.getAllByText("示例科技有限公司").length).toBeGreaterThan(0);
+    expect(screen.getByText(/平衡模式/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "完成配置" }));
+
+    await waitFor(() => {
+      expect(apiMocks.createInitialSetup).toHaveBeenCalledTimes(1);
+    });
+    expect(apiMocks.createInitialSetup).toHaveBeenCalledWith({
+      taxProfile: {
+        company_name: "示例科技有限公司",
+        buyer_name: "示例科技有限公司",
+        buyer_tax_no: "91310000123456789X",
+      },
+      businessRules: expect.objectContaining({
+        template_name: "balanced_v1",
+        minimum_confidence: 0.88,
+      }),
+      namingRules: {
+        pattern: "{{date}}-{{buyer}}-{{amount}}",
+      },
+      changeSummary: "首次配置",
+      changeReason: "首次配置向导",
+    });
+    expect(navigateMock).toHaveBeenCalledWith("/");
+  });
+
+  it("blocks invalid minimum confidence before submitting setup", async () => {
+    const messageError = vi.fn();
+    vi.spyOn(AntdApp, "useApp").mockReturnValue({
+      message: { success: vi.fn(), error: messageError, warning: vi.fn(), info: vi.fn(), open: vi.fn(), destroy: vi.fn(), loading: vi.fn() },
+      notification: {} as never,
+      modal: {} as never,
+    });
+
+    apiMocks.getActiveConfig.mockResolvedValue({
+      active_snapshot: {},
+      active_versions: {},
+      setup_status: {
+        complete: false,
+        default_business_rule_templates: {
+          regular: {
+            template_name: "regular",
+            display_name: "常规模板",
+            minimum_confidence: 0.75,
+          },
+        },
+        missing_required_fields: {
+          tax_profile: ["buyer_name", "buyer_tax_no"],
+          business_rules: ["template_name"],
+          naming_rules: ["pattern"],
+        },
+      },
+    });
+
+    renderWithProviders(<SetupWizard />);
+
+    expect(await screen.findByText("首次配置向导")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("公司名称"), { target: { value: "示例科技有限公司" } });
+    fireEvent.change(screen.getByLabelText("购方名称"), { target: { value: "示例科技有限公司" } });
+    fireEvent.change(screen.getByLabelText("购方税号"), { target: { value: "91310000123456789X" } });
+    fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    expect(await screen.findByText("业务规则模板")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("最低置信度阈值"), { target: { value: "NaN" } });
+    fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+    expect(await screen.findByText("请输入 0 到 1 之间的数字")).toBeInTheDocument();
+    expect(screen.queryByText("命名规则")).not.toBeInTheDocument();
+    expect(apiMocks.createInitialSetup).not.toHaveBeenCalled();
+    expect(messageError).not.toHaveBeenCalled();
+  });
+
+  it("keeps upload blocked and shows config read failure instead of incomplete setup", async () => {
+    apiMocks.getActiveConfig.mockRejectedValue(new Error("配置读取失败"));
+    const navigateMock = vi.fn();
+    routerMocks.useNavigate.mockReturnValue(navigateMock);
+
+    renderWithProviders(<BatchWorkbench />);
+
+    expect(await screen.findByText("配置状态读取失败")).toBeInTheDocument();
+    expect(screen.getByText("当前无法确认首次配置是否完成，请先重试配置读取。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "创建批次" })).toBeDisabled();
+    expect(screen.queryByText("首次配置未完成")).not.toBeInTheDocument();
+    expect(navigateMock).not.toHaveBeenCalledWith("/setup");
   });
 
   it("removes editable operator inputs from upload, review, and config forms", async () => {
@@ -513,6 +913,109 @@ describe("runtime UI", () => {
     expect(await screen.findByText("最近导出")).toBeInTheDocument();
     expect(screen.getByText("exports/BATCH-EXPORT-001/manifest.xlsx")).toBeInTheDocument();
     expect(screen.getByText("excel_manifest")).toBeInTheDocument();
+  });
+
+  it("keeps settings focused on advanced version management after setup completes", async () => {
+    renderWithProviders(<Settings />);
+
+    expect(await screen.findByText("高级版本管理")).toBeInTheDocument();
+    expect(screen.getByText("规则版本")).toBeInTheDocument();
+    expect(screen.queryByText("首次配置向导")).not.toBeInTheDocument();
+  });
+
+  it("shows completion action and last modified time on setup status card after setup", async () => {
+    renderWithProviders(
+      <SetupStatusCard
+        config={{
+          active_snapshot: {
+            tax_profile: {
+              id: "tax-v1",
+              version_no: "tax-v1",
+              content: {
+                buyer_name: "示例科技有限公司",
+                buyer_tax_no: "91310000123456789X",
+              },
+              changed_by: "后端可信身份",
+              change_summary: "初始化税务档案",
+              change_reason: "首次配置",
+            },
+            business_rules: {
+              id: "rules-v1",
+              version_no: "rules-v1",
+              content: {
+                template_name: "strict_v1",
+                display_name: "严格校验",
+                minimum_confidence: 0.92,
+              },
+              changed_by: "后端可信身份",
+              change_summary: "初始化业务规则",
+              change_reason: "首次配置",
+            },
+            naming_rules: {
+              id: "naming-v1",
+              version_no: "naming-v1",
+              content: {
+                pattern: "{{date}}-{{seller}}-{{amount}}",
+              },
+              changed_by: "后端可信身份",
+              change_summary: "初始化命名规则",
+              change_reason: "首次配置",
+            },
+          },
+          active_versions: {
+            tax_profile: {
+              id: "tax-v1",
+              kind: "tax_profile",
+              version_no: "tax-v1",
+              content: {},
+              is_active: true,
+              change_summary: "初始化税务档案",
+              changed_by: "后端可信身份",
+              changed_at: "2026-04-20T10:00:00Z",
+              change_reason: "首次配置",
+            },
+            business_rules: {
+              id: "rules-v1",
+              kind: "business_rules",
+              version_no: "rules-v1",
+              content: {},
+              is_active: true,
+              change_summary: "初始化业务规则",
+              changed_by: "后端可信身份",
+              changed_at: "2026-04-20T10:01:00Z",
+              change_reason: "首次配置",
+            },
+            naming_rules: {
+              id: "naming-v1",
+              kind: "naming_rules",
+              version_no: "naming-v1",
+              content: {},
+              is_active: true,
+              change_summary: "初始化命名规则",
+              changed_by: "后端可信身份",
+              changed_at: "2026-04-20T10:02:00Z",
+              change_reason: "首次配置",
+            },
+          },
+          setup_status: {
+            complete: true,
+            default_business_rule_templates: {},
+            missing_required_fields: {
+              tax_profile: [],
+              business_rules: [],
+              naming_rules: [],
+            },
+          },
+        }}
+        showAction
+        onOpenWorkbench={vi.fn()}
+        onOpenSetup={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText("首次配置已完成")).toBeInTheDocument();
+    expect(screen.getByText("去处理发票")).toBeInTheDocument();
+    expect(screen.getByText("最后修改于 2026-04-20 10:02")).toBeInTheDocument();
   });
 
   it("shows invoice diagnostic details and retries a single failed invoice", async () => {

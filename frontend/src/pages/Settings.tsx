@@ -1,5 +1,6 @@
-import { Space, Tag, Typography } from "../app/antd";
+import { Button, Space, Tag, Typography } from "../app/antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { getActiveConfig, getErrorMessage, listRuleVersions } from "../app/api";
 import { useOperatorSettings } from "../app/operator-settings";
@@ -37,6 +38,7 @@ interface SettingsState {
 }
 
 export function Settings() {
+  const navigate = useNavigate();
   const { currentActor, defaultOperatorName, error: actorError, loading: actorLoading } = useOperatorSettings();
   const [state, setState] = useState<SettingsState>({
     loading: true,
@@ -83,6 +85,7 @@ export function Settings() {
   }, [loadSettings]);
 
   const activeVersions = useMemo(() => state.config?.active_versions ?? {}, [state.config]);
+  const setupComplete = state.config?.setup_status.complete ?? false;
 
   return (
     <div className="page-stack">
@@ -101,21 +104,33 @@ export function Settings() {
           {actorError ? <Typography.Text type="danger">{actorError}</Typography.Text> : null}
         </Space>
       </section>
-
       <AsyncBoundary loading={state.loading} error={state.error}>
-        <Space direction="vertical" size="large" className="full-width">
-          {RULE_META.map((item) => (
-            <RuleVersionPanel
-              key={item.kind}
-              kind={item.kind}
-              title={item.title}
-              subtitle={item.subtitle}
-              activeVersion={activeVersions[item.kind]}
-              versions={state.versions[item.kind] ?? []}
-              onUpdated={loadSettings}
-            />
-          ))}
-        </Space>
+        {setupComplete ? (
+          <Space direction="vertical" size="large" className="full-width">
+            <section className="workspace-block">
+              <SectionHeader title="高级版本管理" subtitle="首次配置完成后，后续只在这里查看、追加和切换规则版本。" />
+              <Typography.Text type="secondary">规则版本</Typography.Text>
+            </section>
+            {RULE_META.map((item) => (
+              <RuleVersionPanel
+                key={item.kind}
+                kind={item.kind}
+                title={item.title}
+                subtitle={item.subtitle}
+                activeVersion={activeVersions[item.kind]}
+                versions={state.versions[item.kind] ?? []}
+                onUpdated={loadSettings}
+              />
+            ))}
+          </Space>
+        ) : (
+          <section className="workspace-block">
+            <SectionHeader title="高级版本管理" subtitle="这里不再承担首次配置，完成向导后再进入版本管理。" />
+            <Button type="primary" onClick={() => navigate("/setup")}>
+              前往首次配置
+            </Button>
+          </section>
+        )}
       </AsyncBoundary>
     </div>
   );

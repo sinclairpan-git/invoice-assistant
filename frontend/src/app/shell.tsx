@@ -1,8 +1,12 @@
 import { Layout, Menu, Space, Tag, Typography } from "./antd";
+import { useEffect, useState } from "react";
 import { FileSearchOutlined, InboxOutlined, SettingOutlined } from "./icons";
 import { Outlet, useLocation, useMatches, useNavigate } from "react-router-dom";
 
+import { getActiveConfig, getErrorMessage } from "./api";
 import { useOperatorSettings } from "./operator-settings";
+import type { ActiveConfigPayload, ConfigLoadState } from "./types";
+import { SetupStatusCard } from "../components/settings/SetupStatusCard";
 
 
 const { Content, Header, Sider } = Layout;
@@ -48,6 +52,36 @@ export function AppShell() {
   const matches = useMatches();
   const navigate = useNavigate();
   const { defaultOperatorName } = useOperatorSettings();
+  const [config, setConfig] = useState<ActiveConfigPayload | null>(null);
+  const [configState, setConfigState] = useState<ConfigLoadState>("loading");
+  const [configError, setConfigError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let disposed = false;
+
+    async function loadConfig() {
+      setConfigState("loading");
+      try {
+        const payload = await getActiveConfig();
+        if (!disposed) {
+          setConfig(payload);
+          setConfigError(null);
+          setConfigState("ready");
+        }
+      } catch (error) {
+        if (!disposed) {
+          setConfig(null);
+          setConfigError(getErrorMessage(error));
+          setConfigState("error");
+        }
+      }
+    }
+
+    void loadConfig();
+    return () => {
+      disposed = true;
+    };
+  }, [location.pathname]);
 
   return (
     <Layout className="app-shell">
@@ -75,6 +109,14 @@ export function AppShell() {
           </Space>
         </Header>
         <Content className="app-content">
+          <SetupStatusCard
+            config={config}
+            loading={configState === "loading"}
+            error={configError}
+            showAction
+            onOpenSetup={() => navigate("/setup")}
+            onOpenWorkbench={() => navigate("/")}
+          />
           <Outlet />
         </Content>
       </Layout>

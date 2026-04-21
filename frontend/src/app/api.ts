@@ -4,6 +4,7 @@ import type {
   BatchInvoiceListing,
   BatchRetryResult,
   CurrentActor,
+  InitialSetupPayload,
   InvoiceDetail,
   InvoiceRetryResult,
   InvoiceSummary,
@@ -167,6 +168,28 @@ export async function createRuleVersion(params: {
     }),
   });
   return payload.item;
+}
+
+export async function createInitialSetup(params: {
+  taxProfile: Record<string, unknown>;
+  businessRules: Record<string, unknown>;
+  namingRules: Record<string, unknown>;
+  changeSummary: string;
+  changeReason: string;
+}): Promise<InitialSetupPayload> {
+  return requestJson<InitialSetupPayload>("/api/config/setup", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      tax_profile: params.taxProfile,
+      business_rules: params.businessRules,
+      naming_rules: params.namingRules,
+      change_summary: params.changeSummary,
+      change_reason: params.changeReason,
+    }),
+  });
 }
 
 export async function createExport(params: {
