@@ -10,6 +10,8 @@ from pathlib import Path
 
 DOC_FILENAMES = ("用户指引.html", "README-技术维护.md")
 REQUIRED_ROOT_FILES = ("启动发票助手.bat", "停止发票助手.bat")
+BACKEND_RUNTIME_FILES = ("__init__.py", "pyproject.toml")
+BACKEND_RUNTIME_DIRS = ("app",)
 
 
 def build_portable_bundle(
@@ -42,7 +44,7 @@ def build_portable_bundle(
         project_root / "frontend" / "dist",
         output_dir / "app" / "server" / "frontend-dist",
     )
-    _copy_required_tree(
+    _copy_backend_runtime_tree(
         project_root / "backend",
         output_dir / "app" / "server" / "backend",
     )
@@ -97,6 +99,19 @@ def _copy_optional_file(source: Path, destination: Path) -> None:
         return
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, destination)
+
+
+def _copy_backend_runtime_tree(source_root: Path, destination_root: Path) -> None:
+    if not source_root.is_dir():
+        raise FileNotFoundError(f"Missing required directory: {source_root}")
+
+    destination_root.mkdir(parents=True, exist_ok=True)
+
+    for filename in BACKEND_RUNTIME_FILES:
+        _copy_required_file(source_root / filename, destination_root / filename)
+
+    for directory in BACKEND_RUNTIME_DIRS:
+        _copy_required_tree(source_root / directory, destination_root / directory)
 
 
 def _build_manifest(*, project_root: Path, output_dir: Path, version: str) -> dict[str, object]:

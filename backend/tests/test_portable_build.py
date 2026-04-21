@@ -33,11 +33,16 @@ def test_build_portable_bundle_creates_expected_layout_from_fixture_project_root
     runtime_root = project_root / "packaging" / "windows" / "python"
 
     _write_file(project_root / "backend" / "__init__.py", "")
+    _write_file(project_root / "backend" / "pyproject.toml", "[project]\nname = 'fixture-backend'\nversion = '0.1.0'\n")
     _write_file(project_root / "backend" / "app" / "__init__.py", "")
     _write_file(
         project_root / "backend" / "app" / "main.py",
         "def create_app(*args, **kwargs):\n    return {'ok': True}\n",
     )
+    _write_file(project_root / "backend" / "tests" / "test_runtime.py", "def test_placeholder():\n    assert True\n")
+    _write_file(project_root / "backend" / "data" / "invoice_assistant.db", "local db\n")
+    _write_file(project_root / "backend" / ".venv" / "pyvenv.cfg", "include-system-site-packages = false\n")
+    _write_file(project_root / "backend" / "fixture_backend.egg-info" / "PKG-INFO", "Metadata-Version: 2.1\n")
     _write_file(
         project_root / "frontend" / "dist" / "index.html",
         "<!doctype html><html><body>portable frontend</body></html>\n",
@@ -85,11 +90,16 @@ def test_build_portable_bundle_creates_expected_layout_from_fixture_project_root
     assert (output_dir / "app" / "python" / "Lib" / "site-packages" / "portable_runtime.txt").exists()
     assert (output_dir / "app" / "server" / "frontend-dist" / "index.html").exists()
     assert (output_dir / "app" / "server" / "backend" / "app" / "main.py").exists()
+    assert (output_dir / "app" / "server" / "backend" / "pyproject.toml").exists()
     assert (output_dir / "data" / "storage").is_dir()
     assert (output_dir / "data" / "exports").is_dir()
     assert (output_dir / "logs").is_dir()
     assert (output_dir / "runtime").is_dir()
     assert (dist_root / "invoice-assistant-windows-x64-0.1.0-test.zip").is_file()
+    assert not (output_dir / "app" / "server" / "backend" / ".venv").exists()
+    assert not (output_dir / "app" / "server" / "backend" / "tests").exists()
+    assert not (output_dir / "app" / "server" / "backend" / "data").exists()
+    assert not (output_dir / "app" / "server" / "backend" / "fixture_backend.egg-info").exists()
 
     manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["version"] == "0.1.0-test"
@@ -99,6 +109,10 @@ def test_build_portable_bundle_creates_expected_layout_from_fixture_project_root
     assert "app/python/python.exe" in manifest["artifacts"]
     assert "app/bootstrap/start_server.py" in manifest["artifacts"]
     assert "app/server/frontend-dist/index.html" in manifest["artifacts"]
+    assert "app/server/backend/app/main.py" in manifest["artifacts"]
+    assert all(".venv" not in path for path in manifest["artifacts"])
+    assert all("/tests/" not in path for path in manifest["artifacts"])
+    assert all("/data/" not in path for path in manifest["artifacts"])
 
 
 def test_build_portable_bundle_requires_python_runtime(tmp_path: Path) -> None:
