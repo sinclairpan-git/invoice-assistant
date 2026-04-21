@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>发票整理助手用户指引</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+        line-height: 1.6;
+        color: #1f2937;
+        background: #f5f7fa;
+      }
+
+      body {
+        margin: 0;
+      }
+
+      main {
+        max-width: 920px;
+        margin: 0 auto;
+        padding: 24px 16px 48px;
+      }
+
+      section {
+        background: #ffffff;
+        border: 1px solid #d9e2ec;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 16px;
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin-top: 0;
+        color: #102a43;
+      }
+
+      .hero {
+        border: 2px solid #d64545;
+        background: #fff5f5;
+      }
+
+      .hero strong {
+        color: #b42318;
+      }
+
+      .tip {
+        background: #f0f9ff;
+        border-left: 4px solid #2b6cb0;
+        padding: 12px 14px;
+      }
+
+      .warn {
+        background: #fff7ed;
+        border-left: 4px solid #dd6b20;
+        padding: 12px 14px;
+      }
+
+      ol,
+      ul {
+        padding-left: 20px;
+      }
+
+      code {
+        background: #eef2f6;
+        padding: 1px 4px;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <h1>发票整理助手使用指引</h1>
+        <p>
+          <strong>第一次使用，请先完成“首次配置向导”，录入公司发票信息和规则，再开始上传发票。</strong>
+        </p>
+        <p>
+          如果没有先做这一步，系统会阻止上传，这是正常设计，不是故障。
+        </p>
+      </section>
+
+      <section>
+        <h2>一、今天第一次拿到这个包，先做什么</h2>
+        <div class="warn">
+          第一次双击时，可能会看到一个黑色窗口。这是正常现象，不是中毒，也不是失败。请先等浏览器打开或手动访问固定地址。
+        </div>
+        <p>在开始前，建议先准备好这些信息：</p>
+        <ul>
+          <li>公司全称，例如：<code>示例科技有限公司</code></li>
+          <li>公司税号，例如：<code>91310000123456789X</code></li>
+          <li>常见供应商名单，例如：<code>上海示例办公用品有限公司</code>、<code>某某信息服务有限公司</code></li>
+          <li>需要重点复核的关键词，例如：<code>详见清单</code>、<code>代开</code>、<code>异常作废</code></li>
+          <li>你们希望导出后采用的文件命名样式示例，例如：<code>20260421_128.50_INV-001.pdf</code></li>
+        </ul>
+        <ol>
+          <li>把整个“发票助手便携版”文件夹放到你平时容易找到的位置。</li>
+          <li>双击 <code>启动发票助手.bat</code>。</li>
+          <li>等待浏览器自动打开。</li>
+          <li>如果浏览器没有自动打开，手动访问固定地址：<code>http://127.0.0.1:18080</code>。</li>
+          <li>启动后会先进入“首次配置向导”，按步骤录入公司发票信息、规则和命名方式。</li>
+        </ol>
+        <div class="warn">
+          关闭浏览器页面 <strong>不等于</strong> 停止服务。平时用完，请双击
+          <code>停止发票助手.bat</code> 正常关闭。
+        </div>
+      </section>
+
+      <section>
+        <h2>二、首次配置向导怎么走</h2>
+        <p>把它理解成“先告诉系统你是谁、你要按什么规则收票”。第一次启动时会先进入这一步，做完后才能回到工作台上传。</p>
+        <ol>
+          <li>启动后先进入“首次配置向导”。</li>
+          <li>录入本公司的购方名称、税号等发票识别信息。</li>
+          <li>选择或确认默认规则模板，并补充常见供应商和重点复核关键词。</li>
+          <li>确认发票重命名方式，最好先准备一个你们平时会用的文件名示例。</li>
+          <li>保存后，系统才会放行并回到工作台。</li>
+        </ol>
+        <div class="tip">
+          如果你只是负责收票，不清楚规则怎么填，先联系维护人员或业务负责人确认。不要随意跳过。
+        </div>
+      </section>
+
+      <section>
+        <h2>三、日常收票怎么走</h2>
+        <h3>场景 1：今天要整理一批新发票</h3>
+        <ol>
+          <li>双击 <code>启动发票助手.bat</code>。</li>
+          <li>进入“批次工作台”。</li>
+          <li>把 PDF 发票拖进去，或点按钮选择文件。</li>
+          <li>等待系统处理完成。</li>
+        </ol>
+
+        <h3>场景 2：我想看看处理结果</h3>
+        <ol>
+          <li>进入“批次结果”。</li>
+          <li>按“系统建议通过 / 待复核 / 疑似重复 / 处理失败”等状态筛选。</li>
+          <li>点开某一张票，可以看识别结果、证据和风险原因。</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>四、什么时候需要人工复核</h2>
+        <p>如果系统把票放进“待复核”或“疑似重复”，说明它不建议你直接放行。</p>
+        <ol>
+          <li>进入“批次结果”。</li>
+          <li>筛选出“待复核”或“疑似重复”的票。</li>
+          <li>打开详情，看原始证据、字段抽取结果、风险标记。</li>
+          <li>确认后再做人为处理。</li>
+        </ol>
+        <div class="tip">
+          人工复核是为了补充决定，不是随便点一下。建议看完票面和系统证据再操作。
+        </div>
+      </section>
+
+      <section>
+        <h2>五、导出和打开导出文件夹</h2>
+        <h3>场景 3：我要把整理结果交给别人</h3>
+        <ol>
+          <li>进入“批次结果”。</li>
+          <li>按需要点击导出：
+            <ul>
+              <li>导出建议通过 ZIP</li>
+              <li>导出问题票 ZIP</li>
+              <li>导出 Excel 台账</li>
+            </ul>
+          </li>
+          <li>导出完成后，在“最近导出”区域点击 <strong>打开导出文件夹</strong>。</li>
+          <li>系统会直接定位到导出结果所在位置，方便你发送或归档。</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>六、今天用完怎么关</h2>
+        <ol>
+          <li>先确认你要的导出已经完成。</li>
+          <li>双击 <code>停止发票助手.bat</code>。</li>
+          <li>看到停止提示后再关闭文件夹或关机。</li>
+        </ol>
+        <div class="warn">
+          只关浏览器，服务可能还在后台运行。要真正停止，请双击
+          <code>停止发票助手.bat</code>。
+        </div>
+      </section>
+
+      <section>
+        <h2>七、备份和换电脑怎么做</h2>
+        <h3>场景 4：我怕数据丢，想备份</h3>
+        <ol>
+          <li>先双击 <code>停止发票助手.bat</code>。</li>
+          <li>备份整个 <code>data</code> 文件夹。</li>
+          <li>建议连同整个便携包一起复制到安全位置。</li>
+        </ol>
+
+        <h3>场景 5：我换了一台电脑</h3>
+        <ol>
+          <li>把新的便携包放到新电脑。</li>
+          <li>把旧电脑备份出来的 <code>data</code> 文件夹覆盖到新包里。</li>
+          <li>再双击 <code>启动发票助手.bat</code>。</li>
+        </ol>
+        <p>只要 <code>data</code> 一起带走，历史配置、处理记录和导出结果就能继续用。</p>
+      </section>
+
+      <section>
+        <h2>八、常见问题</h2>
+        <h3>1. 双击启动后没反应怎么办</h3>
+        <ul>
+          <li>先等十几秒，再手动打开 <code>http://127.0.0.1:18080</code>。</li>
+          <li>如果还是打不开，查看 <code>logs</code> 文件夹，把日志发给维护人员。</li>
+        </ul>
+
+        <h3>2. 浏览器打不开，但昨天还能用</h3>
+        <ul>
+          <li>先双击 <code>停止发票助手.bat</code>。</li>
+          <li>再重新双击 <code>启动发票助手.bat</code>。</li>
+        </ul>
+
+        <h3>3. 为什么我一上传就被拦住</h3>
+        <ul>
+          <li>通常是因为首次配置向导还没完成。</li>
+          <li>先按向导录入公司发票信息和规则，完成后才能上传。</li>
+        </ul>
+
+        <h3>4. 导出后找不到文件</h3>
+        <ul>
+          <li>去“批次结果”的“最近导出”区域。</li>
+          <li>点击 <strong>打开导出文件夹</strong>。</li>
+        </ul>
+
+        <h3>5. 我只是关了浏览器，为什么再次启动提示已经在运行</h3>
+        <ul>
+          <li>因为服务还没停。</li>
+          <li>请双击 <code>停止发票助手.bat</code> 关闭，再重新启动。</li>
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>
