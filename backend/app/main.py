@@ -11,6 +11,7 @@ from backend.app.api.dependencies import CONTROLLED_ROLES
 from backend.app.api.actors import router as actors_router
 from backend.app.api.batches import router as batches_router
 from backend.app.api.config import router as config_router
+from backend.app.api.runtime import router as runtime_router
 from backend.app.core.runtime_config import build_runtime_config
 from backend.app.api.invoices import router as invoices_router
 from backend.app.db.session import (
@@ -92,6 +93,7 @@ def create_app(
     app.include_router(batches_router)
     app.include_router(invoices_router)
     app.include_router(config_router)
+    app.include_router(runtime_router)
 
     @app.get("/health")
     def health_check() -> dict[str, str]:

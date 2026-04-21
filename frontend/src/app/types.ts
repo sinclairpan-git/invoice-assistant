@@ -50,6 +50,11 @@ export interface ExportJob {
   summary: Record<string, unknown>;
 }
 
+export interface RuntimePathResult {
+  requested_path: string;
+  opened_path: string;
+}
+
 export interface RuleSnapshotEntry {
   id: string;
   version_no: string;

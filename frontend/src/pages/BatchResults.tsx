@@ -2,7 +2,7 @@ import { App, Button, Select, Space, Statistic, Tag, Typography } from "../app/a
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { createBatchRetry, createExport, getBatch, getErrorMessage, listBatchInvoices, listBatches } from "../app/api";
+import { createBatchRetry, createExport, getBatch, getErrorMessage, listBatchInvoices, listBatches, openRuntimePath } from "../app/api";
 import type { Batch, BatchInvoiceListing } from "../app/types";
 import { AsyncBoundary } from "../components/common/AsyncBoundary";
 import { SectionHeader } from "../components/common/SectionHeader";
@@ -119,7 +119,16 @@ export function BatchResults() {
   const failedCount = counts["处理失败"] ?? batchDetail?.failed_files ?? 0;
   const attachmentStatusCounts = batchDetail?.attachment_status_counts ?? {};
   const attachmentStatusEntries = Object.entries(attachmentStatusCounts).filter(([, count]) => count > 0);
-  const exportJobs = batchDetail?.export_jobs ?? [];
+  const exportJobs = useMemo(() => {
+    const jobs = [...(batchDetail?.export_jobs ?? [])];
+    jobs.sort((left, right) => {
+      const leftTime = left.created_at ? Date.parse(left.created_at) : Number.NEGATIVE_INFINITY;
+      const rightTime = right.created_at ? Date.parse(right.created_at) : Number.NEGATIVE_INFINITY;
+      return rightTime - leftTime;
+    });
+    return jobs;
+  }, [batchDetail?.export_jobs]);
+  const latestExportPath = exportJobs[0]?.output_path ?? batchDetail?.export_manifest_path ?? null;
 
   return (
     <div className="page-stack">
@@ -263,15 +272,29 @@ export function BatchResults() {
               </Space>
               {batchDetail.export_manifest_path || exportJobs.length > 0 ? (
                 <Space direction="vertical" size={8} className="full-width">
-                  <Typography.Text strong>最近导出</Typography.Text>
-                  {batchDetail.export_manifest_path ? (
-                    <Typography.Text>{batchDetail.export_manifest_path}</Typography.Text>
-                  ) : null}
+                  <Space wrap>
+                    <Typography.Text strong>最近导出</Typography.Text>
+                    {latestExportPath ? (
+                      <Button
+                        onClick={async () => {
+                          try {
+                            const result = await openRuntimePath({ path: latestExportPath });
+                            message.success(`已打开 ${result.opened_path}`);
+                          } catch (error) {
+                            message.error(getErrorMessage(error));
+                          }
+                        }}
+                      >
+                        打开导出文件夹
+                      </Button>
+                    ) : null}
+                  </Space>
+                  {latestExportPath ? <Typography.Text>{latestExportPath}</Typography.Text> : null}
                   {exportJobs.map((job) => (
                     <Space key={job.id ?? `${job.export_type}-${job.output_path}`} wrap>
                       <Tag>{job.export_type}</Tag>
                       <Tag color={job.status === "completed" ? "green" : "gold"}>{job.status}</Tag>
-                      {job.output_path && job.output_path !== batchDetail.export_manifest_path ? (
+                      {job.output_path && job.output_path !== latestExportPath ? (
                         <Typography.Text>{job.output_path}</Typography.Text>
                       ) : null}
                     </Space>

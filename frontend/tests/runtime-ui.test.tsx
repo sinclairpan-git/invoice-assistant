@@ -25,6 +25,7 @@ const apiMocks = vi.hoisted(() => ({
   createBatchRetry: vi.fn(),
   createInvoiceRetry: vi.fn(),
   createExport: vi.fn(),
+  openRuntimePath: vi.fn(),
   createReviewAction: vi.fn(),
   getCurrentActor: vi.fn(),
   getActiveConfig: vi.fn(),
@@ -50,6 +51,7 @@ vi.mock("../src/app/api", async () => {
     createBatchRetry: apiMocks.createBatchRetry,
     createInvoiceRetry: apiMocks.createInvoiceRetry,
     createExport: apiMocks.createExport,
+    openRuntimePath: apiMocks.openRuntimePath,
     createReviewAction: apiMocks.createReviewAction,
     getCurrentActor: apiMocks.getCurrentActor,
     getActiveConfig: apiMocks.getActiveConfig,
@@ -97,6 +99,10 @@ describe("runtime UI", () => {
       status: "completed",
       output_path: "exports/manifest.xlsx",
       summary: {},
+    });
+    apiMocks.openRuntimePath.mockResolvedValue({
+      requested_path: "exports/manifest.xlsx",
+      opened_path: "data/exports",
     });
     apiMocks.getCurrentActor.mockResolvedValue({
       actor_id: "trusted-actor-1",
@@ -913,6 +919,209 @@ describe("runtime UI", () => {
     expect(await screen.findByText("最近导出")).toBeInTheDocument();
     expect(screen.getByText("exports/BATCH-EXPORT-001/manifest.xlsx")).toBeInTheDocument();
     expect(screen.getByText("excel_manifest")).toBeInTheDocument();
+  });
+
+  it("opens the latest export folder from batch results", async () => {
+    const messageSuccess = vi.fn();
+    vi.spyOn(AntdApp, "useApp").mockReturnValue({
+      message: { success: messageSuccess, error: vi.fn(), warning: vi.fn(), info: vi.fn(), open: vi.fn(), destroy: vi.fn(), loading: vi.fn() },
+      notification: {} as never,
+      modal: {} as never,
+    });
+
+    apiMocks.listBatches.mockResolvedValue([
+      {
+        id: "batch-export-open-1",
+        batch_no: "BATCH-EXPORT-OPEN-001",
+        created_at: "2026-04-19T09:00:00Z",
+        created_by: "tester",
+        status: "completed",
+        total_files: 2,
+        completed_files: 2,
+        processing_files: 0,
+        failed_files: 0,
+        suggested_pass_count: 1,
+        suggested_pass_total_amount: "88.00",
+        export_manifest_path: "exports/BATCH-EXPORT-OPEN-001/manifest.xlsx",
+        invoice_file_count: 2,
+        attachment_file_count: 0,
+        attachment_status_counts: {},
+      },
+    ]);
+    apiMocks.getBatch.mockResolvedValue({
+      id: "batch-export-open-1",
+      batch_no: "BATCH-EXPORT-OPEN-001",
+      created_at: "2026-04-19T09:00:00Z",
+      created_by: "tester",
+      status: "completed",
+      total_files: 2,
+      completed_files: 2,
+      processing_files: 0,
+      failed_files: 0,
+      suggested_pass_count: 1,
+      suggested_pass_total_amount: "88.00",
+      export_manifest_path: "exports/BATCH-EXPORT-OPEN-001/manifest.xlsx",
+      invoice_file_count: 2,
+      attachment_file_count: 0,
+      attachment_status_counts: {},
+      progress: {
+        batch_id: "batch-export-open-1",
+        batch_no: "BATCH-EXPORT-OPEN-001",
+        stage_code: "completed",
+        stage_text: "处理完成",
+        progress_percent: 100,
+        total_files: 2,
+        completed_files: 2,
+        processing_files: 0,
+        failed_files: 0,
+        suggested_pass_count: 1,
+        suggested_pass_total_amount: "88.00",
+        recent_failures: [],
+      },
+      export_jobs: [
+        {
+          id: "export-job-2",
+          export_type: "issue_zip",
+          status: "completed",
+          output_path: "exports/BATCH-EXPORT-OPEN-001/issues.zip",
+          created_by: "后端可信身份",
+          created_at: "2026-04-19T09:06:00Z",
+          summary: { invoice_count: 1 },
+        },
+        {
+          id: "export-job-1",
+          export_type: "excel_manifest",
+          status: "completed",
+          output_path: "exports/BATCH-EXPORT-OPEN-001/manifest.xlsx",
+          created_by: "后端可信身份",
+          created_at: "2026-04-19T09:05:00Z",
+          summary: { invoice_count: 2 },
+        },
+      ],
+    });
+    apiMocks.listBatchInvoices.mockResolvedValue({
+      items: [],
+      status_counts: {},
+      batch_summary: { count: 1, total_amount: "88.00" },
+      filtered_summary: { count: 1, total_amount: "88.00" },
+    });
+
+    const router = createMemoryRouter(appRoutes, {
+      initialEntries: ["/results/batch-export-open-1"],
+    });
+
+    render(
+      <AppProviders>
+        <RouterProvider router={router} />
+      </AppProviders>,
+    );
+
+    expect(await screen.findByText("最近导出")).toBeInTheDocument();
+    expect(screen.getByText("exports/BATCH-EXPORT-OPEN-001/issues.zip")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "打开导出文件夹" }));
+
+    await waitFor(() => {
+      expect(apiMocks.openRuntimePath).toHaveBeenCalledWith({
+        path: "exports/BATCH-EXPORT-OPEN-001/issues.zip",
+      });
+    });
+  });
+
+  it("shows an error when opening the export folder fails", async () => {
+    const messageError = vi.fn();
+    vi.spyOn(AntdApp, "useApp").mockReturnValue({
+      message: { success: vi.fn(), error: messageError, warning: vi.fn(), info: vi.fn(), open: vi.fn(), destroy: vi.fn(), loading: vi.fn() },
+      notification: {} as never,
+      modal: {} as never,
+    });
+
+    apiMocks.openRuntimePath.mockRejectedValue(new Error("打开本地文件夹失败。"));
+    apiMocks.listBatches.mockResolvedValue([
+      {
+        id: "batch-export-open-2",
+        batch_no: "BATCH-EXPORT-OPEN-002",
+        created_at: "2026-04-19T09:00:00Z",
+        created_by: "tester",
+        status: "completed",
+        total_files: 1,
+        completed_files: 1,
+        processing_files: 0,
+        failed_files: 0,
+        suggested_pass_count: 1,
+        suggested_pass_total_amount: "66.00",
+        export_manifest_path: "exports/BATCH-EXPORT-OPEN-002/manifest.xlsx",
+        invoice_file_count: 1,
+        attachment_file_count: 0,
+        attachment_status_counts: {},
+      },
+    ]);
+    apiMocks.getBatch.mockResolvedValue({
+      id: "batch-export-open-2",
+      batch_no: "BATCH-EXPORT-OPEN-002",
+      created_at: "2026-04-19T09:00:00Z",
+      created_by: "tester",
+      status: "completed",
+      total_files: 1,
+      completed_files: 1,
+      processing_files: 0,
+      failed_files: 0,
+      suggested_pass_count: 1,
+      suggested_pass_total_amount: "66.00",
+      export_manifest_path: "exports/BATCH-EXPORT-OPEN-002/manifest.xlsx",
+      invoice_file_count: 1,
+      attachment_file_count: 0,
+      attachment_status_counts: {},
+      progress: {
+        batch_id: "batch-export-open-2",
+        batch_no: "BATCH-EXPORT-OPEN-002",
+        stage_code: "completed",
+        stage_text: "处理完成",
+        progress_percent: 100,
+        total_files: 1,
+        completed_files: 1,
+        processing_files: 0,
+        failed_files: 0,
+        suggested_pass_count: 1,
+        suggested_pass_total_amount: "66.00",
+        recent_failures: [],
+      },
+      export_jobs: [
+        {
+          id: "export-job-3",
+          export_type: "excel_manifest",
+          status: "completed",
+          output_path: "exports/BATCH-EXPORT-OPEN-002/manifest.xlsx",
+          created_by: "后端可信身份",
+          created_at: "2026-04-19T09:05:00Z",
+          summary: { invoice_count: 1 },
+        },
+      ],
+    });
+    apiMocks.listBatchInvoices.mockResolvedValue({
+      items: [],
+      status_counts: {},
+      batch_summary: { count: 1, total_amount: "66.00" },
+      filtered_summary: { count: 1, total_amount: "66.00" },
+    });
+
+    const router = createMemoryRouter(appRoutes, {
+      initialEntries: ["/results/batch-export-open-2"],
+    });
+
+    render(
+      <AppProviders>
+        <RouterProvider router={router} />
+      </AppProviders>,
+    );
+
+    expect(await screen.findByText("最近导出")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "打开导出文件夹" }));
+
+    await waitFor(() => {
+      expect(messageError).toHaveBeenCalledWith("打开本地文件夹失败。");
+    });
   });
 
   it("keeps settings focused on advanced version management after setup completes", async () => {

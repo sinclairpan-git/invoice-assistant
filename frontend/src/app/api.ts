@@ -9,6 +9,7 @@ import type {
   InvoiceRetryResult,
   InvoiceSummary,
   ReviewAction,
+  RuntimePathResult,
   RuleKind,
   RuleVersion,
 } from "./types";
@@ -217,6 +218,21 @@ export async function createExport(params: {
     },
     body: JSON.stringify({
       export_type: params.exportType,
+    }),
+  });
+  return payload.item;
+}
+
+export async function openRuntimePath(params: {
+  path: string;
+}): Promise<RuntimePathResult> {
+  const payload = await requestJson<{ item: RuntimePathResult }>("/api/runtime/open-path", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      path: params.path,
     }),
   });
   return payload.item;
