@@ -34,7 +34,7 @@ function resolveTitle(matches: ReturnType<typeof useMatches>): string {
 }
 
 function resolveMenuKey(pathname: string): string {
-  if (pathname.startsWith("/settings")) {
+  if (pathname.startsWith("/settings") || pathname.startsWith("/setup")) {
     return "/settings";
   }
   if (pathname.startsWith("/results")) {

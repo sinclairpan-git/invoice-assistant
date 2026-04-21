@@ -1,5 +1,5 @@
 import { Suspense, lazy } from "react";
-import { createHashRouter } from "react-router-dom";
+import { createBrowserRouter } from "react-router-dom";
 import type { ReactNode } from "react";
 import type { RouteObject } from "react-router-dom";
 
@@ -22,6 +22,17 @@ const Settings = lazy(async () => {
 
 function withRouteSuspense(element: ReactNode) {
   return <Suspense fallback={<div>加载中...</div>}>{element}</Suspense>;
+}
+
+function SetupPlaceholder() {
+  return (
+    <div className="page-stack">
+      <section className="workspace-block">
+        <h2>初始设置</h2>
+        <p>安装包首次启动后，从这里补齐运行环境。</p>
+      </section>
+    </div>
+  );
 }
 
 export const appRoutes: RouteObject[] = [
@@ -49,10 +60,15 @@ export const appRoutes: RouteObject[] = [
         element: withRouteSuspense(<Settings />),
         handle: { title: "配置中心" },
       },
+      {
+        path: "setup",
+        element: <SetupPlaceholder />,
+        handle: { title: "初始设置" },
+      },
     ],
   },
 ];
 
 export function createAppRouter() {
-  return createHashRouter(appRoutes);
+  return createBrowserRouter(appRoutes);
 }

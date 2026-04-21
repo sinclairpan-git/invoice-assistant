@@ -61,3 +61,27 @@ def test_create_app_can_disable_default_trusted_actor(tmp_path):
 
     assert response.status_code == 503
     assert response.json() == {"detail": "后端未配置可信操作者上下文。"}
+
+
+def test_create_app_exposes_runtime_config_state(tmp_path):
+    frontend_dir = tmp_path / "app" / "server" / "frontend-dist"
+    frontend_dir.mkdir(parents=True)
+    (frontend_dir / "index.html").write_text("<html></html>", encoding="utf-8")
+
+    app = create_app(
+        f"sqlite:///{tmp_path / 'app-runtime.db'}",
+        runtime_overrides={"portable_root": tmp_path},
+    )
+
+    runtime_config = app.state.runtime_config
+
+    assert runtime_config.portable_root == tmp_path.resolve()
+    assert runtime_config.data_dir == (tmp_path / "data").resolve()
+    assert runtime_config.logs_dir == (tmp_path / "logs").resolve()
+    assert runtime_config.runtime_dir == (tmp_path / "runtime").resolve()
+    assert runtime_config.frontend_static_dir == frontend_dir.resolve()
+    assert runtime_config.database_url == f"sqlite:///{tmp_path / 'data' / 'app.db'}"
+    assert runtime_config.host == "127.0.0.1"
+    assert runtime_config.port == 18080
+    assert app.state.storage_root == (tmp_path / "data" / "storage").resolve()
+    assert str(app.state.engine.url) == f"sqlite:///{tmp_path / 'data' / 'app.db'}"
