@@ -456,7 +456,12 @@ describe("runtime UI", () => {
     expect(screen.getByText("首次配置状态未确认前，上传入口会保持禁用。")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "创建批次" })).toBeDisabled();
 
-    resolveConfig?.({
+    const applyConfig = resolveConfig as ((value: unknown) => void) | null;
+    if (!applyConfig) {
+      throw new Error("getActiveConfig resolver was not captured");
+    }
+
+    applyConfig({
       active_snapshot: {},
       active_versions: {
         tax_profile: {
