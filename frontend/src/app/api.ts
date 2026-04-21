@@ -138,7 +138,8 @@ export async function createInvoiceRetry(params: {
 }
 
 export async function getActiveConfig(): Promise<ActiveConfigPayload> {
-  return requestJson<ActiveConfigPayload>("/api/config");
+  const payload = await requestJson<ActiveConfigPayload>("/api/config");
+  return payload;
 }
 
 export async function listRuleVersions(kind: RuleKind): Promise<RuleVersion[]> {

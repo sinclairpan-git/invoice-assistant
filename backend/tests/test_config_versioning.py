@@ -115,3 +115,105 @@ def test_batch_creation_binds_latest_active_rule_versions(tmp_path):
     assert snapshot["tax_profile"]["version_no"] == "v2"
     assert snapshot["business_rules"]["id"] == latest_business.id
     assert snapshot["naming_rules"]["content"]["pattern"] == "{seller}_{date}_{amount}"
+
+
+def test_setup_status_requires_minimum_fields_for_required_rule_kinds(tmp_path):
+    session = build_session(tmp_path)
+    config_service = ConfigService(session)
+
+    initial_status = config_service.get_setup_status()
+    assert initial_status["complete"] is False
+    assert initial_status["missing_required_fields"] == {
+        "tax_profile": ["buyer_name", "buyer_tax_no"],
+        "business_rules": ["template_name"],
+        "naming_rules": ["pattern"],
+    }
+
+    config_service.create_version(
+        kind="tax_profile",
+        content={"buyer_name": "Shanghai Example Co"},
+        changed_by="fin-admin",
+        change_summary="incomplete tax profile",
+        change_reason="test fixture",
+    )
+    config_service.create_version(
+        kind="business_rules",
+        content={},
+        changed_by="ops-admin",
+        change_summary="seed incomplete business rules",
+        change_reason="test fixture",
+    )
+    config_service.create_version(
+        kind="naming_rules",
+        content={"pattern": "{date}_{amount}_{number}"},
+        changed_by="ops-admin",
+        change_summary="seed naming rules",
+        change_reason="test fixture",
+    )
+
+    incomplete_status = config_service.get_setup_status()
+    assert incomplete_status["complete"] is False
+    assert incomplete_status["missing_required_fields"] == {
+        "tax_profile": ["buyer_tax_no"],
+        "business_rules": ["template_name"],
+        "naming_rules": [],
+    }
+
+    config_service.create_version(
+        kind="business_rules",
+        content={"template_name": "regular"},
+        changed_by="ops-admin",
+        change_summary="complete business rules",
+        change_reason="test fixture",
+    )
+
+    config_service.create_version(
+        kind="tax_profile",
+        content={"buyer_name": "Shanghai Example Co", "buyer_tax_no": "91310000X"},
+        changed_by="fin-admin",
+        change_summary="complete tax profile",
+        change_reason="test fixture",
+    )
+
+    complete_status = config_service.get_setup_status()
+    assert complete_status["complete"] is True
+    assert complete_status["missing_required_fields"] == {
+        "tax_profile": [],
+        "business_rules": [],
+        "naming_rules": [],
+    }
+
+
+def test_setup_status_accepts_legacy_business_rules_shape(tmp_path):
+    session = build_session(tmp_path)
+    config_service = ConfigService(session)
+
+    config_service.create_version(
+        kind="tax_profile",
+        content={"buyer_name": "Shanghai Example Co", "buyer_tax_no": "91310000X"},
+        changed_by="fin-admin",
+        change_summary="complete tax profile",
+        change_reason="test fixture",
+    )
+    config_service.create_version(
+        kind="business_rules",
+        content={"minimum_confidence": 0.75},
+        changed_by="ops-admin",
+        change_summary="legacy business rules",
+        change_reason="test fixture",
+    )
+    config_service.create_version(
+        kind="naming_rules",
+        content={"pattern": "{date}_{amount}_{number}"},
+        changed_by="ops-admin",
+        change_summary="seed naming rules",
+        change_reason="test fixture",
+    )
+
+    setup_status = config_service.get_setup_status()
+    assert setup_status["complete"] is True
+    assert setup_status["missing_required_fields"] == {
+        "tax_profile": [],
+        "business_rules": [],
+        "naming_rules": [],
+    }

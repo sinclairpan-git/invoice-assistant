@@ -88,6 +88,14 @@ async def create_batch(
             status_code=400, detail="At least one file is required to create a batch."
         )
 
+    config_service = ConfigService(session)
+    setup_status = config_service.get_setup_status()
+    if not setup_status["complete"]:
+        raise HTTPException(
+            status_code=400,
+            detail="请先完成首次配置向导，再开始上传发票。",
+        )
+
     incoming_files: list[IncomingFile] = []
     for uploaded_file in files:
         filename = uploaded_file.filename or "unnamed.pdf"
@@ -101,7 +109,7 @@ async def create_batch(
     service = BatchService(
         session=session,
         storage_service=StorageService(get_storage_root(request)),
-        config_service=ConfigService(session),
+        config_service=config_service,
     )
     actor = trusted_actor
     try:

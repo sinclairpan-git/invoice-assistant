@@ -61,6 +61,18 @@ export interface RuleSnapshotEntry {
 
 export type ActiveSnapshot = Partial<Record<RuleKind, RuleSnapshotEntry | null>>;
 
+export interface BusinessRuleTemplate {
+  template_name: string;
+  display_name: string;
+  minimum_confidence: number;
+}
+
+export interface SetupStatus {
+  complete: boolean;
+  default_business_rule_templates: Record<string, BusinessRuleTemplate>;
+  missing_required_fields: Record<RuleKind, string[]>;
+}
+
 export interface Batch {
   id: string;
   batch_no: string;
@@ -219,4 +231,5 @@ export interface RuleVersion {
 export interface ActiveConfigPayload {
   active_snapshot: ActiveSnapshot;
   active_versions: Partial<Record<RuleKind, RuleVersion>>;
+  setup_status: SetupStatus;
 }

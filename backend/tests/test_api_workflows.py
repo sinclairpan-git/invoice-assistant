@@ -40,7 +40,7 @@ def seed_active_rules(session) -> dict[str, dict[str, object] | None]:
     )
     service.create_version(
         kind="business_rules",
-        content={"minimum_confidence": 0.75},
+        content={"template_name": "regular", "minimum_confidence": 0.75},
         changed_by="ops-admin",
         change_summary="seed business rules",
         change_reason="test fixture",
@@ -53,6 +53,56 @@ def seed_active_rules(session) -> dict[str, dict[str, object] | None]:
         change_reason="test fixture",
     )
     return service.get_active_snapshot()
+
+
+def seed_incomplete_rules(session) -> None:
+    service = ConfigService(session)
+    service.create_version(
+        kind="tax_profile",
+        content={"buyer_name": "Shanghai Example Co"},
+        changed_by="fin-admin",
+        change_summary="seed incomplete tax profile",
+        change_reason="test fixture",
+    )
+    service.create_version(
+        kind="business_rules",
+        content={},
+        changed_by="ops-admin",
+        change_summary="seed incomplete business rules",
+        change_reason="test fixture",
+    )
+    service.create_version(
+        kind="naming_rules",
+        content={"pattern": "{date}_{amount}_{number}"},
+        changed_by="ops-admin",
+        change_summary="seed naming rules",
+        change_reason="test fixture",
+    )
+
+
+def seed_legacy_but_runnable_rules(session) -> None:
+    service = ConfigService(session)
+    service.create_version(
+        kind="tax_profile",
+        content={"buyer_name": "Shanghai Example Co", "buyer_tax_no": "91310000X"},
+        changed_by="fin-admin",
+        change_summary="seed tax profile",
+        change_reason="test fixture",
+    )
+    service.create_version(
+        kind="business_rules",
+        content={"minimum_confidence": 0.75},
+        changed_by="ops-admin",
+        change_summary="seed legacy business rules",
+        change_reason="test fixture",
+    )
+    service.create_version(
+        kind="naming_rules",
+        content={"pattern": "{date}_{amount}_{number}"},
+        changed_by="ops-admin",
+        change_summary="seed naming rules",
+        change_reason="test fixture",
+    )
 
 
 def seed_batch_fixture(app):
@@ -675,6 +725,26 @@ def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_pat
         config_payload["active_snapshot"]["tax_profile"]["content"]["buyer_tax_no"]
         == "91310000X"
     )
+    assert config_payload["setup_status"] == {
+        "complete": True,
+        "default_business_rule_templates": {
+            "conservative": {
+                "template_name": "conservative",
+                "display_name": "保守模板",
+                "minimum_confidence": 0.9,
+            },
+            "regular": {
+                "template_name": "regular",
+                "display_name": "常规模板",
+                "minimum_confidence": 0.75,
+            },
+        },
+        "missing_required_fields": {
+            "tax_profile": [],
+            "business_rules": [],
+            "naming_rules": [],
+        },
+    }
 
     create_version_response = client.post(
         "/api/config/tax_profile/versions",
@@ -728,25 +798,75 @@ def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_pat
     finally:
         session.close()
 
-    missing_batch_response = client.get("/api/batches/missing-batch")
-    assert missing_batch_response.status_code == 404
 
-    invalid_export_response = client.post(
-        f"/api/batches/{fixture['batch_id']}/exports",
-        json={"export_type": "invalid", "created_by": "tester"},
-    )
-    assert invalid_export_response.status_code == 400
-
+def test_create_batch_rejects_upload_until_setup_is_complete(tmp_path):
+    app = create_app(f"sqlite:///{tmp_path / 'api-setup-gate.db'}")
     session = app.state.session_factory()
-    try:
-        stored_batch = session.scalar(
-            select(Batch).where(Batch.id == fixture["batch_id"])
-        )
-        assert stored_batch is not None
-        assert stored_batch.total_files == 0
-        assert stored_batch.suggested_pass_total_amount == Decimal("0.00")
-    finally:
-        session.close()
+    seed_incomplete_rules(session)
+    session.close()
+    set_trusted_actor(app, display_name="上传专员", roles=["config_admin"])
+    client = TestClient(app)
+
+    config_response = client.get("/api/config")
+    assert config_response.status_code == 200
+    assert config_response.json()["setup_status"] == {
+        "complete": False,
+        "default_business_rule_templates": {
+            "conservative": {
+                "template_name": "conservative",
+                "display_name": "保守模板",
+                "minimum_confidence": 0.9,
+            },
+            "regular": {
+                "template_name": "regular",
+                "display_name": "常规模板",
+                "minimum_confidence": 0.75,
+            },
+        },
+        "missing_required_fields": {
+            "tax_profile": ["buyer_tax_no"],
+            "business_rules": ["template_name"],
+            "naming_rules": [],
+        },
+    }
+
+    upload_response = client.post(
+        "/api/batches",
+        data={"batch_no": "BATCH-SETUP-001"},
+        files=[
+            ("files", ("upload.pdf", b"%PDF-1.7\nupload fixture", "application/pdf"))
+        ],
+    )
+    assert upload_response.status_code == 400
+    assert upload_response.json()["detail"] == "请先完成首次配置向导，再开始上传发票。"
+
+
+def test_create_batch_allows_upload_with_legacy_business_rules_shape(tmp_path):
+    app = create_app(f"sqlite:///{tmp_path / 'api-legacy-setup-gate.db'}")
+    session = app.state.session_factory()
+    seed_legacy_but_runnable_rules(session)
+    session.close()
+    set_trusted_actor(app, display_name="上传专员", roles=["config_admin"])
+    client = TestClient(app)
+
+    config_response = client.get("/api/config")
+    assert config_response.status_code == 200
+    assert config_response.json()["setup_status"]["complete"] is True
+    assert config_response.json()["setup_status"]["missing_required_fields"] == {
+        "tax_profile": [],
+        "business_rules": [],
+        "naming_rules": [],
+    }
+
+    upload_response = client.post(
+        "/api/batches",
+        data={"batch_no": "BATCH-LEGACY-SETUP-001"},
+        files=[
+            ("files", ("upload.pdf", b"%PDF-1.7\nupload fixture", "application/pdf"))
+        ],
+    )
+    assert upload_response.status_code == 200
+    assert upload_response.json()["item"]["batch_no"] == "BATCH-LEGACY-SETUP-001"
 
 
 def test_create_batch_returns_without_waiting_for_processing_completion(

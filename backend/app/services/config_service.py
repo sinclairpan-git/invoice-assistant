@@ -10,6 +10,23 @@ from backend.app.db.models import AuditLog, RuleVersion
 
 
 RULE_KINDS = ("tax_profile", "business_rules", "naming_rules")
+REQUIRED_SETUP_FIELDS = {
+    "tax_profile": ("buyer_name", "buyer_tax_no"),
+    "business_rules": ("template_name",),
+    "naming_rules": ("pattern",),
+}
+DEFAULT_BUSINESS_RULE_TEMPLATES = {
+    "conservative": {
+        "template_name": "conservative",
+        "display_name": "保守模板",
+        "minimum_confidence": 0.9,
+    },
+    "regular": {
+        "template_name": "regular",
+        "display_name": "常规模板",
+        "minimum_confidence": 0.75,
+    },
+}
 
 
 class ConfigService:
@@ -106,3 +123,48 @@ class ConfigService:
                 "change_reason": version.change_reason,
             }
         return snapshot
+
+    def get_setup_status(self) -> dict[str, object]:
+        missing_required_fields: dict[str, list[str]] = {}
+        for kind, required_fields in REQUIRED_SETUP_FIELDS.items():
+            version = self.get_latest_active(kind)
+            content = json.loads(version.content_json) if version is not None else {}
+            missing_required_fields[kind] = self._missing_required_fields(
+                kind=kind, content=content
+            )
+        return {
+            "complete": all(
+                not missing_fields
+                for missing_fields in missing_required_fields.values()
+            ),
+            "default_business_rule_templates": DEFAULT_BUSINESS_RULE_TEMPLATES,
+            "missing_required_fields": missing_required_fields,
+        }
+
+    @staticmethod
+    def _is_missing_required_value(value: object) -> bool:
+        if value is None:
+            return True
+        if isinstance(value, str):
+            return not value.strip()
+        return False
+
+    def _missing_required_fields(
+        self, *, kind: str, content: dict[str, object]
+    ) -> list[str]:
+        if kind == "business_rules":
+            has_template_name = not self._is_missing_required_value(
+                content.get("template_name")
+            )
+            has_legacy_minimum_confidence = not self._is_missing_required_value(
+                content.get("minimum_confidence")
+            )
+            if has_template_name or has_legacy_minimum_confidence:
+                return []
+            return ["template_name"]
+
+        return [
+            field_name
+            for field_name in REQUIRED_SETUP_FIELDS[kind]
+            if self._is_missing_required_value(content.get(field_name))
+        ]

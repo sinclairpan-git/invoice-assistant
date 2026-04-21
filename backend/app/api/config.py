@@ -39,6 +39,7 @@ def get_active_config(session: Session = Depends(get_session)) -> dict[str, obje
     return {
         "active_snapshot": service.get_active_snapshot(),
         "active_versions": active_versions,
+        "setup_status": service.get_setup_status(),
     }
 
 
