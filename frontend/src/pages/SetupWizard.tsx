@@ -1,4 +1,4 @@
-import { App, Button, Space, Spin, Typography } from "../app/antd";
+import { App, Spin, Typography } from "../app/antd";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -6,53 +6,10 @@ import { createInitialSetup, getActiveConfig, getErrorMessage } from "../app/api
 import type { ActiveConfigPayload, BusinessRuleTemplate } from "../app/types";
 import { SectionHeader } from "../components/common/SectionHeader";
 import {
-  BusinessRulesTemplateStep,
-  type BusinessRulesTemplateFormValues,
-} from "../components/settings/BusinessRulesTemplateStep";
-import { NamingRuleStep, type NamingRuleFormValues } from "../components/settings/NamingRuleStep";
-import { SetupSummaryStep } from "../components/settings/SetupSummaryStep";
-import { TaxProfileStep, type TaxProfileFormValues } from "../components/settings/TaxProfileStep";
-
-const STEP_TITLES = ["税务档案", "业务规则模板", "命名规则", "摘要确认"] as const;
-
-function parseMinimumConfidence(value: string): number | null {
-  const parsed = Number(value.trim());
-  if (!Number.isFinite(parsed) || Number.isNaN(parsed)) {
-    return null;
-  }
-  if (parsed < 0 || parsed > 1) {
-    return null;
-  }
-  return parsed;
-}
-
-function readTaxProfileDefaults(config: ActiveConfigPayload | null): TaxProfileFormValues {
-  const content = config?.active_snapshot.tax_profile?.content ?? {};
-  return {
-    companyName: typeof content.company_name === "string" ? content.company_name : "",
-    buyerName: typeof content.buyer_name === "string" ? content.buyer_name : "",
-    buyerTaxNo: typeof content.buyer_tax_no === "string" ? content.buyer_tax_no : "",
-  };
-}
-
-function readTemplateDefaults(config: ActiveConfigPayload | null, templates: BusinessRuleTemplate[]): BusinessRulesTemplateFormValues {
-  const content = config?.active_snapshot.business_rules?.content ?? {};
-  const currentTemplate = typeof content.template_name === "string" ? content.template_name : "";
-  return {
-    templateName: currentTemplate || templates[0]?.template_name || "",
-    minimumConfidence:
-      typeof content.minimum_confidence === "number"
-        ? content.minimum_confidence.toFixed(2)
-        : (templates[0]?.minimum_confidence?.toFixed(2) ?? "0.85"),
-  };
-}
-
-function readNamingDefaults(config: ActiveConfigPayload | null): NamingRuleFormValues {
-  const content = config?.active_snapshot.naming_rules?.content ?? {};
-  return {
-    pattern: typeof content.pattern === "string" ? content.pattern : "{{date}}-{{buyer}}-{{amount}}",
-  };
-}
+  ConfigFieldEditor,
+  buildConfigFieldDraft,
+  type ConfigFieldDraft,
+} from "../components/settings/ConfigFieldEditor";
 
 export function SetupWizard() {
   const { message } = App.useApp();
@@ -61,19 +18,6 @@ export function SetupWizard() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [config, setConfig] = useState<ActiveConfigPayload | null>(null);
-  const [stepIndex, setStepIndex] = useState(0);
-  const [taxProfile, setTaxProfile] = useState<TaxProfileFormValues>({
-    companyName: "",
-    buyerName: "",
-    buyerTaxNo: "",
-  });
-  const [businessRules, setBusinessRules] = useState<BusinessRulesTemplateFormValues>({
-    templateName: "",
-    minimumConfidence: "0.85",
-  });
-  const [namingRule, setNamingRule] = useState<NamingRuleFormValues>({
-    pattern: "{{date}}-{{buyer}}-{{amount}}",
-  });
 
   useEffect(() => {
     let disposed = false;
@@ -87,9 +31,6 @@ export function SetupWizard() {
         }
         const templates = Object.values(nextConfig.setup_status.default_business_rule_templates ?? {});
         setConfig(nextConfig);
-        setTaxProfile(readTaxProfileDefaults(nextConfig));
-        setBusinessRules(readTemplateDefaults(nextConfig, templates));
-        setNamingRule(readNamingDefaults(nextConfig));
         setError(null);
       } catch (loadError) {
         if (!disposed) {
@@ -108,23 +49,18 @@ export function SetupWizard() {
     };
   }, []);
 
-  const templates = useMemo(() => Object.values(config?.setup_status.default_business_rule_templates ?? {}), [config]);
-  const selectedTemplate = useMemo(
-    () => templates.find((item) => item.template_name === businessRules.templateName) ?? null,
-    [businessRules.templateName, templates],
+  const templates = useMemo(
+    () => Object.values(config?.setup_status.default_business_rule_templates ?? {}),
+    [config],
   );
+  const initialDraft = useMemo(() => buildConfigFieldDraft(config, templates), [config, templates]);
+  const setupAlreadyComplete = config?.setup_status.complete ?? false;
 
-  const goNext = () => setStepIndex((current) => Math.min(current + 1, STEP_TITLES.length - 1));
-  const goBack = () => setStepIndex((current) => Math.max(current - 1, 0));
-
-  const submitSetup = async () => {
+  const submitSetup = async (draft: ConfigFieldDraft) => {
+    const selectedTemplate =
+      templates.find((item) => item.template_name === draft.businessRules.templateName) ?? null;
     if (!selectedTemplate) {
       message.error("请先选择业务规则模板。");
-      return;
-    }
-    const minimumConfidence = parseMinimumConfidence(businessRules.minimumConfidence);
-    if (minimumConfidence === null) {
-      message.error("请输入 0 到 1 之间的数字");
       return;
     }
 
@@ -132,22 +68,22 @@ export function SetupWizard() {
     try {
       await createInitialSetup({
         taxProfile: {
-          company_name: taxProfile.companyName.trim(),
-          buyer_name: taxProfile.buyerName.trim(),
-          buyer_tax_no: taxProfile.buyerTaxNo.trim(),
+          company_name: draft.taxProfile.enterpriseName.trim(),
+          taxpayer_id: draft.taxProfile.taxpayerId.trim(),
+          address_phone: draft.taxProfile.addressPhone.trim(),
+          bank_account: draft.taxProfile.bankAccount.trim(),
         },
         businessRules: {
           ...selectedTemplate,
-          minimum_confidence: minimumConfidence,
         },
         namingRules: {
-          pattern: namingRule.pattern.trim(),
+          pattern: draft.namingRule.pattern.trim(),
         },
-        changeSummary: "首次配置",
-        changeReason: "首次配置向导",
+        changeSummary: setupAlreadyComplete ? "字段化调整当前配置" : "首次配置",
+        changeReason: setupAlreadyComplete ? "配置中心字段表单调整" : "首次配置向导",
       });
-      message.success("首次配置已完成");
-      navigate("/");
+      message.success(setupAlreadyComplete ? "配置已更新。" : "首次配置已完成。");
+      navigate(setupAlreadyComplete ? "/settings" : "/");
     } catch (submitError) {
       message.error(getErrorMessage(submitError));
     } finally {
@@ -158,86 +94,26 @@ export function SetupWizard() {
   return (
     <div className="page-stack">
       <section className="workspace-block">
-        <SectionHeader title="首次配置向导" subtitle="按顺序补齐税务档案、业务规则模板和命名规则，再一次性确认生效。" />
-        <Space direction="vertical" size={16} className="full-width">
-          <Space wrap>
-            {STEP_TITLES.map((title, index) => (
-              <Button key={title} type={index === stepIndex ? "primary" : "default"} disabled={index > stepIndex}>
-                {`${index + 1}. ${title}`}
-              </Button>
-            ))}
-          </Space>
+        <SectionHeader
+          title={setupAlreadyComplete ? "配置调整" : "首次配置向导"}
+          subtitle={
+            setupAlreadyComplete
+              ? "继续按字段调整税务档案、审核策略和命名规则，再一次性确认保存。"
+              : "按顺序补齐税务档案、业务规则模板和命名规则，再一次性确认生效。"
+          }
+        />
+        {loading ? <Spin tip="正在读取首次配置…" /> : null}
+        {error ? <Typography.Text type="danger">{error}</Typography.Text> : null}
 
-          {loading ? <Spin tip="正在读取首次配置…" /> : null}
-          {error ? <Typography.Text type="danger">{error}</Typography.Text> : null}
-
-          {!loading && !error ? (
-            <>
-              <Typography.Title level={5}>{STEP_TITLES[stepIndex]}</Typography.Title>
-
-              {stepIndex === 0 ? (
-                <TaxProfileStep
-                  initialValues={taxProfile}
-                  onSubmit={(values) => {
-                    setTaxProfile(values);
-                    goNext();
-                  }}
-                />
-              ) : null}
-
-              {stepIndex === 1 ? (
-                <BusinessRulesTemplateStep
-                  initialValues={businessRules}
-                  templates={templates}
-                  onSubmit={(values) => {
-                    setBusinessRules(values);
-                    goNext();
-                  }}
-                />
-              ) : null}
-
-              {stepIndex === 2 ? (
-                <NamingRuleStep
-                  initialValues={namingRule}
-                  onSubmit={(values) => {
-                    setNamingRule(values);
-                    goNext();
-                  }}
-                />
-              ) : null}
-
-              {stepIndex === 3 ? (
-                <SetupSummaryStep
-                  taxProfile={taxProfile}
-                  businessRules={businessRules}
-                  namingRule={namingRule}
-                  selectedTemplate={selectedTemplate}
-                />
-              ) : null}
-
-              <Space>
-                <Button onClick={goBack} disabled={stepIndex === 0 || saving}>
-                  上一步
-                </Button>
-                {stepIndex < STEP_TITLES.length - 1 ? (
-                  <Button
-                    type="primary"
-                    onClick={() => {
-                      const submitter = document.querySelector("form button[type='submit']") as HTMLButtonElement | null;
-                      submitter?.click();
-                    }}
-                  >
-                    下一步
-                  </Button>
-                ) : (
-                  <Button type="primary" loading={saving} onClick={() => void submitSetup()}>
-                    完成配置
-                  </Button>
-                )}
-              </Space>
-            </>
-          ) : null}
-        </Space>
+        {!loading && !error ? (
+          <ConfigFieldEditor
+            mode={setupAlreadyComplete ? "settings_edit" : "first_setup"}
+            initialDraft={initialDraft}
+            templates={templates}
+            saving={saving}
+            onSubmit={(draft) => void submitSetup(draft)}
+          />
+        ) : null}
       </section>
     </div>
   );

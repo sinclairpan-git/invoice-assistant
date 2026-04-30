@@ -3,12 +3,17 @@ import { useEffect, useState } from "react";
 
 import { createReviewAction, getErrorMessage } from "../../app/api";
 import { useOperatorSettings } from "../../app/operator-settings";
+import type { InvoiceSummary } from "../../app/types";
+import { getReviewStatusLabel, requiresManualReview } from "./resultPresentation";
 
 
 interface ReviewActionsProps {
   invoiceId: string;
-  displayStatus: string;
-  onSubmitted: () => Promise<void> | void;
+  processingStatus: string | null;
+  systemDecision: string | null;
+  duplicateFlag: boolean;
+  reviewStatus: string | null;
+  onSubmitted: (invoice: InvoiceSummary) => Promise<void> | void;
 }
 
 interface ReviewFormValues {
@@ -17,36 +22,58 @@ interface ReviewFormValues {
 }
 
 const ACTION_OPTIONS = [
-  { label: "人工确认通过", value: "approve" },
-  { label: "人工确认驳回", value: "reject" },
-  { label: "保持待复核", value: "keep_review_required" },
+  { label: "确认通过", value: "approve" },
+  { label: "确认驳回", value: "reject" },
+  { label: "暂不处理", value: "keep_review_required" },
 ];
 
-export function ReviewActions({ invoiceId, displayStatus, onSubmitted }: ReviewActionsProps) {
+export function ReviewActions({
+  invoiceId,
+  processingStatus,
+  systemDecision,
+  duplicateFlag,
+  reviewStatus,
+  onSubmitted,
+}: ReviewActionsProps) {
   const { message } = App.useApp();
   const { defaultOperatorName } = useOperatorSettings();
   const [form] = Form.useForm<ReviewFormValues>();
   const [submitting, setSubmitting] = useState(false);
-  const reviewable = displayStatus === "待复核" || displayStatus === "疑似重复";
+  const reviewable = requiresManualReview({
+    processingStatus,
+    systemDecision,
+    duplicateFlag,
+    reviewStatus,
+  });
 
   useEffect(() => {
     form.setFieldValue("reviewAction", "approve");
   }, [form]);
 
   if (!reviewable) {
-    return <Typography.Text type="secondary">当前票据无需人工复核。</Typography.Text>;
+    return (
+      <Typography.Text type="secondary">
+        {`当前票据${getReviewStatusLabel({
+          processingStatus,
+          systemDecision,
+          duplicateFlag,
+          reviewStatus,
+        })}。`}
+      </Typography.Text>
+    );
   }
 
   const handleSubmit = async (values: ReviewFormValues) => {
     setSubmitting(true);
     try {
-      await createReviewAction({
+      const result = await createReviewAction({
         invoiceId,
         reviewAction: values.reviewAction,
         reviewNote: values.reviewNote,
       });
-      message.success("复核动作已记录");
-      await onSubmitted();
+      message.success("人工确认已记录，结果会自动刷新。");
+      form.setFieldValue("reviewNote", "");
+      await onSubmitted(result.invoice);
     } catch (error) {
       message.error(getErrorMessage(error));
     } finally {
@@ -61,11 +88,12 @@ export function ReviewActions({ invoiceId, displayStatus, onSubmitted }: ReviewA
         <Select options={ACTION_OPTIONS} />
       </Form.Item>
       <Form.Item<ReviewFormValues> label="备注" name="reviewNote">
-        <Input.TextArea rows={4} placeholder="记录人工复核依据" />
+        <Input.TextArea rows={4} placeholder="记录人工确认依据" />
       </Form.Item>
+      <Typography.Text type="secondary">提交后会立即刷新当前票据和批次结果。</Typography.Text>
       <Space>
         <Button type="primary" htmlType="submit" loading={submitting}>
-          提交复核
+          提交确认
         </Button>
       </Space>
     </Form>

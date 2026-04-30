@@ -14,11 +14,18 @@ from backend.app.db.models import (
     FieldCheck,
     InvoiceRecord,
     ReviewAction,
+    ReviewQueueItem,
     RuleVersion,
 )
+from backend.app.services.review_queue_service import REVIEW_QUEUE_REASON_LABELS
 from backend.app.services.compliance_service import serialize_invoice_compliance
 from backend.app.services.progress_service import BatchProgressSnapshot
-from backend.app.services.status_service import derive_display_status
+from backend.app.services.status_service import (
+    derive_business_bucket,
+    derive_business_bucket_label,
+    derive_display_status,
+    derive_stable_status,
+)
 
 
 def _json_load(value: str, fallback: Any) -> Any:
@@ -102,6 +109,7 @@ def serialize_batch(
         "suggested_pass_total_amount": _serialize_scalar(
             batch.suggested_pass_total_amount
         ),
+        "config_bundle_version_no": batch.config_bundle_version_no,
         "export_manifest_path": batch.export_manifest_path,
         "invoice_file_count": len(batch.invoices),
         "attachment_file_count": len(batch.attachment_documents),
@@ -132,10 +140,25 @@ def serialize_export_job(job: ExportJob) -> dict[str, object]:
 
 
 def serialize_invoice_summary(invoice: InvoiceRecord) -> dict[str, object]:
+    stable_status = derive_stable_status(
+        processing_status=invoice.processing_status,
+        system_decision=invoice.system_decision,
+        duplicate_flag=invoice.duplicate_flag,
+        review_status=invoice.review_status,
+        archive_status=invoice.archive_status,
+        artifact_status=invoice.artifact_status,
+    )
+    business_bucket = derive_business_bucket(
+        processing_status=stable_status.processing_status,
+        system_decision=invoice.system_decision,
+        duplicate_flag=invoice.duplicate_flag,
+        review_status=stable_status.review_status,
+    )
     display_status = derive_display_status(
         processing_status=invoice.processing_status,
         system_decision=invoice.system_decision,
         duplicate_flag=invoice.duplicate_flag,
+        review_status=invoice.review_status,
     )
     payload = {
         "id": invoice.id,
@@ -156,10 +179,14 @@ def serialize_invoice_summary(invoice: InvoiceRecord) -> dict[str, object]:
         "system_decision": invoice.system_decision,
         "review_status": invoice.review_status,
         "artifact_status": invoice.artifact_status,
+        "archive_status": stable_status.archive_status,
+        "stable_status": stable_status.to_dict(),
         "duplicate_flag": invoice.duplicate_flag,
         "duplicate_group_key": invoice.duplicate_group_key,
         "risk_flags": _json_load(invoice.risk_flags, []),
         "display_status": display_status,
+        "business_bucket": business_bucket,
+        "business_bucket_label": derive_business_bucket_label(business_bucket),
         "problem_count": invoice.problem_count,
         "failure_reason": invoice.failure_reason,
         "preview_path": invoice.storage_path_renamed or invoice.storage_path_original,
@@ -188,6 +215,7 @@ def serialize_invoice_detail(invoice: InvoiceRecord) -> dict[str, object]:
     payload["review_actions"] = [
         serialize_review_action(item) for item in invoice.review_actions
     ]
+    payload["review_queue_item"] = serialize_review_queue_item(invoice.review_queue_item)
     return payload
 
 
@@ -250,11 +278,32 @@ def serialize_review_action(action: ReviewAction) -> dict[str, object]:
     }
 
 
+def serialize_review_queue_item(item: ReviewQueueItem | None) -> dict[str, object] | None:
+    if item is None:
+        return None
+    return {
+        "id": item.id,
+        "batch_id": item.batch_id,
+        "invoice_id": item.invoice_id,
+        "queue_status": item.queue_status,
+        "queue_reason": item.queue_reason,
+        "queue_reason_label": REVIEW_QUEUE_REASON_LABELS.get(
+            item.queue_reason, item.queue_reason
+        ),
+        "version_no": item.version_no,
+        "opened_at": _serialize_scalar(item.opened_at),
+        "updated_at": _serialize_scalar(item.updated_at),
+        "closed_at": _serialize_scalar(item.closed_at),
+        "closed_reason": item.closed_reason,
+    }
+
+
 def serialize_rule_version(version: RuleVersion) -> dict[str, object]:
     return {
         "id": version.id,
         "kind": version.kind,
         "version_no": version.version_no,
+        "bundle_version_no": version.bundle_version_no,
         "content": _json_load(version.content_json, {}),
         "is_active": version.is_active,
         "change_summary": version.change_summary,

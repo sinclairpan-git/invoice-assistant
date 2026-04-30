@@ -57,7 +57,7 @@ export const appRoutes: RouteObject[] = [
       {
         path: "setup",
         element: withRouteSuspense(<SetupWizard />),
-        handle: { title: "首次配置" },
+        handle: { title: "配置向导" },
       },
     ],
   },

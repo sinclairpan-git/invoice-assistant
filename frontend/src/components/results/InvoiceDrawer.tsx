@@ -1,10 +1,22 @@
 import { Alert, App, Button, Descriptions, Drawer, List, Space, Table, Tabs, Tag, Typography } from "../../app/antd";
 import { useCallback, useEffect, useState } from "react";
 
-import { createInvoiceRetry, getErrorMessage, getInvoiceDetail, getInvoicePreviewUrl } from "../../app/api";
-import type { ExtractedField, FieldCheck, InvoiceDetail } from "../../app/types";
+import {
+  createInvoiceRetry,
+  getErrorMessage,
+  getInvoiceDetail,
+  getInvoicePreviewUrl,
+  getInvoiceOriginalPreviewUrl,
+} from "../../app/api";
+import type { ExtractedField, FieldCheck, InvoiceDetail, InvoiceSummary } from "../../app/types";
 import { AsyncBoundary } from "../common/AsyncBoundary";
 import { ReviewActions } from "./ReviewActions";
+import {
+  getResultStatusColor,
+  getResultStatusLabel,
+  getReviewStatusColor,
+  getReviewStatusLabel,
+} from "./resultPresentation";
 
 
 interface InvoiceDrawerProps {
@@ -74,16 +86,20 @@ const fieldCheckColumns = [
 ];
 
 function renderStatusTag(status: string) {
-  if (status.includes("通过")) {
-    return <Tag color="green">{status}</Tag>;
+  return <Tag color={getResultStatusColor(status)}>{getResultStatusLabel(status)}</Tag>;
+}
+
+function getEvidenceSourceLabel(sourceType: string | null | undefined): string {
+  if (sourceType === "ocr") {
+    return "图片识别";
   }
-  if (status.includes("驳回") || status.includes("失败")) {
-    return <Tag color="red">{status}</Tag>;
+  if (sourceType === "text") {
+    return "文本提取";
   }
-  if (status.includes("重复")) {
-    return <Tag color="volcano">{status}</Tag>;
+  if (sourceType === "pdf") {
+    return "PDF 解析";
   }
-  return <Tag color="gold">{status}</Tag>;
+  return "识别片段";
 }
 
 export function InvoiceDrawer({ invoiceId, open, onClose, onChanged }: InvoiceDrawerProps) {
@@ -125,8 +141,21 @@ export function InvoiceDrawer({ invoiceId, open, onClose, onChanged }: InvoiceDr
           <div className="drawer-body">
             <Space wrap className="status-row">
               {renderStatusTag(invoice.display_status)}
-              <Tag>{invoice.review_status || "未复核"}</Tag>
-              {invoice.duplicate_flag ? <Tag color="volcano">疑似重复</Tag> : null}
+              <Tag
+                color={getReviewStatusColor({
+                  processingStatus: invoice.processing_status,
+                  systemDecision: invoice.system_decision,
+                  duplicateFlag: invoice.duplicate_flag,
+                  reviewStatus: invoice.review_status,
+                })}
+              >
+                {getReviewStatusLabel({
+                  processingStatus: invoice.processing_status,
+                  systemDecision: invoice.system_decision,
+                  duplicateFlag: invoice.duplicate_flag,
+                  reviewStatus: invoice.review_status,
+                })}
+              </Tag>
             </Space>
             <Descriptions bordered size="small" column={2} className="description-block">
               <Descriptions.Item label="原文件名">{invoice.original_filename}</Descriptions.Item>
@@ -138,26 +167,24 @@ export function InvoiceDrawer({ invoiceId, open, onClose, onChanged }: InvoiceDr
               <Descriptions.Item label="发票号码">{invoice.invoice_number || "--"}</Descriptions.Item>
               <Descriptions.Item label="问题数">{invoice.problem_count}</Descriptions.Item>
             </Descriptions>
-            <Descriptions bordered size="small" column={2} className="description-block">
-              <Descriptions.Item label="基础合规">{invoice.basic_compliance_status || "--"}</Descriptions.Item>
-              <Descriptions.Item label="业务风险分类">{invoice.business_compliance_status || "--"}</Descriptions.Item>
-              <Descriptions.Item label="最终结论">{invoice.final_decision || "--"}</Descriptions.Item>
+            <Descriptions bordered size="small" column={1} className="description-block">
+              <Descriptions.Item label="处理结论">{getResultStatusLabel(invoice.display_status)}</Descriptions.Item>
+              <Descriptions.Item
+                label="人工确认"
+              >
+                {getReviewStatusLabel({
+                  processingStatus: invoice.processing_status,
+                  systemDecision: invoice.system_decision,
+                  duplicateFlag: invoice.duplicate_flag,
+                  reviewStatus: invoice.review_status,
+                })}
+              </Descriptions.Item>
               <Descriptions.Item label="建议动作">
                 {invoice.suggested_actions.length > 0 ? invoice.suggested_actions.join("，") : "--"}
               </Descriptions.Item>
-              <Descriptions.Item label="结论原因" span={2}>
+              <Descriptions.Item label="结论原因">
                 {invoice.decision_reasons.length > 0 ? invoice.decision_reasons.join("，") : "--"}
               </Descriptions.Item>
-            </Descriptions>
-            <Descriptions bordered size="small" column={2} className="description-block">
-              <Descriptions.Item label="解析来源">{invoice.parse_source || "--"}</Descriptions.Item>
-              <Descriptions.Item label="失败阶段">{invoice.last_error_stage || "--"}</Descriptions.Item>
-              <Descriptions.Item label="错误码">{invoice.last_error_code || "--"}</Descriptions.Item>
-              <Descriptions.Item label="可重试">{invoice.retryable ? "是" : "否"}</Descriptions.Item>
-              <Descriptions.Item label="Provider">{invoice.provider_diagnostic.provider_name || "--"}</Descriptions.Item>
-              <Descriptions.Item label="Provider 版本">{invoice.provider_diagnostic.provider_version || "--"}</Descriptions.Item>
-              <Descriptions.Item label="Provider 错误">{invoice.provider_diagnostic.provider_error_code || "--"}</Descriptions.Item>
-              <Descriptions.Item label="失败信息">{invoice.last_error_message || invoice.failure_reason || "--"}</Descriptions.Item>
             </Descriptions>
             {(invoice.attachments ?? []).length > 0 ? (
               <List
@@ -206,18 +233,25 @@ export function InvoiceDrawer({ invoiceId, open, onClose, onChanged }: InvoiceDr
                   key: "preview",
                   label: "PDF 预览",
                   children: (
-                    <div className="preview-frame">
-                      {invoice.preview_path ? (
-                        <iframe src={getInvoicePreviewUrl(invoice.id)} title={invoice.original_filename} className="pdf-preview" />
-                      ) : (
-                        <Alert type="warning" showIcon message="当前记录没有可预览的文件路径" />
-                      )}
-                    </div>
+                    <Space direction="vertical" size="middle" className="full-width">
+                      <Space>
+                        <Button onClick={() => window.open(getInvoiceOriginalPreviewUrl(invoice.id), "_blank", "noopener,noreferrer")}>
+                          打开原始 PDF
+                        </Button>
+                      </Space>
+                      <div className="preview-frame">
+                        {invoice.preview_path ? (
+                          <iframe src={getInvoicePreviewUrl(invoice.id)} title={invoice.original_filename} className="pdf-preview" />
+                        ) : (
+                          <Alert type="warning" showIcon message="当前记录没有可预览的文件路径" />
+                        )}
+                      </div>
+                    </Space>
                   ),
                 },
                 {
                   key: "evidence",
-                  label: "字段与证据",
+                  label: "识别字段",
                   children: (
                     <Space direction="vertical" size="large" className="full-width">
                       <Table
@@ -234,7 +268,7 @@ export function InvoiceDrawer({ invoiceId, open, onClose, onChanged }: InvoiceDr
                         renderItem={(item) => (
                           <List.Item>
                             <Space direction="vertical" size={4} className="full-width">
-                              <Typography.Text strong>{`${item.provider_name || "parser"} / ${item.source_type}`}</Typography.Text>
+                              <Typography.Text strong>{`识别来源：${getEvidenceSourceLabel(item.source_type)}`}</Typography.Text>
                               <Typography.Paragraph className="evidence-text" ellipsis={{ rows: 4, expandable: true }}>
                                 {item.raw_text || "无原始文本"}
                               </Typography.Paragraph>
@@ -250,6 +284,10 @@ export function InvoiceDrawer({ invoiceId, open, onClose, onChanged }: InvoiceDr
                   label: "校验依据",
                   children: (
                     <Space direction="vertical" size="large" className="full-width">
+                      <Descriptions bordered size="small" column={2}>
+                        <Descriptions.Item label="基础校验">{invoice.basic_compliance_status || "--"}</Descriptions.Item>
+                        <Descriptions.Item label="业务风险分类">{invoice.business_compliance_status || "--"}</Descriptions.Item>
+                      </Descriptions>
                       <Table
                         rowKey="id"
                         columns={fieldCheckColumns}
@@ -257,36 +295,58 @@ export function InvoiceDrawer({ invoiceId, open, onClose, onChanged }: InvoiceDr
                         size="small"
                         pagination={false}
                       />
-                      <Descriptions bordered size="small" column={1}>
-                        <Descriptions.Item label="风险依据">
-                          {invoice.risk_flags.length > 0 ? invoice.risk_flags.join("，") : "无风险标记"}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="疑似重复依据">
-                          {invoice.duplicate_group_key || "未命中重复组"}
-                        </Descriptions.Item>
-                        <Descriptions.Item label="失败原因">{invoice.failure_reason || "无"}</Descriptions.Item>
-                      </Descriptions>
                     </Space>
                   ),
                 },
                 {
+                  key: "advanced",
+                  label: "高级诊断",
+                  children: (
+                    <Descriptions bordered size="small" column={2}>
+                      <Descriptions.Item label="解析来源">{invoice.parse_source || "--"}</Descriptions.Item>
+                      <Descriptions.Item label="失败阶段">{invoice.last_error_stage || "--"}</Descriptions.Item>
+                      <Descriptions.Item label="错误码">{invoice.last_error_code || "--"}</Descriptions.Item>
+                      <Descriptions.Item label="可重试">{invoice.retryable ? "是" : "否"}</Descriptions.Item>
+                      <Descriptions.Item label="Provider">{invoice.provider_diagnostic.provider_name || "--"}</Descriptions.Item>
+                      <Descriptions.Item label="Provider 版本">{invoice.provider_diagnostic.provider_version || "--"}</Descriptions.Item>
+                      <Descriptions.Item label="Provider 错误">{invoice.provider_diagnostic.provider_error_code || "--"}</Descriptions.Item>
+                      <Descriptions.Item label="失败信息">{invoice.last_error_message || invoice.failure_reason || "--"}</Descriptions.Item>
+                      <Descriptions.Item label="系统标记">
+                        {invoice.risk_flags.length > 0 ? invoice.risk_flags.join("，") : "--"}
+                      </Descriptions.Item>
+                      <Descriptions.Item label="重复识别键">{invoice.duplicate_group_key || "--"}</Descriptions.Item>
+                    </Descriptions>
+                  ),
+                },
+                {
                   key: "review",
-                  label: "人工复核",
+                  label: "人工确认",
                   children: (
                     <Space direction="vertical" size="large" className="full-width">
                       <ReviewActions
                         invoiceId={invoice.id}
-                        displayStatus={invoice.display_status}
-                        onSubmitted={async () => {
-                          await loadInvoice();
+                        processingStatus={invoice.processing_status}
+                        systemDecision={invoice.system_decision}
+                        duplicateFlag={invoice.duplicate_flag}
+                        reviewStatus={invoice.review_status}
+                        onSubmitted={async (updatedInvoice: InvoiceSummary) => {
+                          setInvoice((current) =>
+                            current && current.id === updatedInvoice.id
+                              ? {
+                                  ...current,
+                                  ...updatedInvoice,
+                                }
+                              : current,
+                          );
                           await onChanged();
+                          await loadInvoice();
                         }}
                       />
                       <List
-                        header="复核留痕"
+                        header="确认留痕"
                         bordered
                         dataSource={invoice.review_actions}
-                        locale={{ emptyText: "暂无人工复核记录" }}
+                        locale={{ emptyText: "暂无人工确认记录" }}
                         renderItem={(item) => (
                           <List.Item>
                             <Space direction="vertical" size={2}>

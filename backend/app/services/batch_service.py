@@ -47,6 +47,7 @@ class BatchService:
         batch_number = batch_no or self._generate_batch_no()
         self._assert_batch_import_is_allowed(batch_number=batch_number, files=files)
         snapshot = self.config_service.get_active_snapshot()
+        active_bundle = self.config_service.get_active_bundle()
         invoice_file_count = sum(
             0 if self._looks_like_attachment(item.filename) else 1 for item in files
         )
@@ -63,6 +64,12 @@ class BatchService:
                 snapshot, "business_rules"
             ),
             naming_rule_version_id=self._snapshot_version_id(snapshot, "naming_rules"),
+            config_bundle_version_no=(
+                str(active_bundle["bundle_version_no"])
+                if active_bundle is not None
+                and active_bundle.get("bundle_version_no") is not None
+                else None
+            ),
             snapshot_json=json.dumps(snapshot, sort_keys=True),
         )
 
@@ -92,6 +99,7 @@ class BatchService:
                         processing_status="queued",
                         review_status="not_reviewed",
                         artifact_status="original_only",
+                        archive_status="not_ready",
                     )
                     self.session.add(invoice)
 

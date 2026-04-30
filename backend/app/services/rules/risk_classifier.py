@@ -148,9 +148,9 @@ def classify_risk(
         )
 
     return RiskClassificationResult(
-        decision="review_required",
-        reasons=["No whitelist rule matched; defaulting to manual review."],
-        risk_flags=["no_whitelist_match"],
+        decision="suggested_pass",
+        reasons=["No explicit risk rule matched; defaulting to pass."],
+        risk_flags=[],
         matched_rules=[],
     )
 

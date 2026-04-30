@@ -1,4 +1,6 @@
-import { Button, Form, Input, Typography } from "../../app/antd";
+import { Button, Form, Select, Typography } from "../../app/antd";
+
+import { describeNamingPattern, getNamingPatternDescription, getNamingPatternOptions } from "./configPresentation";
 
 export interface NamingRuleFormValues {
   pattern: string;
@@ -11,14 +13,16 @@ interface NamingRuleStepProps {
 
 export function NamingRuleStep({ initialValues, onSubmit }: NamingRuleStepProps) {
   const [form] = Form.useForm<NamingRuleFormValues>();
+  const selectedPattern = Form.useWatch("pattern", form) ?? initialValues.pattern;
 
   return (
     <Form form={form} layout="vertical" initialValues={initialValues} onFinish={onSubmit}>
       <Typography.Text type="secondary">这一步会影响归档文件名与后续人工检索。</Typography.Text>
-      <Form.Item<NamingRuleFormValues> label="文件命名规则" name="pattern" rules={[{ required: true, message: "请填写文件命名规则" }]}>
-        <Input maxLength={120} />
+      <Form.Item<NamingRuleFormValues> label="归档命名方式" name="pattern" rules={[{ required: true, message: "请选择归档命名方式" }]}>
+        <Select options={getNamingPatternOptions(initialValues.pattern)} />
       </Form.Item>
-      <Typography.Text type="secondary">建议把日期、购方、金额等关键字段放进规则，便于后续查找与复核。</Typography.Text>
+      <Typography.Text>{`当前命名方式：${describeNamingPattern(selectedPattern)}`}</Typography.Text>
+      <Typography.Text type="secondary">{getNamingPatternDescription(selectedPattern)}</Typography.Text>
       <Button htmlType="submit" style={{ display: "none" }}>
         提交
       </Button>

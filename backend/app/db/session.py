@@ -16,6 +16,7 @@ DEFAULT_DATABASE_URL = f"sqlite:///{DEFAULT_SQLITE_PATH}"
 
 SQLITE_ADDITIVE_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
     "batches": (
+        ("config_bundle_version_no", "config_bundle_version_no VARCHAR(32)"),
         ("active_job_id", "active_job_id VARCHAR(36)"),
         ("last_recovered_at", "last_recovered_at DATETIME"),
         ("last_stage_code", "last_stage_code VARCHAR(64)"),
@@ -29,6 +30,10 @@ SQLITE_ADDITIVE_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
         ("last_error_code", "last_error_code VARCHAR(64)"),
         ("last_error_message", "last_error_message TEXT"),
         ("retryable", "retryable BOOLEAN NOT NULL DEFAULT 0"),
+        ("archive_status", "archive_status VARCHAR(32) NOT NULL DEFAULT 'not_ready'"),
+    ),
+    "rule_versions": (
+        ("bundle_version_no", "bundle_version_no VARCHAR(32)"),
     ),
     "document_evidence": (("attempt_id", "attempt_id VARCHAR(36)"),),
     "extracted_fields": (("attempt_id", "attempt_id VARCHAR(36)"),),
@@ -36,7 +41,9 @@ SQLITE_ADDITIVE_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
 }
 
 SQLITE_INDEX_DDLS = (
+    "CREATE INDEX IF NOT EXISTS ix_batches_config_bundle_version_no ON batches (config_bundle_version_no)",
     "CREATE INDEX IF NOT EXISTS ix_batches_active_job_id ON batches (active_job_id)",
+    "CREATE INDEX IF NOT EXISTS ix_rule_versions_bundle_version_no ON rule_versions (bundle_version_no)",
     "CREATE INDEX IF NOT EXISTS ix_invoice_records_last_attempt_id ON invoice_records (last_attempt_id)",
     "CREATE INDEX IF NOT EXISTS ix_document_evidence_attempt_id ON document_evidence (attempt_id)",
     "CREATE INDEX IF NOT EXISTS ix_extracted_fields_attempt_id ON extracted_fields (attempt_id)",

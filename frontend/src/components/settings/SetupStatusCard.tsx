@@ -1,6 +1,7 @@
 import { Alert, Button, Space, Tag, Typography } from "../../app/antd";
 
 import type { ActiveConfigPayload, BusinessRuleTemplate } from "../../app/types";
+import { describeNamingPattern } from "./configPresentation";
 
 interface SetupStatusCardProps {
   config: ActiveConfigPayload | null;
@@ -13,10 +14,21 @@ interface SetupStatusCardProps {
 
 function resolveTaxProfileSummary(config: ActiveConfigPayload | null): string {
   const content = config?.active_snapshot.tax_profile?.content ?? {};
-  const buyerName = typeof content.buyer_name === "string" ? content.buyer_name : null;
-  const buyerTaxNo = typeof content.buyer_tax_no === "string" ? content.buyer_tax_no : null;
-  if (buyerName && buyerTaxNo) {
-    return `${buyerName} / ${buyerTaxNo}`;
+  const enterpriseName =
+    typeof content.company_name === "string"
+      ? content.company_name
+      : typeof content.buyer_name === "string"
+        ? content.buyer_name
+        : null;
+  const taxpayerId =
+    typeof content.taxpayer_id === "string"
+      ? content.taxpayer_id
+      : typeof content.buyer_tax_no === "string"
+        ? content.buyer_tax_no
+        : null;
+
+  if (enterpriseName && taxpayerId) {
+    return `${enterpriseName} / ${taxpayerId}`;
   }
   return "待填写";
 }
@@ -31,7 +43,7 @@ function resolveTemplateSummary(config: ActiveConfigPayload | null): string {
 function resolveNamingSummary(config: ActiveConfigPayload | null): string {
   const content = config?.active_snapshot.naming_rules?.content ?? {};
   const pattern = typeof content.pattern === "string" ? content.pattern : null;
-  return pattern ?? "待填写";
+  return describeNamingPattern(pattern);
 }
 
 function resolveMissingLabels(config: ActiveConfigPayload | null): string[] {
@@ -92,7 +104,9 @@ export function SetupStatusCard({
         <div className="section-header">
           <div>
             <Typography.Title level={4}>当前公司配置</Typography.Title>
-            <Typography.Text type="secondary">首次配置完成后，这份摘要会持续作为当前公司的运行基线。</Typography.Text>
+            <Typography.Text type="secondary">
+              首次配置完成后，这份摘要会持续作为当前公司的运行基线。
+            </Typography.Text>
           </div>
           <Tag color={unknown ? "red" : complete ? "green" : "gold"}>
             {unknown ? "配置状态未知" : complete ? "首次配置已完成" : "首次配置未完成"}

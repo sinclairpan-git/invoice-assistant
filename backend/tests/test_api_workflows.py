@@ -31,25 +31,12 @@ from backend.app.services.status_service import (
 
 def seed_active_rules(session) -> dict[str, dict[str, object] | None]:
     service = ConfigService(session)
-    service.create_version(
-        kind="tax_profile",
-        content={"buyer_name": "Shanghai Example Co", "buyer_tax_no": "91310000X"},
-        changed_by="fin-admin",
-        change_summary="seed tax profile",
-        change_reason="test fixture",
-    )
-    service.create_version(
-        kind="business_rules",
-        content={"template_name": "regular", "minimum_confidence": 0.75},
+    service.create_initial_setup(
+        tax_profile={"buyer_name": "Shanghai Example Co", "buyer_tax_no": "91310000X"},
+        business_rules={"template_name": "regular", "minimum_confidence": 0.75},
+        naming_rules={"pattern": "{date}_{amount}_{number}"},
         changed_by="ops-admin",
-        change_summary="seed business rules",
-        change_reason="test fixture",
-    )
-    service.create_version(
-        kind="naming_rules",
-        content={"pattern": "{date}_{amount}_{number}"},
-        changed_by="ops-admin",
-        change_summary="seed naming rules",
+        change_summary="seed initial setup",
         change_reason="test fixture",
     )
     return service.get_active_snapshot()
@@ -108,10 +95,16 @@ def seed_legacy_but_runnable_rules(session) -> None:
 def seed_batch_fixture(app):
     session = app.state.session_factory()
     snapshot = seed_active_rules(session)
+    active_bundle = ConfigService(session).get_active_bundle()
 
     batch = Batch(
         batch_no="BATCH-API-001",
         created_by="tester",
+        config_bundle_version_no=(
+            str(active_bundle["bundle_version_no"])
+            if active_bundle is not None
+            else None
+        ),
         snapshot_json=json.dumps(snapshot, ensure_ascii=False, sort_keys=True),
     )
     session.add(batch)
@@ -637,6 +630,7 @@ def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_pat
     assert batch_item["suggested_pass_total_amount"] == "100.00"
     assert batch_item["attachment_file_count"] == 2
     assert batch_item["attachment_status_counts"] == {"consumed": 1, "unmatched": 1}
+    assert batch_item["config_bundle_version_no"] == "b1"
     assert batch_item["progress"]["stage_code"] == "completed"
     assert batch_item["progress"]["suggested_pass_total_amount"] == "100.00"
 
@@ -662,6 +656,8 @@ def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_pat
         "count": 1,
         "total_amount": "100.00",
     }
+    assert filtered_payload["action_summary"]["suggested_pass"]["count"] == 1
+    assert filtered_payload["action_summary"]["batch_duplicate"]["count"] == 1
 
     invoice_detail_response = client.get(
         f"/api/invoices/{fixture['review_invoice_id']}"
@@ -683,6 +679,21 @@ def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_pat
     assert len(invoice_detail["evidence_items"]) == 1
     assert len(invoice_detail["field_checks"]) == 1
     assert invoice_detail["risk_flags"] == ["suspected_duplicate"]
+    assert invoice_detail["stable_status"] == {
+        "processing_status": "completed",
+        "review_status": "pending",
+        "archive_status": "not_ready",
+    }
+    assert invoice_detail["business_bucket"] == "batch_duplicate"
+
+    review_queue_response = client.get(
+        "/api/review-queue", params={"batch_id": fixture["batch_id"]}
+    )
+    assert review_queue_response.status_code == 200
+    review_queue_payload = review_queue_response.json()
+    assert len(review_queue_payload["items"]) == 1
+    assert review_queue_payload["items"][0]["invoice_id"] == fixture["review_invoice_id"]
+    assert review_queue_payload["items"][0]["queue_reason"] == "duplicate_review"
 
     review_response = client.post(
         f"/api/invoices/{fixture['review_invoice_id']}/review-actions",
@@ -697,6 +708,10 @@ def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_pat
     assert review_payload["item"]["review_action"] == "approve"
     assert review_payload["invoice"]["review_status"] == "manually_approved"
     assert review_payload["invoice"]["system_decision"] == "review_required"
+    assert review_payload["invoice"]["display_status"] == DISPLAY_STATUS_PASS
+    assert review_payload["invoice"]["archive_status"] == "ready_to_save"
+    assert review_payload["batch_action_summary"]["suggested_pass"]["count"] == 2
+    assert review_payload["review_queue_item"]["queue_status"] == "closed"
 
     invalid_review_response = client.post(
         f"/api/invoices/{fixture['review_invoice_id']}/review-actions",
@@ -725,6 +740,8 @@ def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_pat
         config_payload["active_snapshot"]["tax_profile"]["content"]["buyer_tax_no"]
         == "91310000X"
     )
+    assert config_payload["active_bundle"]["bundle_version_no"] == "b1"
+    assert config_payload["active_bundle"]["profile"]["buyer_tax_no"] == "91310000X"
     assert config_payload["setup_status"] == {
         "complete": True,
         "default_business_rule_templates": {
@@ -761,11 +778,13 @@ def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_pat
     )
     assert create_version_response.status_code == 200
     assert create_version_response.json()["item"]["version_no"] == "v2"
+    assert create_version_response.json()["bundle"]["bundle_version_no"] == "b2"
 
     versions_response = client.get("/api/config/tax_profile/versions")
     assert versions_response.status_code == 200
     versions = versions_response.json()["items"]
     assert [item["version_no"] for item in versions] == ["v2", "v1"]
+    assert versions[0]["bundle_version_no"] == "b2"
 
     upload_response = client.post(
         "/api/batches",
@@ -795,6 +814,57 @@ def test_batch_and_invoice_api_workflows_cover_summary_detail_and_review(tmp_pat
         preview_response = client.get(f"/api/invoices/{uploaded_invoice.id}/preview")
         assert preview_response.status_code == 200
         assert preview_response.headers["content-type"].startswith("application/pdf")
+        rendered_preview_response = client.get(
+            f"/api/invoices/{uploaded_invoice.id}/preview-rendered"
+        )
+        assert rendered_preview_response.status_code == 200
+        assert rendered_preview_response.headers["content-type"].startswith("text/html")
+    finally:
+        session.close()
+
+
+def test_download_endpoint_streams_archive_without_persisting_export_job(tmp_path):
+    app = create_app(f"sqlite:///{tmp_path / 'api-download.db'}")
+    fixture = seed_batch_fixture(app)
+    set_trusted_actor(app, display_name="导出专员", roles=["exporter"])
+
+    storage_root = Path(app.state.storage_root)
+    pass_original = storage_root.parent / "storage" / "originals" / "BATCH-API-001" / "pass.pdf"
+    pass_renamed = storage_root.parent / "storage" / "renamed" / "BATCH-API-001" / "20260417_100.00_PASS.pdf"
+    duplicate_original = storage_root.parent / "storage" / "originals" / "BATCH-API-001" / "duplicate.pdf"
+    pass_original.parent.mkdir(parents=True, exist_ok=True)
+    pass_renamed.parent.mkdir(parents=True, exist_ok=True)
+    duplicate_original.parent.mkdir(parents=True, exist_ok=True)
+    pass_original.write_bytes(b"%PDF-1.7\npass fixture")
+    pass_renamed.write_bytes(b"%PDF-1.7\nrenamed pass fixture")
+    duplicate_original.write_bytes(b"%PDF-1.7\nduplicate fixture")
+
+    client = TestClient(app)
+
+    response = client.post(
+        f"/api/batches/{fixture['batch_id']}/downloads",
+        json={
+            "download_format": "zip",
+            "selection_mode": "filtered",
+            "display_status": DISPLAY_STATUS_PASS,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert response.headers["x-invoice-assistant-filename"].endswith(".zip")
+    assert len(response.content) > 0
+
+    session = app.state.session_factory()
+    try:
+        saved_invoice = session.scalar(
+            select(InvoiceRecord).where(
+                InvoiceRecord.batch_id == fixture["batch_id"],
+                InvoiceRecord.original_filename == "pass.pdf",
+            )
+        )
+        assert saved_invoice is not None
+        assert saved_invoice.archive_status == "saved"
     finally:
         session.close()
 
@@ -824,7 +894,7 @@ def test_create_batch_rejects_upload_until_setup_is_complete(tmp_path):
             },
         },
         "missing_required_fields": {
-            "tax_profile": ["buyer_tax_no"],
+            "tax_profile": ["taxpayer_id"],
             "business_rules": ["template_name"],
             "naming_rules": [],
         },
@@ -870,14 +940,20 @@ def test_initial_setup_endpoint_persists_three_active_versions_atomically(tmp_pa
     payload = response.json()
     assert payload["items"]["business_rules"]["content"]["minimum_confidence"] == 0.82
     assert payload["setup_status"]["complete"] is True
+    assert payload["bundle"]["bundle_version_no"] == "b1"
 
     config_response = client.get("/api/config")
     assert config_response.status_code == 200
     config_payload = config_response.json()
     assert config_payload["setup_status"]["complete"] is True
+    assert config_payload["active_bundle"]["bundle_version_no"] == "b1"
     assert config_payload["active_snapshot"]["naming_rules"]["content"]["pattern"] == (
         "{date}_{amount}_{number}"
     )
+
+    bundles_response = client.get("/api/config/bundles/versions")
+    assert bundles_response.status_code == 200
+    assert bundles_response.json()["items"][0]["bundle_version_no"] == "b1"
 
 
 def test_initial_setup_endpoint_rejects_invalid_minimum_confidence_without_partial_state(

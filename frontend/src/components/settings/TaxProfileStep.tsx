@@ -1,9 +1,10 @@
 import { Button, Form, Input, Typography } from "../../app/antd";
 
 export interface TaxProfileFormValues {
-  companyName: string;
-  buyerName: string;
-  buyerTaxNo: string;
+  enterpriseName: string;
+  taxpayerId: string;
+  addressPhone: string;
+  bankAccount: string;
 }
 
 interface TaxProfileStepProps {
@@ -19,19 +20,37 @@ export function TaxProfileStep({ initialValues, onSubmit }: TaxProfileStepProps)
       <Form.Item>
         <Typography.Text type="secondary">这一步会影响购方抬头、税号匹配以及基础合规判断。</Typography.Text>
       </Form.Item>
-      <Form.Item<TaxProfileFormValues> label="公司名称" name="companyName" rules={[{ required: true, message: "请填写公司名称" }]}>
-        <Input maxLength={120} />
-      </Form.Item>
-      <Form.Item<TaxProfileFormValues> label="购方名称" name="buyerName" rules={[{ required: true, message: "请填写购方名称" }]}>
-        <Input maxLength={120} />
-      </Form.Item>
+
       <Form.Item<TaxProfileFormValues>
-        label="购方税号"
-        name="buyerTaxNo"
-        rules={[{ required: true, message: "请填写购方税号" }]}
+        label="企业名称"
+        name="enterpriseName"
+        rules={[{ required: true, message: "请填写企业名称" }]}
+      >
+        <Input maxLength={120} />
+      </Form.Item>
+
+      <Form.Item<TaxProfileFormValues>
+        label="纳税人识别号（税号）"
+        name="taxpayerId"
+        rules={[{ required: true, message: "请填写纳税人识别号（税号）" }]}
       >
         <Input maxLength={32} />
       </Form.Item>
+
+      <Form.Item<TaxProfileFormValues>
+        label="地址电话"
+        name="addressPhone"
+      >
+        <Input maxLength={200} />
+      </Form.Item>
+
+      <Form.Item<TaxProfileFormValues>
+        label="开户行及帐号"
+        name="bankAccount"
+      >
+        <Input maxLength={200} />
+      </Form.Item>
+
       <Button htmlType="submit" style={{ display: "none" }}>
         提交
       </Button>

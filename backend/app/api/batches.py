@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -32,6 +33,13 @@ def get_storage_root(request: Request) -> Path:
 class ExportRequest(BaseModel):
     export_type: str
     created_by: str | None = None
+
+
+class DownloadRequest(BaseModel):
+    download_format: str
+    selection_mode: str = "all"
+    display_status: str | None = None
+    invoice_ids: list[str] | None = None
 
 
 @router.get("")
@@ -172,6 +180,60 @@ def create_export(
             "summary": result.summary,
         }
     }
+
+
+@router.post("/{batch_id}/downloads")
+def create_download(
+    batch_id: str,
+    payload: DownloadRequest,
+    request: Request,
+    session: Session = Depends(get_session),
+    trusted_actor=Depends(get_trusted_actor),
+) -> Response:
+    actor = trusted_actor
+    assert_actor_has_role(
+        session=session,
+        actor=actor,
+        required_role="exporter",
+        entity_type="export_job",
+        entity_id=batch_id,
+        denied_action="download_denied",
+        denied_detail="当前操作者缺少 exporter 角色。",
+        change_summary=f"download_format={payload.download_format}",
+        change_reason="missing exporter role",
+        payload={
+            "batch_id": batch_id,
+            "download_format": payload.download_format,
+            "selection_mode": payload.selection_mode,
+            "display_status": payload.display_status,
+            "invoice_ids": payload.invoice_ids or [],
+        },
+    )
+    service = ExportService(session, storage_root=get_storage_root(request))
+    try:
+        result = service.build_download(
+            batch_id=batch_id,
+            download_format=payload.download_format,
+            created_by=actor.display_name,
+            actor_roles=actor.roles,
+            selection_mode=payload.selection_mode,
+            display_status=payload.display_status,
+            invoice_ids=payload.invoice_ids,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    headers = {
+        "Content-Disposition": f'attachment; filename="{result.filename}"',
+        "X-Invoice-Assistant-Filename": result.filename,
+    }
+    return Response(
+        content=result.content,
+        media_type=result.media_type,
+        headers=headers,
+    )
 
 
 @router.post("/{batch_id}/retry-failures")

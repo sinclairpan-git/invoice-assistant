@@ -25,25 +25,12 @@ def build_session(tmp_path):
 
 
 def seed_active_rules(config_service: ConfigService) -> None:
-    config_service.create_version(
-        kind="tax_profile",
-        content={"mode": "standard"},
+    config_service.create_initial_setup(
+        tax_profile={"mode": "standard"},
+        business_rules={"allow_personal": False},
+        naming_rules={"pattern": "{date}_{number}"},
         changed_by="tester",
-        change_summary="seed tax profile",
-        change_reason="test fixture",
-    )
-    config_service.create_version(
-        kind="business_rules",
-        content={"allow_personal": False},
-        changed_by="tester",
-        change_summary="seed business rules",
-        change_reason="test fixture",
-    )
-    config_service.create_version(
-        kind="naming_rules",
-        content={"pattern": "{date}_{number}"},
-        changed_by="tester",
-        change_summary="seed naming rules",
+        change_summary="seed active rules",
         change_reason="test fixture",
     )
 
