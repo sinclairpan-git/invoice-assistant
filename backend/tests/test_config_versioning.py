@@ -80,21 +80,21 @@ def test_batch_creation_binds_latest_active_rule_versions(tmp_path):
         change_summary="initial tax profile",
         change_reason="bootstrap",
     )
-    latest_tax = config_service.create_version(
+    config_service.create_version(
         kind="tax_profile",
         content={"rate": "9%"},
         changed_by="fin-admin",
         change_summary="promote tax profile",
         change_reason="policy update",
     )
-    latest_business = config_service.create_version(
+    config_service.create_version(
         kind="business_rules",
         content={"require_buyer_tax_no": True},
         changed_by="ops-admin",
         change_summary="enable buyer tax check",
         change_reason="tighten validation",
     )
-    latest_naming = config_service.create_version(
+    config_service.create_version(
         kind="naming_rules",
         content={"pattern": "{seller}_{date}_{amount}"},
         changed_by="ops-admin",
