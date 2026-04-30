@@ -828,6 +828,15 @@ def test_download_endpoint_streams_archive_without_persisting_export_job(tmp_pat
     fixture = seed_batch_fixture(app)
     set_trusted_actor(app, display_name="导出专员", roles=["exporter"])
 
+    session = app.state.session_factory()
+    try:
+        batch = session.get(Batch, fixture["batch_id"])
+        assert batch is not None
+        batch.batch_no = "中文批次-001"
+        session.commit()
+    finally:
+        session.close()
+
     storage_root = Path(app.state.storage_root)
     pass_original = storage_root.parent / "storage" / "originals" / "BATCH-API-001" / "pass.pdf"
     pass_renamed = storage_root.parent / "storage" / "renamed" / "BATCH-API-001" / "20260417_100.00_PASS.pdf"
@@ -852,7 +861,10 @@ def test_download_endpoint_streams_archive_without_persisting_export_job(tmp_pat
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/zip"
+    assert response.headers["x-invoice-assistant-filename"].isascii()
     assert response.headers["x-invoice-assistant-filename"].endswith(".zip")
+    assert response.headers["content-disposition"].isascii()
+    assert "filename*=UTF-8''" in response.headers["content-disposition"]
     assert len(response.content) > 0
 
     session = app.state.session_factory()

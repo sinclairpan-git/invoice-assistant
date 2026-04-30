@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
@@ -24,6 +25,25 @@ from backend.app.services.storage_service import StorageError, StorageService
 
 
 router = APIRouter(prefix="/api/batches", tags=["batches"])
+
+
+def _ascii_download_filename(filename: str) -> str:
+    suffix = Path(filename).suffix
+    if suffix and suffix.isascii():
+        return f"invoice-assistant-download{suffix}"
+    return "invoice-assistant-download"
+
+
+def _download_response_headers(filename: str) -> dict[str, str]:
+    encoded_filename = quote(filename, safe="")
+    fallback_filename = _ascii_download_filename(filename)
+    return {
+        "Content-Disposition": (
+            f'attachment; filename="{fallback_filename}"; '
+            f"filename*=UTF-8''{encoded_filename}"
+        ),
+        "X-Invoice-Assistant-Filename": encoded_filename,
+    }
 
 
 def get_storage_root(request: Request) -> Path:
@@ -225,14 +245,10 @@ def create_download(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    headers = {
-        "Content-Disposition": f'attachment; filename="{result.filename}"',
-        "X-Invoice-Assistant-Filename": result.filename,
-    }
     return Response(
         content=result.content,
         media_type=result.media_type,
-        headers=headers,
+        headers=_download_response_headers(result.filename),
     )
 
 

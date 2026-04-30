@@ -35,6 +35,20 @@ const DISPLAY_STATUS_LABELS: Record<string, string> = Object.fromEntries(
 
 const TERMINAL_PROCESSING_STATUSES = new Set(["completed", "processing_failed", "failed"]);
 const FAILED_PROCESSING_STATUSES = new Set(["processing_failed", "failed"]);
+const APPROVED_REVIEW_STATUSES = new Set(["manually_approved", "approved"]);
+const REJECTED_REVIEW_STATUSES = new Set(["manually_rejected", "rejected"]);
+
+function isApprovedReviewStatus(reviewStatus: string | null | undefined): boolean {
+  return reviewStatus ? APPROVED_REVIEW_STATUSES.has(reviewStatus) : false;
+}
+
+function isRejectedReviewStatus(reviewStatus: string | null | undefined): boolean {
+  return reviewStatus ? REJECTED_REVIEW_STATUSES.has(reviewStatus) : false;
+}
+
+function isTerminalReviewStatus(reviewStatus: string | null | undefined): boolean {
+  return isApprovedReviewStatus(reviewStatus) || isRejectedReviewStatus(reviewStatus);
+}
 
 export function toDisplayStatusFilter(value: ResultFilterValue): string | undefined {
   if (value === "all") {
@@ -104,7 +118,7 @@ export function requiresManualReview(params: {
   duplicateFlag: boolean;
   reviewStatus: string | null | undefined;
 }): boolean {
-  if (params.reviewStatus === "manually_approved" || params.reviewStatus === "manually_rejected") {
+  if (isTerminalReviewStatus(params.reviewStatus)) {
     return false;
   }
   if (isInvoiceProcessing(params.processingStatus) || isInvoiceFailed(params.processingStatus)) {
@@ -119,10 +133,10 @@ export function getReviewStatusLabel(params: {
   duplicateFlag: boolean;
   reviewStatus: string | null | undefined;
 }): string {
-  if (params.reviewStatus === "manually_approved") {
+  if (isApprovedReviewStatus(params.reviewStatus)) {
     return "已人工确认通过";
   }
-  if (params.reviewStatus === "manually_rejected") {
+  if (isRejectedReviewStatus(params.reviewStatus)) {
     return "已人工确认驳回";
   }
   if (requiresManualReview(params)) {
@@ -137,10 +151,10 @@ export function getReviewStatusColor(params: {
   duplicateFlag: boolean;
   reviewStatus: string | null | undefined;
 }): string {
-  if (params.reviewStatus === "manually_approved") {
+  if (isApprovedReviewStatus(params.reviewStatus)) {
     return "green";
   }
-  if (params.reviewStatus === "manually_rejected") {
+  if (isRejectedReviewStatus(params.reviewStatus)) {
     return "red";
   }
   if (requiresManualReview(params)) {

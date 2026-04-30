@@ -59,8 +59,23 @@ async function requestBlob(input: string, init?: RequestInit): Promise<{
   const blob = await response.blob();
   const filenameHeader = response.headers.get("X-Invoice-Assistant-Filename");
   const disposition = response.headers.get("Content-Disposition");
-  const filenameMatch = disposition?.match(/filename="?([^"]+)"?$/i);
-  const filename = filenameHeader || filenameMatch?.[1] || "invoice-assistant-download";
+  const encodedFilenameMatch = disposition?.match(/filename\*=UTF-8''([^;]+)/i);
+  const fallbackFilenameMatch = disposition?.match(/filename="?([^";]+)"?/i);
+  const decodeHeaderFilename = (value: string | null | undefined): string | undefined => {
+    if (!value) {
+      return undefined;
+    }
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  };
+  const filename =
+    decodeHeaderFilename(filenameHeader) ||
+    decodeHeaderFilename(encodedFilenameMatch?.[1]) ||
+    fallbackFilenameMatch?.[1] ||
+    "invoice-assistant-download";
   return {
     blob,
     filename,
