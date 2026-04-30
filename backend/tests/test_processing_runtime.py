@@ -13,6 +13,7 @@ from backend.app.db.models import AttachmentDocument, Batch, InvoiceRecord
 from backend.app.main import create_app
 from backend.app.services.config_service import ConfigService
 from backend.app.services.export_service import ExportService
+from backend.app.services.parsing.providers import ProviderExtractionPayload
 from backend.app.services.processing_service import ProcessingService
 from backend.app.services.status_service import DISPLAY_STATUS_REVIEW
 
@@ -156,6 +157,151 @@ def test_parse_document_uses_real_pdf_text_provider_for_electronic_fixture(tmp_p
     assert parsed.evidence.best_candidate("invoice_number").value == "STD-001"
     assert parsed.evidence.best_candidate("buyer_name").value == "Shanghai Example Co"
     assert parsed.metadata["parse_mode"] == "text"
+
+
+def test_generic_invoice_parser_recognizes_chinese_taxpayer_id_with_spaced_digits(tmp_path):
+    app = create_app(f"sqlite:///{tmp_path / 'runtime-cn-tax.db'}")
+    session = app.state.session_factory()
+    try:
+        service = ProcessingService(session, storage_root=app.state.storage_root)
+        evidence = service._build_generic_evidence(
+            ProviderExtractionPayload(
+                source_type="text",
+                provider_name="pypdf",
+                provider_version="test",
+                raw_text=(
+                    "电子发票（普通发票）\n"
+                    "发票号码：264520000045732706\n"
+                    "开票日期：2026年03月23日\n"
+                    "购买方信息\n"
+                    "名称：深信服科技股份有限公司\n"
+                    "统一社会信用代码/纳税人识别号：9 1 4 4 0 3 0 0 7 2 6 1 7 1 7 7 3 F\n"
+                    "销售方信息\n"
+                    "名称：广西融安广飞农业发展有限公司\n"
+                    "价税合计（小写）¥62.80\n"
+                ),
+                base_confidence=0.94,
+            )
+        )
+    finally:
+        session.close()
+
+    assert evidence.best_candidate("buyer_name").normalized_value == "深信服科技股份有限公司"
+    assert evidence.best_candidate("buyer_tax_no").normalized_value == "91440300726171773F"
+    assert evidence.best_candidate("invoice_number").normalized_value == "264520000045732706"
+    assert evidence.best_candidate("invoice_date").normalized_value == "2026-03-23"
+    assert evidence.best_candidate("invoice_amount").normalized_value == "62.80"
+
+
+def test_generic_invoice_parser_handles_pypdf_value_sequence_after_detached_labels(tmp_path):
+    app = create_app(f"sqlite:///{tmp_path / 'runtime-pypdf-sequence.db'}")
+    session = app.state.session_factory()
+    try:
+        service = ProcessingService(session, storage_root=app.state.storage_root)
+        evidence = service._build_generic_evidence(
+            ProviderExtractionPayload(
+                source_type="text",
+                provider_name="pypdf",
+                provider_version="test",
+                raw_text=(
+                    "电子发票（普通发票） 发票号码： 开票日期： 销 售 方 信 息 "
+                    "统一社会信用代码/纳税人识别号： 名称：购 买 方 信 息 "
+                    "统一社会信用代码/纳税人识别号： 名称： "
+                    "26312000001380601186 2026年03月07日 深信服科技股份有限公司 "
+                    "91440300726171773F 上海稀宇科技有限公司 91310112MAC60L7E01 "
+                    "项目名称 规格型号 单 位 数 量 单 价 金 额 税率/征收率 税 额 "
+                    "*信息系统增值服务*信息 项 1 924.5283018867925 924.53 6% 55.47 "
+                    "技术服务 价税合计（大写） 合 计 （小写） 备 注 开票人： "
+                    "玖佰捌拾圆整 ¥980.00 戴佳佛 924.53¥ 55.47¥ "
+                    "购买方地址:-; 电话:-; 购方开户银行:-; 银行账号:-; "
+                    "销售方地址:上海市徐汇区虹漕路25-1号2楼; 电话:021-60702590;"
+                ),
+                base_confidence=0.94,
+            )
+        )
+    finally:
+        session.close()
+
+    assert evidence.best_candidate("invoice_number").normalized_value == "26312000001380601186"
+    assert evidence.best_candidate("invoice_date").normalized_value == "2026-03-07"
+    assert evidence.best_candidate("buyer_name").normalized_value == "深信服科技股份有限公司"
+    assert evidence.best_candidate("buyer_tax_no").normalized_value == "91440300726171773F"
+    assert evidence.best_candidate("seller_name").normalized_value == "上海稀宇科技有限公司"
+    assert evidence.best_candidate("invoice_amount").normalized_value == "980.00"
+
+
+def test_generic_invoice_parser_does_not_take_invoice_number_as_amount(tmp_path):
+    app = create_app(f"sqlite:///{tmp_path / 'runtime-cn-amount-anchor.db'}")
+    session = app.state.session_factory()
+    try:
+        service = ProcessingService(session, storage_root=app.state.storage_root)
+        evidence = service._build_generic_evidence(
+            ProviderExtractionPayload(
+                source_type="text",
+                provider_name="pypdf",
+                provider_version="test",
+                raw_text=(
+                    "\u7535\u5b50\u53d1\u7968\uff08\u666e\u901a\u53d1\u7968\uff09\n"
+                    "\u53d1\u7968\u53f7\u7801\uff1a26952000001347837952\n"
+                    "\u5f00\u7968\u65e5\u671f\uff1a2026\u5e744\u670817\u65e5\n"
+                    "\u8d2d\u4e70\u65b9\u4fe1\u606f\n"
+                    "\u540d\u79f0\uff1a\u6df1\u5733\u4f8b\u5b50\u79d1\u6280\u6709\u9650\u516c\u53f8\n"
+                    "\u7edf\u4e00\u793e\u4f1a\u4fe1\u7528\u4ee3\u7801/\u7eb3\u7a0e\u4eba\u8bc6\u522b\u53f7\uff1a91440300726171773F\n"
+                    "\u9500\u552e\u65b9\u4fe1\u606f\n"
+                    "\u540d\u79f0\uff1a\u4e0a\u6d77\u4f8b\u5b50\u670d\u52a1\u6709\u9650\u516c\u53f8\n"
+                    "\u4ef7\u7a0e\u5408\u8ba1\n"
+                    "\u5f00\u7968\u4eba\uff1a\u5f20\u4e09\n"
+                    "\u53d1\u7968\u53f7\u7801\uff1a26952000001347837952\n"
+                    "\uff08\u5c0f\u5199\uff09 \uffe5829.00\n"
+                ),
+                base_confidence=0.94,
+            )
+        )
+    finally:
+        session.close()
+
+    amount_candidate = evidence.best_candidate("invoice_amount")
+    assert amount_candidate.normalized_value == "829.00"
+    assert amount_candidate.source_fragment is not None
+    assert "26952000001347837952" not in amount_candidate.source_fragment
+
+
+def test_generic_invoice_parser_rejects_detached_invoice_number_prefix_as_amount(tmp_path):
+    app = create_app(f"sqlite:///{tmp_path / 'runtime-cn-amount-detached.db'}")
+    session = app.state.session_factory()
+    try:
+        service = ProcessingService(session, storage_root=app.state.storage_root)
+        evidence = service._build_generic_evidence(
+            ProviderExtractionPayload(
+                source_type="text",
+                provider_name="pypdf",
+                provider_version="test",
+                raw_text=(
+                    "\u7535\u5b50\u53d1\u7968\uff08\u666e\u901a\u53d1\u7968\uff09\n"
+                    "\u53d1\u7968\u53f7\u7801\uff1a26952000001347836896\n"
+                    "\u5f00\u7968\u65e5\u671f\uff1a2026\u5e744\u67082\u65e5\n"
+                    "\u8d2d\u4e70\u65b9\u4fe1\u606f\n"
+                    "\u540d\u79f0\uff1a\u6df1\u4fe1\u670d\u79d1\u6280\u80a1\u4efd\u6709\u9650\u516c\u53f8\n"
+                    "\u7edf\u4e00\u793e\u4f1a\u4fe1\u7528\u4ee3\u7801/\u7eb3\u7a0e\u4eba\u8bc6\u522b\u53f7\uff1a91440300726171773F\n"
+                    "\u9500\u552e\u65b9\u4fe1\u606f\n"
+                    "\u540d\u79f0\uff1a\u6df1\u5733\u5e02\u5357\u515c\u8bb0\u9910\u996e\u7ba1\u7406\u6709\u9650\u516c\u53f8\n"
+                    "\u4ef7\u7a0e\u5408\u8ba1\uff08\u5927\u5199\uff09 \uff08\u5c0f\u5199\uff09\n"
+                    "\u5907\n"
+                    "\u6ce8\n"
+                    "\u5f00\u7968\u4eba\uff1a\n"
+                    "26952000001347836896\n"
+                    "\uffe5829.00\n"
+                ),
+                base_confidence=0.94,
+            )
+        )
+    finally:
+        session.close()
+
+    amount_candidate = evidence.best_candidate("invoice_amount")
+    assert amount_candidate.normalized_value == "829.00"
+    assert amount_candidate.source_fragment is not None
+    assert "26952000001347836896" not in amount_candidate.source_fragment
 
 
 def test_parse_document_forces_local_ocr_for_scanned_fixture(tmp_path):

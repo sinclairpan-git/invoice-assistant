@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import tomllib
 from datetime import UTC, datetime
@@ -12,6 +13,7 @@ DOC_FILENAMES = ("用户指引.html", "README-技术维护.md")
 REQUIRED_ROOT_FILES = ("启动发票助手.bat", "停止发票助手.bat")
 BACKEND_RUNTIME_FILES = ("__init__.py", "pyproject.toml")
 BACKEND_RUNTIME_DIRS = ("app",)
+BATCH_FILE_SUFFIXES = {".bat", ".cmd"}
 
 
 def build_portable_bundle(
@@ -91,6 +93,9 @@ def _copy_required_file(source: Path, destination: Path) -> None:
     if not source.is_file():
         raise FileNotFoundError(f"Missing required file: {source}")
     destination.parent.mkdir(parents=True, exist_ok=True)
+    if source.suffix.lower() in BATCH_FILE_SUFFIXES:
+        _copy_batch_file(source, destination)
+        return
     shutil.copy2(source, destination)
 
 
@@ -99,6 +104,16 @@ def _copy_optional_file(source: Path, destination: Path) -> None:
         return
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, destination)
+
+
+def _copy_batch_file(source: Path, destination: Path) -> None:
+    content = source.read_bytes().decode("utf-8")
+    try:
+        content.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise ValueError(f"Batch launcher must stay ASCII-only: {source}") from exc
+    normalized = re.sub(r"\r+\n", "\n", content).replace("\r", "\n").replace("\n", "\r\n")
+    destination.write_bytes(normalized.encode("ascii"))
 
 
 def _copy_backend_runtime_tree(source_root: Path, destination_root: Path) -> None:

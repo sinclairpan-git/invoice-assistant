@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from logging import Logger
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Literal
 from xml.sax.saxutils import escape
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -24,12 +27,14 @@ from backend.app.services.compliance_service import (
     build_invoice_compliance_summary,
     summarize_archiveable_pass,
 )
+from backend.app.services.progress_service import ProgressService
 from backend.app.services.status_service import derive_display_status
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_STORAGE_ROOT = PROJECT_ROOT / "storage"
 SUPPORTED_EXPORT_TYPES = {"suggested_pass_zip", "issue_zip", "excel_manifest"}
+SUPPORTED_DOWNLOAD_FORMATS = {"zip", "excel_manifest"}
 TERMINAL_BATCH_STATUSES = {"completed", "completed_with_failures", "failed"}
 ATTACHMENT_STATUS_LABELS = {
     "pending_match": "待匹配",
@@ -47,6 +52,14 @@ class ExportResult:
     export_type: str
     status: str
     output_path: str
+    summary: dict[str, object]
+
+
+@dataclass(frozen=True)
+class DownloadResult:
+    filename: str
+    media_type: str
+    content: bytes
     summary: dict[str, object]
 
 
@@ -82,6 +95,8 @@ class ExportService:
             .where(InvoiceRecord.batch_id == batch_id)
             .order_by(InvoiceRecord.original_filename.asc())
         ).all()
+        ProgressService(self.session).refresh_batch(batch_id, persist=True)
+        self.session.refresh(batch)
 
         gate_failure = self._validate_export_gate(
             batch=batch, invoices=invoices, export_type=export_type
@@ -236,6 +251,116 @@ class ExportService:
             )
             raise
 
+    def build_download(
+        self,
+        *,
+        batch_id: str,
+        download_format: Literal["zip", "excel_manifest"],
+        created_by: str,
+        actor_roles: tuple[str, ...] | list[str] = (),
+        selection_mode: Literal["all", "filtered", "selected"] = "all",
+        display_status: str | None = None,
+        invoice_ids: list[str] | None = None,
+    ) -> DownloadResult:
+        if download_format not in SUPPORTED_DOWNLOAD_FORMATS:
+            raise ValueError(f"Unsupported download format: {download_format!r}")
+
+        batch = self.session.get(Batch, batch_id)
+        if batch is None:
+            raise LookupError(f"Batch {batch_id!r} not found.")
+
+        invoices = self.session.scalars(
+            select(InvoiceRecord)
+            .where(InvoiceRecord.batch_id == batch_id)
+            .order_by(InvoiceRecord.original_filename.asc())
+        ).all()
+        ProgressService(self.session).refresh_batch(batch_id, persist=True)
+        self.session.refresh(batch)
+
+        gate_failure = self._validate_download_gate(batch=batch, invoices=invoices)
+        if gate_failure is not None:
+            self._record_audit(
+                entity_id=batch.id,
+                action="download_denied",
+                changed_by=created_by,
+                change_summary=f"download_format={download_format}",
+                change_reason=gate_failure,
+                payload=self._with_actor_roles(
+                    actor_roles,
+                    {
+                        "batch_id": batch.id,
+                        "download_format": download_format,
+                        "selection_mode": selection_mode,
+                        "display_status": display_status,
+                        "invoice_ids": invoice_ids or [],
+                        "gate": {"allowed": False, "reasons": [gate_failure]},
+                    },
+                ),
+            )
+            self.session.commit()
+            raise ValueError(self._download_gate_failure_message(gate_failure))
+
+        selected_invoices = self._select_download_invoices(
+            invoices=invoices,
+            selection_mode=selection_mode,
+            display_status=display_status,
+            invoice_ids=invoice_ids or [],
+        )
+        if not selected_invoices:
+            raise ValueError("No invoices matched the requested download scope.")
+
+        timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
+        filename_scope = self._download_scope_label(
+            selection_mode=selection_mode, display_status=display_status
+        )
+        if download_format == "zip":
+            content = self._render_zip_bytes(invoices=selected_invoices)
+            filename = f"{batch.batch_no}_{filename_scope}_{timestamp}.zip"
+            media_type = "application/zip"
+        else:
+            content = self._render_excel_manifest_bytes(
+                batch=batch, invoices=selected_invoices
+            )
+            filename = f"{batch.batch_no}_{filename_scope}_{timestamp}.xlsx"
+            media_type = (
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+        summary = self._build_download_summary(
+            download_format=download_format,
+            selected_invoices=selected_invoices,
+        )
+        if download_format == "zip":
+            for invoice in selected_invoices:
+                invoice.archive_status = "saved"
+        self._record_audit(
+            entity_id=batch.id,
+            action="download_completed",
+            changed_by=created_by,
+            change_summary=f"download_format={download_format}",
+            change_reason="download generated in-memory",
+            payload=self._with_actor_roles(
+                actor_roles,
+                {
+                    "batch_id": batch.id,
+                    "download_format": download_format,
+                    "selection_mode": selection_mode,
+                    "display_status": display_status,
+                    "invoice_ids": [invoice.id for invoice in selected_invoices],
+                    "filename": filename,
+                    "summary": summary,
+                    "gate": {"allowed": True, "reasons": []},
+                },
+            ),
+        )
+        self.session.commit()
+        return DownloadResult(
+            filename=filename,
+            media_type=media_type,
+            content=content,
+            summary=summary,
+        )
+
     @staticmethod
     def _select_invoices(
         *, export_type: str, invoices: list[InvoiceRecord]
@@ -251,6 +376,31 @@ class ExportService:
                 invoice
                 for invoice in invoices
                 if not build_invoice_compliance_summary(invoice).archiveable_pass
+            ]
+        return invoices
+
+    @staticmethod
+    def _select_download_invoices(
+        *,
+        invoices: list[InvoiceRecord],
+        selection_mode: Literal["all", "filtered", "selected"],
+        display_status: str | None,
+        invoice_ids: list[str],
+    ) -> list[InvoiceRecord]:
+        if selection_mode == "selected":
+            wanted_ids = set(invoice_ids)
+            return [invoice for invoice in invoices if invoice.id in wanted_ids]
+        if selection_mode == "filtered" and display_status:
+            return [
+                invoice
+                for invoice in invoices
+                if derive_display_status(
+                    processing_status=invoice.processing_status,
+                    system_decision=invoice.system_decision,
+                    duplicate_flag=invoice.duplicate_flag,
+                    review_status=invoice.review_status,
+                )
+                == display_status
             ]
         return invoices
 
@@ -284,12 +434,49 @@ class ExportService:
             "suggested_pass_total_amount": f"{batch_summary.total_amount:.2f}",
         }
 
+    @staticmethod
+    def _build_download_summary(
+        *,
+        download_format: Literal["zip", "excel_manifest"],
+        selected_invoices: list[InvoiceRecord],
+    ) -> dict[str, object]:
+        summary = summarize_archiveable_pass(selected_invoices)
+        payload: dict[str, object] = {
+            "record_count": len(selected_invoices),
+            "suggested_pass_count": summary.count,
+            "suggested_pass_total_amount": f"{summary.total_amount:.2f}",
+        }
+        if download_format == "zip":
+            total_amount = Decimal("0.00")
+            for invoice in selected_invoices:
+                if invoice.invoice_amount is not None:
+                    total_amount += Decimal(str(invoice.invoice_amount))
+            payload["total_amount"] = f"{total_amount.quantize(Decimal('0.01')):.2f}"
+        return payload
+
     def _write_zip(self, output_file: Path, *, invoices: list[InvoiceRecord]) -> None:
         with ZipFile(output_file, "w", compression=ZIP_DEFLATED) as archive:
             for invoice in invoices:
                 source_path = self._resolve_source_path(invoice)
                 archive_name = invoice.renamed_filename or invoice.original_filename
                 archive.write(source_path, arcname=archive_name)
+
+    def _render_zip_bytes(self, *, invoices: list[InvoiceRecord]) -> bytes:
+        buffer = BytesIO()
+        with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
+            for invoice in invoices:
+                source_path = self._resolve_source_path(invoice)
+                archive_name = invoice.renamed_filename or invoice.original_filename
+                archive.write(source_path, arcname=archive_name)
+        return buffer.getvalue()
+
+    def _render_excel_manifest_bytes(
+        self, *, batch: Batch, invoices: list[InvoiceRecord]
+    ) -> bytes:
+        with TemporaryDirectory(prefix="invoice-assistant-manifest-") as temp_dir:
+            output_file = Path(temp_dir) / "manifest.xlsx"
+            self._write_excel_manifest(output_file, batch=batch, invoices=invoices)
+            return output_file.read_bytes()
 
     def _write_excel_manifest(
         self, output_file: Path, *, batch: Batch, invoices: list[InvoiceRecord]
@@ -333,6 +520,7 @@ class ExportService:
                 processing_status=invoice.processing_status,
                 system_decision=invoice.system_decision,
                 duplicate_flag=invoice.duplicate_flag,
+                review_status=invoice.review_status,
             )
             compliance = build_invoice_compliance_summary(invoice)
             attachments = attachments_by_invoice.get(invoice.id, [])
@@ -577,6 +765,19 @@ class ExportService:
 
         return None
 
+    def _validate_download_gate(
+        self, *, batch: Batch, invoices: list[InvoiceRecord]
+    ) -> str | None:
+        is_terminal = (
+            batch.status in TERMINAL_BATCH_STATUSES
+            and batch.total_files > 0
+            and batch.processing_files == 0
+            and batch.completed_files + batch.failed_files == batch.total_files
+        )
+        if not is_terminal:
+            return "batch_not_terminal"
+        return None
+
     @staticmethod
     def _gate_failure_message(*, export_type: str, gate_failure: str) -> str:
         if gate_failure == "batch_not_terminal":
@@ -587,6 +788,32 @@ class ExportService:
         ):
             return "当前批次仍有待复核票据，无法导出建议通过 ZIP。"
         return "当前导出请求未通过门槛校验。"
+
+    @staticmethod
+    def _download_gate_failure_message(gate_failure: str) -> str:
+        if gate_failure == "batch_not_terminal":
+            return "当前批次尚未处理完成，请等待结果稳定后再另存为。"
+        return "当前另存为请求未通过状态校验。"
+
+    @staticmethod
+    def _download_scope_label(
+        *,
+        selection_mode: Literal["all", "filtered", "selected"],
+        display_status: str | None,
+    ) -> str:
+        status_aliases = {
+            "处理中": "processing",
+            "系统建议通过": "pass",
+            "系统建议驳回": "reject",
+            "待复核": "review",
+            "疑似重复": "duplicate",
+            "处理失败": "failed",
+        }
+        if selection_mode == "selected":
+            return "selected"
+        if selection_mode == "filtered" and display_status:
+            return status_aliases.get(display_status, "filtered")
+        return "all"
 
     def _record_audit(
         self,

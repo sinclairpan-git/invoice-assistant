@@ -1,16 +1,31 @@
-import { App, Button, Select, Space, Statistic, Tag, Typography } from "../app/antd";
+import { App, Button, Progress, Select, Space, Statistic, Tag, Typography } from "../app/antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { createBatchRetry, createExport, getBatch, getErrorMessage, listBatchInvoices, listBatches, openRuntimePath } from "../app/api";
+import { createBatchRetry, downloadBatchFile, getBatch, getErrorMessage, listBatchInvoices, listBatches } from "../app/api";
 import type { Batch, BatchInvoiceListing } from "../app/types";
 import { AsyncBoundary } from "../components/common/AsyncBoundary";
 import { SectionHeader } from "../components/common/SectionHeader";
 import { InvoiceDrawer } from "../components/results/InvoiceDrawer";
 import { ResultTable } from "../components/results/ResultTable";
+import {
+  RESULT_FILTER_OPTIONS,
+  type ResultFilterValue,
+  getResultFilterCount,
+  toDisplayStatusFilter,
+} from "../components/results/resultPresentation";
 
 
-const FILTER_OPTIONS = ["全部", "系统建议通过", "系统建议驳回", "待复核", "疑似重复", "处理失败"];
+const ACTIVE_BATCH_STAGE_CODES = new Set([
+  "queued",
+  "processing",
+  "recovering",
+  "text_extraction",
+  "ocr_processing",
+  "classification",
+  "duplicate_check",
+  "finalization",
+]);
 const ATTACHMENT_STATUS_LABELS: Record<string, string> = {
   pending_match: "待匹配",
   matched: "已匹配",
@@ -26,6 +41,58 @@ interface InvoiceState {
   data: BatchInvoiceListing | null;
 }
 
+function isActiveBatch(batch: Batch | null | undefined) {
+  if (!batch) {
+    return false;
+  }
+  const stageCode = batch.progress?.stage_code;
+  if (stageCode && ACTIVE_BATCH_STAGE_CODES.has(stageCode)) {
+    return true;
+  }
+  return batch.status === "queued" || batch.status === "processing";
+}
+
+async function saveBlobToUserFile(params: {
+  blob: Blob;
+  filename: string;
+  contentType: string;
+}) {
+  const pickerWindow = window as Window & {
+    showSaveFilePicker?: (options?: Record<string, unknown>) => Promise<{
+      createWritable: () => Promise<{
+        write: (data: Blob) => Promise<void>;
+        close: () => Promise<void>;
+      }>;
+    }>;
+  };
+
+  if (typeof pickerWindow.showSaveFilePicker === "function") {
+    const extension = params.filename.includes(".") ? `.${params.filename.split(".").pop()}` : "";
+    const handle = await pickerWindow.showSaveFilePicker({
+      suggestedName: params.filename,
+      types: [
+        {
+          description: params.contentType,
+          accept: {
+            [params.contentType]: extension ? [extension] : [],
+          },
+        },
+      ],
+    });
+    const writable = await handle.createWritable();
+    await writable.write(params.blob);
+    await writable.close();
+    return;
+  }
+
+  const objectUrl = URL.createObjectURL(params.blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = params.filename;
+  anchor.click();
+  URL.revokeObjectURL(objectUrl);
+}
+
 export function BatchResults() {
   const { message } = App.useApp();
   const navigate = useNavigate();
@@ -33,14 +100,16 @@ export function BatchResults() {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [batchesLoading, setBatchesLoading] = useState(true);
   const [batchesError, setBatchesError] = useState<string | null>(null);
-  const [selectedFilter, setSelectedFilter] = useState("全部");
+  const [selectedFilter, setSelectedFilter] = useState<ResultFilterValue>("all");
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
   const [batchDetail, setBatchDetail] = useState<Batch | null>(null);
   const [invoiceState, setInvoiceState] = useState<InvoiceState>({
     loading: false,
     error: null,
     data: null,
   });
+  const [savingAction, setSavingAction] = useState<string | null>(null);
 
   const loadBatches = useCallback(async () => {
     setBatchesLoading(true);
@@ -79,16 +148,17 @@ export function BatchResults() {
   }, [batchId, batches, navigate]);
 
   const loadResults = useCallback(
-    async (nextBatchId: string, nextFilter: string) => {
-      setInvoiceState({
-        loading: true,
-        error: null,
-        data: null,
-      });
+    async (nextBatchId: string, nextFilter: ResultFilterValue, options?: { silent?: boolean }) => {
+      const silent = options?.silent === true;
+      setInvoiceState((current) => ({
+        loading: silent ? current.data === null : true,
+        error: silent && current.data ? null : current.error,
+        data: current.data,
+      }));
       try {
         const [detail, listing] = await Promise.all([
           getBatch(nextBatchId),
-          listBatchInvoices(nextBatchId, nextFilter === "全部" ? undefined : nextFilter),
+          listBatchInvoices(nextBatchId, toDisplayStatusFilter(nextFilter)),
         ]);
         setBatchDetail(detail);
         setInvoiceState({
@@ -97,11 +167,12 @@ export function BatchResults() {
           data: listing,
         });
       } catch (error) {
-        setInvoiceState({
+        const messageText = getErrorMessage(error);
+        setInvoiceState((current) => ({
           loading: false,
-          error: getErrorMessage(error),
-          data: null,
-        });
+          error: current.data && silent ? null : messageText,
+          data: current.data && silent ? current.data : null,
+        }));
       }
     },
     [],
@@ -113,29 +184,75 @@ export function BatchResults() {
     }
   }, [loadResults, resolvedBatchId, selectedFilter]);
 
+  useEffect(() => {
+    if (!resolvedBatchId || !isActiveBatch(batchDetail)) {
+      return undefined;
+    }
+    const intervalId = window.setInterval(() => {
+      void loadBatches();
+      void loadResults(resolvedBatchId, selectedFilter, { silent: true });
+    }, 2000);
+    return () => window.clearInterval(intervalId);
+  }, [batchDetail, loadBatches, loadResults, resolvedBatchId, selectedFilter]);
+
+  useEffect(() => {
+    const visibleIds = new Set(invoiceState.data?.items.map((item) => item.id) ?? []);
+    setSelectedRowKeys((current) => current.filter((item) => visibleIds.has(item)));
+  }, [invoiceState.data?.items]);
+
   const counts = invoiceState.data?.status_counts ?? {};
   const recentFailures = batchDetail?.progress?.recent_failures ?? [];
   const retryableFailures = recentFailures.filter((item) => item.retryable !== false);
-  const failedCount = counts["处理失败"] ?? batchDetail?.failed_files ?? 0;
-  const attachmentStatusCounts = batchDetail?.attachment_status_counts ?? {};
-  const attachmentStatusEntries = Object.entries(attachmentStatusCounts).filter(([, count]) => count > 0);
-  const exportJobs = useMemo(() => {
-    const jobs = [...(batchDetail?.export_jobs ?? [])];
-    jobs.sort((left, right) => {
-      const leftTime = left.created_at ? Date.parse(left.created_at) : Number.NEGATIVE_INFINITY;
-      const rightTime = right.created_at ? Date.parse(right.created_at) : Number.NEGATIVE_INFINITY;
-      return rightTime - leftTime;
-    });
-    return jobs;
-  }, [batchDetail?.export_jobs]);
-  const latestExportPath = exportJobs[0]?.output_path ?? batchDetail?.export_manifest_path ?? null;
+  const failedCount = getResultFilterCount(counts, "needs_retry") || batchDetail?.failed_files || 0;
+  const attachmentStatusEntries = Object.entries(batchDetail?.attachment_status_counts ?? {}).filter(([, count]) => count > 0);
+  const currentResultCount = invoiceState.data?.items.length ?? 0;
+
+  const handleDownload = useCallback(
+    async (params: {
+      key: string;
+      downloadFormat: "zip" | "excel_manifest";
+      selectionMode: "all" | "filtered" | "selected";
+      requireSelection?: boolean;
+    }) => {
+      if (!resolvedBatchId) {
+        return;
+      }
+      if (params.requireSelection && selectedRowKeys.length === 0) {
+        message.warning("请先勾选要另存的发票。");
+        return;
+      }
+
+      setSavingAction(params.key);
+      try {
+        const result = await downloadBatchFile({
+          batchId: resolvedBatchId,
+          downloadFormat: params.downloadFormat,
+          selectionMode: params.selectionMode,
+          displayStatus:
+            params.selectionMode === "filtered" ? toDisplayStatusFilter(selectedFilter) : undefined,
+          invoiceIds: params.selectionMode === "selected" ? selectedRowKeys : undefined,
+        });
+        await saveBlobToUserFile(result);
+        message.success(`已准备保存 ${result.filename}`);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          message.info("已取消另存为。");
+        } else {
+          message.error(getErrorMessage(error));
+        }
+      } finally {
+        setSavingAction(null);
+      }
+    },
+    [message, resolvedBatchId, selectedFilter, selectedRowKeys],
+  );
 
   return (
     <div className="page-stack">
       <section className="workspace-block">
         <SectionHeader
           title="批次结果"
-          subtitle="按显示状态筛选，并查看当前筛选下的系统建议通过金额"
+          subtitle="按财务动作查看当前批次；系统处理中会自动刷新，确认无误后再另存为。"
           actions={
             <Space wrap>
               <Select
@@ -145,7 +262,7 @@ export function BatchResults() {
                 loading={batchesLoading}
                 onChange={(value) => navigate(`/results/${value}`)}
               />
-              <Select value={selectedFilter} options={FILTER_OPTIONS.map((item) => ({ label: item, value: item }))} onChange={setSelectedFilter} />
+              <Select value={selectedFilter} options={RESULT_FILTER_OPTIONS} onChange={setSelectedFilter} />
               <Button onClick={() => resolvedBatchId && void loadResults(resolvedBatchId, selectedFilter)} disabled={!resolvedBatchId}>
                 刷新
               </Button>
@@ -156,17 +273,35 @@ export function BatchResults() {
         <AsyncBoundary loading={batchesLoading} error={batchesError}>
           {batchDetail && invoiceState.data ? (
             <div className="results-overview">
+              {isActiveBatch(batchDetail) ? (
+                <div className="active-batch-strip">
+                  <Space wrap>
+                    <Tag color="blue">{batchDetail.progress?.stage_text || "处理中"}</Tag>
+                    <Typography.Text type="secondary">{`已完成 ${batchDetail.completed_files}/${batchDetail.total_files}`}</Typography.Text>
+                    <Typography.Text type="secondary">{`失败 ${batchDetail.failed_files}`}</Typography.Text>
+                  </Space>
+                  <Progress
+                    percent={batchDetail.progress?.progress_percent ?? 0}
+                    status="active"
+                    strokeColor="#118a62"
+                    trailColor="#dde5da"
+                  />
+                </div>
+              ) : null}
+
               <div className="metric-row">
-                <Statistic title="批次系统建议通过金额" value={invoiceState.data.batch_summary.total_amount} />
-                <Statistic title="当前筛选系统建议通过金额" value={invoiceState.data.filtered_summary.total_amount} />
-                <Statistic title="批次系统建议通过数量" value={invoiceState.data.batch_summary.count} />
-                <Statistic title="当前筛选系统建议通过数量" value={invoiceState.data.filtered_summary.count} />
+                <Statistic title="建议通过数量" value={invoiceState.data.batch_summary.count} />
+                <Statistic title="建议通过金额" value={invoiceState.data.batch_summary.total_amount} />
+                <Statistic title="当前结果数量" value={currentResultCount} />
+                <Statistic title="当前结果对应金额" value={invoiceState.data.filtered_summary.total_amount} />
               </div>
+
               <Space wrap className="status-strip">
-                {FILTER_OPTIONS.filter((item) => item !== "全部").map((status) => (
-                  <Tag key={status}>{`${status} ${counts[status] ?? 0}`}</Tag>
+                {RESULT_FILTER_OPTIONS.filter((item) => item.value !== "all").map((item) => (
+                  <Tag key={item.value}>{`${item.label} ${getResultFilterCount(counts, item.value as Exclude<ResultFilterValue, "all">)}`}</Tag>
                 ))}
               </Space>
+
               {batchDetail.attachment_file_count > 0 ? (
                 <Space wrap className="status-strip">
                   <Typography.Text strong>{`清单附件 ${batchDetail.attachment_file_count}`}</Typography.Text>
@@ -175,11 +310,12 @@ export function BatchResults() {
                   ))}
                 </Space>
               ) : null}
+
               {failedCount > 0 ? (
                 <Space direction="vertical" size={8} className="full-width">
                   <Space wrap>
-                    <Typography.Text strong>失败摘要</Typography.Text>
-                    <Typography.Text type="secondary">{`失败 ${failedCount} 张`}</Typography.Text>
+                    <Typography.Text strong>补充或重试建议</Typography.Text>
+                    <Typography.Text type="secondary">{`需补充/重试 ${failedCount} 张`}</Typography.Text>
                     <Button
                       onClick={async () => {
                         if (!resolvedBatchId) {
@@ -187,7 +323,7 @@ export function BatchResults() {
                         }
                         try {
                           const result = await createBatchRetry({ batchId: resolvedBatchId });
-                          message.success(`已重新入队 ${result.retried_invoice_ids.length} 张失败票`);
+                          message.success(`已重新入队 ${result.retried_invoice_ids.length} 张待补充发票`);
                           await loadResults(resolvedBatchId, selectedFilter);
                           await loadBatches();
                         } catch (error) {
@@ -196,7 +332,7 @@ export function BatchResults() {
                       }}
                       disabled={recentFailures.length > 0 && retryableFailures.length === 0}
                     >
-                      重试失败票
+                      重新处理待补充发票
                     </Button>
                   </Space>
                   {recentFailures.slice(0, 3).map((failure) => (
@@ -208,114 +344,78 @@ export function BatchResults() {
                   ))}
                 </Space>
               ) : null}
+
               <Space wrap>
                 <Button
-                  onClick={async () => {
-                    if (!resolvedBatchId) {
-                      return;
-                    }
-                    try {
-                      const result = await createExport({
-                        batchId: resolvedBatchId,
-                        exportType: "suggested_pass_zip",
-                      });
-                      message.success(`已生成 ${result.output_path}`);
-                      await loadResults(resolvedBatchId, selectedFilter);
-                      await loadBatches();
-                    } catch (error) {
-                      message.error(getErrorMessage(error));
-                    }
-                  }}
+                  type="primary"
+                  onClick={() =>
+                    void handleDownload({
+                      key: "filtered-zip",
+                      downloadFormat: "zip",
+                      selectionMode: selectedFilter === "all" ? "all" : "filtered",
+                    })
+                  }
+                  loading={savingAction === "filtered-zip"}
+                  disabled={!resolvedBatchId || isActiveBatch(batchDetail)}
                 >
-                  导出建议通过 ZIP
+                  另存为当前结果 ZIP
                 </Button>
                 <Button
-                  onClick={async () => {
-                    if (!resolvedBatchId) {
-                      return;
-                    }
-                    try {
-                      const result = await createExport({
-                        batchId: resolvedBatchId,
-                        exportType: "issue_zip",
-                      });
-                      message.success(`已生成 ${result.output_path}`);
-                      await loadResults(resolvedBatchId, selectedFilter);
-                      await loadBatches();
-                    } catch (error) {
-                      message.error(getErrorMessage(error));
-                    }
-                  }}
+                  onClick={() =>
+                    void handleDownload({
+                      key: "selected-zip",
+                      downloadFormat: "zip",
+                      selectionMode: "selected",
+                      requireSelection: true,
+                    })
+                  }
+                  loading={savingAction === "selected-zip"}
+                  disabled={!resolvedBatchId || selectedRowKeys.length === 0 || isActiveBatch(batchDetail)}
                 >
-                  导出问题票 ZIP
+                  另存为勾选发票 ZIP
                 </Button>
                 <Button
-                  onClick={async () => {
-                    if (!resolvedBatchId) {
-                      return;
-                    }
-                    try {
-                      const result = await createExport({
-                        batchId: resolvedBatchId,
-                        exportType: "excel_manifest",
-                      });
-                      message.success(`已生成 ${result.output_path}`);
-                      await loadResults(resolvedBatchId, selectedFilter);
-                      await loadBatches();
-                    } catch (error) {
-                      message.error(getErrorMessage(error));
-                    }
-                  }}
+                  onClick={() =>
+                    void handleDownload({
+                      key: "manifest",
+                      downloadFormat: "excel_manifest",
+                      selectionMode: selectedFilter === "all" ? "all" : "filtered",
+                    })
+                  }
+                  loading={savingAction === "manifest"}
+                  disabled={!resolvedBatchId || isActiveBatch(batchDetail)}
                 >
-                  导出 Excel 台账
+                  另存为当前结果台账
                 </Button>
               </Space>
-              {batchDetail.export_manifest_path || exportJobs.length > 0 ? (
-                <Space direction="vertical" size={8} className="full-width">
-                  <Space wrap>
-                    <Typography.Text strong>最近导出</Typography.Text>
-                    {latestExportPath ? (
-                      <Button
-                        onClick={async () => {
-                          try {
-                            const result = await openRuntimePath({ path: latestExportPath });
-                            message.success(`已打开 ${result.opened_path}`);
-                          } catch (error) {
-                            message.error(getErrorMessage(error));
-                          }
-                        }}
-                      >
-                        打开导出文件夹
-                      </Button>
-                    ) : null}
-                  </Space>
-                  {latestExportPath ? <Typography.Text>{latestExportPath}</Typography.Text> : null}
-                  {exportJobs.map((job) => (
-                    <Space key={job.id ?? `${job.export_type}-${job.output_path}`} wrap>
-                      <Tag>{job.export_type}</Tag>
-                      <Tag color={job.status === "completed" ? "green" : "gold"}>{job.status}</Tag>
-                      {job.output_path && job.output_path !== latestExportPath ? (
-                        <Typography.Text>{job.output_path}</Typography.Text>
-                      ) : null}
-                    </Space>
-                  ))}
-                </Space>
-              ) : null}
             </div>
           ) : null}
         </AsyncBoundary>
       </section>
 
       <section className="workspace-block">
-        <SectionHeader title="发票明细" subtitle="支持查看字段证据、风险依据和人工复核入口" />
+        <SectionHeader
+          title="发票明细"
+          subtitle="处理中会自动刷新；先查看结论和人工确认状态，再决定是否另存。"
+          actions={
+            <Typography.Text type="secondary">
+              {selectedRowKeys.length > 0 ? `已勾选 ${selectedRowKeys.length} 张` : "未勾选发票"}
+            </Typography.Text>
+          }
+        />
         <AsyncBoundary
           loading={invoiceState.loading}
           error={invoiceState.error}
           empty={(invoiceState.data?.items.length ?? 0) === 0}
-          emptyDescription="当前筛选下没有票据"
+          emptyDescription="当前筛选下没有发票"
         >
           {invoiceState.data ? (
-            <ResultTable invoices={invoiceState.data.items} onInspect={(invoiceId) => setSelectedInvoiceId(invoiceId)} />
+            <ResultTable
+              invoices={invoiceState.data.items}
+              onInspect={(invoiceId) => setSelectedInvoiceId(invoiceId)}
+              selectedRowKeys={selectedRowKeys}
+              onSelectionChange={setSelectedRowKeys}
+            />
           ) : null}
         </AsyncBoundary>
       </section>
@@ -327,6 +427,7 @@ export function BatchResults() {
         onChanged={async () => {
           if (resolvedBatchId) {
             await loadResults(resolvedBatchId, selectedFilter);
+            await loadBatches();
           }
         }}
       />

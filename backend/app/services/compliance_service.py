@@ -46,6 +46,7 @@ def build_invoice_compliance_summary(
         processing_status=invoice.processing_status,
         system_decision=invoice.system_decision,
         duplicate_flag=invoice.duplicate_flag,
+        review_status=invoice.review_status,
     )
     field_failures = _field_failures(invoice)
     risk_reasons = [

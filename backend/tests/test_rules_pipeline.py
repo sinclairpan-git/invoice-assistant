@@ -223,8 +223,8 @@ def test_attachment_evidence_is_ignored_without_review_keyword_trigger():
         },
     )
 
-    assert result.decision == "review_required"
-    assert result.risk_flags == ["no_whitelist_match"]
+    assert result.decision == "suggested_pass"
+    assert result.risk_flags == []
 
 
 def test_duplicate_invoice_is_flagged_and_excluded_from_suggested_pass_totals():

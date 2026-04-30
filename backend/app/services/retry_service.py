@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_app_logger, log_event
 from backend.app.db.models import Batch, InvoiceRecord
+from backend.app.services.review_queue_service import ReviewQueueService
 
 
 STAGE_TEXTS = {
@@ -36,6 +37,7 @@ class RetryService:
             )
 
         self._prepare_invoice(invoice)
+        ReviewQueueService(self.session).sync_invoice(invoice)
         batch = self.session.get(Batch, invoice.batch_id)
         if batch is None:
             raise LookupError(f"Batch for invoice {invoice_id!r} not found.")
@@ -68,6 +70,7 @@ class RetryService:
 
         for invoice in failed_invoices:
             self._prepare_invoice(invoice)
+            ReviewQueueService(self.session).sync_invoice(invoice)
         self._prepare_batch(batch)
         self.session.commit()
         self.processing_runner.enqueue(batch.id)
@@ -83,6 +86,7 @@ class RetryService:
     def _prepare_invoice(invoice: InvoiceRecord) -> None:
         invoice.processing_status = "queued"
         invoice.processing_stage = "queued"
+        invoice.archive_status = "not_ready"
         invoice.failure_reason = None
         invoice.last_error_stage = None
         invoice.last_error_code = None

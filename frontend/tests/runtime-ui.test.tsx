@@ -24,6 +24,7 @@ const apiMocks = vi.hoisted(() => ({
   getInvoiceDetail: vi.fn(),
   createBatchRetry: vi.fn(),
   createInvoiceRetry: vi.fn(),
+  downloadBatchFile: vi.fn(),
   createExport: vi.fn(),
   openRuntimePath: vi.fn(),
   createReviewAction: vi.fn(),
@@ -32,6 +33,8 @@ const apiMocks = vi.hoisted(() => ({
   listRuleVersions: vi.fn(),
   createRuleVersion: vi.fn(),
   createInitialSetup: vi.fn(),
+  publishConfigBundle: vi.fn(),
+  listConfigBundles: vi.fn(),
   getErrorMessage: vi.fn((error: unknown) => (error instanceof Error ? error.message : "请求失败")),
   getInvoicePreviewUrl: vi.fn((invoiceId: string) => `/api/invoices/${invoiceId}/preview`),
 }));
@@ -50,6 +53,7 @@ vi.mock("../src/app/api", async () => {
     getInvoiceDetail: apiMocks.getInvoiceDetail,
     createBatchRetry: apiMocks.createBatchRetry,
     createInvoiceRetry: apiMocks.createInvoiceRetry,
+    downloadBatchFile: apiMocks.downloadBatchFile,
     createExport: apiMocks.createExport,
     openRuntimePath: apiMocks.openRuntimePath,
     createReviewAction: apiMocks.createReviewAction,
@@ -58,6 +62,8 @@ vi.mock("../src/app/api", async () => {
     listRuleVersions: apiMocks.listRuleVersions,
     createRuleVersion: apiMocks.createRuleVersion,
     createInitialSetup: apiMocks.createInitialSetup,
+    publishConfigBundle: apiMocks.publishConfigBundle,
+    listConfigBundles: apiMocks.listConfigBundles,
     getErrorMessage: apiMocks.getErrorMessage,
     getInvoicePreviewUrl: apiMocks.getInvoicePreviewUrl,
   };
@@ -94,6 +100,13 @@ describe("runtime UI", () => {
     apiMocks.getInvoiceDetail.mockResolvedValue(null);
     apiMocks.createBatchRetry.mockResolvedValue({ batch_id: "batch-1", retried_invoice_ids: ["invoice-failed"] });
     apiMocks.createInvoiceRetry.mockResolvedValue({ invoice_id: "invoice-failed", batch_id: "batch-1", retried: true });
+    apiMocks.downloadBatchFile.mockResolvedValue({
+      blob: new Blob(["mock export"], {
+        type: "application/zip",
+      }),
+      filename: "mock-export.zip",
+      contentType: "application/zip",
+    });
     apiMocks.createExport.mockResolvedValue({
       export_type: "excel_manifest",
       status: "completed",
@@ -203,6 +216,27 @@ describe("runtime UI", () => {
       },
     });
     apiMocks.listRuleVersions.mockResolvedValue([]);
+    apiMocks.listConfigBundles.mockResolvedValue([
+      {
+        bundle_version_no: "bundle-20260420-001",
+        profile: {
+          company_name: "示例科技有限公司",
+          taxpayer_id: "91310000123456789X",
+        },
+        review_policy: {
+          template_name: "strict_v1",
+          display_name: "严格校验",
+        },
+        naming_policy: {
+          pattern: "{{date}}-{{seller}}-{{amount}}",
+        },
+        changed_by: "后端可信身份",
+        changed_at: "2026-04-20T10:03:00Z",
+        change_summary: "初始化配置包",
+        change_reason: "首次配置",
+        component_versions: {},
+      },
+    ]);
     apiMocks.createRuleVersion.mockImplementation(async ({ kind, content }: { kind: string; content: Record<string, unknown> }) => ({
       id: `${kind}-new`,
       kind,
@@ -260,6 +294,29 @@ describe("runtime UI", () => {
           change_reason: "首次配置",
         },
       },
+      setup_status: {
+        complete: true,
+        default_business_rule_templates: {},
+        missing_required_fields: {
+          tax_profile: [],
+          business_rules: [],
+          naming_rules: [],
+        },
+      },
+    });
+    apiMocks.publishConfigBundle.mockResolvedValue({
+      bundle: {
+        bundle_version_no: "bundle-20260425-001",
+        profile: {},
+        review_policy: {},
+        naming_policy: {},
+        changed_by: "后端可信身份",
+        changed_at: "2026-04-25T10:00:00Z",
+        change_summary: "更新配置",
+        change_reason: "财务信息变更",
+        component_versions: {},
+      },
+      items: {},
       setup_status: {
         complete: true,
         default_business_rule_templates: {},
@@ -552,28 +609,31 @@ describe("runtime UI", () => {
 
     expect(await screen.findByText("首次配置向导")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("公司名称"), { target: { value: "示例科技有限公司" } });
-    fireEvent.change(screen.getByLabelText("购方名称"), { target: { value: "示例科技有限公司" } });
-    fireEvent.change(screen.getByLabelText("购方税号"), { target: { value: "91310000123456789X" } });
+    fireEvent.change(screen.getByLabelText("企业名称"), { target: { value: "示例科技有限公司" } });
+    fireEvent.change(screen.getByLabelText("纳税人识别号（税号）"), { target: { value: "91310000123456789X" } });
+    fireEvent.change(screen.getByLabelText("地址电话"), { target: { value: "上海市徐汇区示例路 1 号 021-12345678" } });
+    fireEvent.change(screen.getByLabelText("开户行及帐号"), { target: { value: "招商银行上海示例支行 1234567890" } });
     fireEvent.click(screen.getByRole("button", { name: "下一步" }));
 
     expect(await screen.findByText("业务规则模板")).toBeInTheDocument();
-    expect(screen.getByText("这一步会影响风险分类阈值与系统建议通过判断。")).toBeInTheDocument();
+    expect(screen.getByText("这一步会影响系统建议、人工确认量和拦截倾向。")).toBeInTheDocument();
     expect(screen.getByText("保守模板：更容易把可疑票据拦下来，误放行更少，但需要人工复核的票会更多。")).toBeInTheDocument();
     expect(screen.getByText("常规模板：更适合日常批量处理，拦截和放行更均衡，人工复核量通常更可控。")).toBeInTheDocument();
     fireEvent.mouseDown(screen.getByLabelText("模板方案"));
     fireEvent.click(await screen.findByText("平衡模式"));
-    fireEvent.change(screen.getByLabelText("最低置信度阈值"), { target: { value: "0.88" } });
+    expect(screen.queryByLabelText("最低置信度阈值")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "下一步" }));
 
     expect(await screen.findByText("命名规则")).toBeInTheDocument();
     expect(screen.getByText("这一步会影响归档文件名与后续人工检索。")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("文件命名规则"), { target: { value: "{{date}}-{{buyer}}-{{amount}}" } });
+    expect(screen.getByText("当前命名方式：日期-购方-金额")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "下一步" }));
 
     expect(await screen.findByText("摘要确认")).toBeInTheDocument();
     expect(screen.getAllByText("示例科技有限公司").length).toBeGreaterThan(0);
     expect(screen.getByText(/平衡模式/)).toBeInTheDocument();
+    expect(screen.getByText("文件命名方式")).toBeInTheDocument();
+    expect(screen.getByText("日期-购方-金额")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "完成配置" }));
 
     await waitFor(() => {
@@ -582,13 +642,15 @@ describe("runtime UI", () => {
     expect(apiMocks.createInitialSetup).toHaveBeenCalledWith({
       taxProfile: {
         company_name: "示例科技有限公司",
-        buyer_name: "示例科技有限公司",
-        buyer_tax_no: "91310000123456789X",
+        taxpayer_id: "91310000123456789X",
+        address_phone: "上海市徐汇区示例路 1 号 021-12345678",
+        bank_account: "招商银行上海示例支行 1234567890",
       },
-      businessRules: expect.objectContaining({
+      businessRules: {
         template_name: "balanced_v1",
-        minimum_confidence: 0.88,
-      }),
+        display_name: "平衡模式",
+        minimum_confidence: 0.85,
+      },
       namingRules: {
         pattern: "{{date}}-{{buyer}}-{{amount}}",
       },
@@ -598,14 +660,7 @@ describe("runtime UI", () => {
     expect(navigateMock).toHaveBeenCalledWith("/");
   });
 
-  it("blocks invalid minimum confidence before submitting setup", async () => {
-    const messageError = vi.fn();
-    vi.spyOn(AntdApp, "useApp").mockReturnValue({
-      message: { success: vi.fn(), error: messageError, warning: vi.fn(), info: vi.fn(), open: vi.fn(), destroy: vi.fn(), loading: vi.fn() },
-      notification: {} as never,
-      modal: {} as never,
-    });
-
+  it("keeps the setup wizard finance-friendly instead of exposing raw threshold inputs", async () => {
     apiMocks.getActiveConfig.mockResolvedValue({
       active_snapshot: {},
       active_versions: {},
@@ -629,19 +684,19 @@ describe("runtime UI", () => {
     renderWithProviders(<SetupWizard />);
 
     expect(await screen.findByText("首次配置向导")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("公司名称"), { target: { value: "示例科技有限公司" } });
-    fireEvent.change(screen.getByLabelText("购方名称"), { target: { value: "示例科技有限公司" } });
-    fireEvent.change(screen.getByLabelText("购方税号"), { target: { value: "91310000123456789X" } });
+    fireEvent.change(screen.getByLabelText("企业名称"), { target: { value: "示例科技有限公司" } });
+    fireEvent.change(screen.getByLabelText("纳税人识别号（税号）"), { target: { value: "91310000123456789X" } });
+    fireEvent.change(screen.getByLabelText("地址电话"), { target: { value: "上海市徐汇区示例路 1 号 021-12345678" } });
+    fireEvent.change(screen.getByLabelText("开户行及帐号"), { target: { value: "招商银行上海示例支行 1234567890" } });
     fireEvent.click(screen.getByRole("button", { name: "下一步" }));
 
     expect(await screen.findByText("业务规则模板")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("最低置信度阈值"), { target: { value: "NaN" } });
+    expect(screen.getByText("审核倾向")).toBeInTheDocument();
+    expect(screen.queryByLabelText("最低置信度阈值")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "下一步" }));
 
-    expect(await screen.findByText("请输入 0 到 1 之间的数字")).toBeInTheDocument();
-    expect(screen.queryByText("命名规则")).not.toBeInTheDocument();
-    expect(apiMocks.createInitialSetup).not.toHaveBeenCalled();
-    expect(messageError).not.toHaveBeenCalled();
+    expect(await screen.findByText("命名规则")).toBeInTheDocument();
+    expect(screen.getByText("当前命名方式：日期-购方-金额")).toBeInTheDocument();
   });
 
   it("keeps upload blocked and shows config read failure instead of incomplete setup", async () => {
@@ -666,7 +721,14 @@ describe("runtime UI", () => {
     rerender(
       <AppProviders>
         <MemoryRouter>
-          <ReviewActions invoiceId="invoice-review-1" displayStatus="待复核" onSubmitted={vi.fn()} />
+          <ReviewActions
+            invoiceId="invoice-review-1"
+            processingStatus="completed"
+            systemDecision="review_required"
+            duplicateFlag={false}
+            reviewStatus="not_reviewed"
+            onSubmitted={vi.fn()}
+          />
         </MemoryRouter>
       </AppProviders>,
     );
@@ -799,7 +861,7 @@ describe("runtime UI", () => {
     expect(await screen.findByText("清单附件 2")).toBeInTheDocument();
     expect(screen.getByText("已消费 1")).toBeInTheDocument();
     expect(screen.getByText("未匹配 1")).toBeInTheDocument();
-    const retryButton = await screen.findByRole("button", { name: "重试失败票" });
+    const retryButton = await screen.findByRole("button", { name: "重新处理待补充发票" });
     fireEvent.click(retryButton);
 
     await waitFor(() => {
@@ -807,13 +869,12 @@ describe("runtime UI", () => {
     });
   });
 
-  it("refreshes and shows persisted export state after export succeeds", async () => {
-    const messageSuccess = vi.fn();
-    vi.spyOn(AntdApp, "useApp").mockReturnValue({
-      message: { success: messageSuccess, error: vi.fn(), warning: vi.fn(), info: vi.fn(), open: vi.fn(), destroy: vi.fn(), loading: vi.fn() },
-      notification: {} as never,
-      modal: {} as never,
-    });
+  it("downloads the current manifest through the save picker from batch results", async () => {
+    const write = vi.fn().mockResolvedValue(undefined);
+    const close = vi.fn().mockResolvedValue(undefined);
+    const createWritable = vi.fn().mockResolvedValue({ write, close });
+    const showSaveFilePicker = vi.fn().mockResolvedValue({ createWritable });
+    vi.stubGlobal("showSaveFilePicker", showSaveFilePicker);
 
     apiMocks.listBatches.mockResolvedValue([
       {
@@ -834,8 +895,7 @@ describe("runtime UI", () => {
         attachment_status_counts: {},
       },
     ]);
-
-    const batchWithoutExports = {
+    apiMocks.getBatch.mockResolvedValue({
       id: "batch-export-1",
       batch_no: "BATCH-EXPORT-001",
       created_at: "2026-04-19T09:00:00Z",
@@ -866,37 +926,19 @@ describe("runtime UI", () => {
         recent_failures: [],
       },
       export_jobs: [],
-    };
-
-    const batchWithExport = {
-      ...batchWithoutExports,
-      export_manifest_path: "exports/BATCH-EXPORT-001/manifest.xlsx",
-      export_jobs: [
-        {
-          id: "export-job-1",
-          export_type: "excel_manifest",
-          status: "completed",
-          output_path: "exports/BATCH-EXPORT-001/manifest.xlsx",
-          created_by: "后端可信身份",
-          created_at: "2026-04-19T09:05:00Z",
-          summary: { invoice_count: 2 },
-        },
-      ],
-    };
-
-    const batchResponses = [batchWithoutExports, batchWithExport];
-    apiMocks.getBatch.mockImplementation(async () => batchResponses.shift() ?? batchWithExport);
+    });
     apiMocks.listBatchInvoices.mockResolvedValue({
       items: [],
       status_counts: {},
       batch_summary: { count: 1, total_amount: "88.00" },
       filtered_summary: { count: 1, total_amount: "88.00" },
     });
-    apiMocks.createExport.mockResolvedValue({
-      export_type: "excel_manifest",
-      status: "completed",
-      output_path: "exports/BATCH-EXPORT-001/manifest.xlsx",
-      summary: { invoice_count: 2 },
+    apiMocks.downloadBatchFile.mockResolvedValue({
+      blob: new Blob(["manifest"], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+      filename: "BATCH-EXPORT-001.xlsx",
+      contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
 
     const router = createMemoryRouter(appRoutes, {
@@ -910,142 +952,37 @@ describe("runtime UI", () => {
     );
 
     expect(await screen.findByText("BATCH-EXPORT-001")).toBeInTheDocument();
-    expect(screen.queryByText("最近导出")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "导出 Excel 台账" }));
+    fireEvent.click(screen.getByRole("button", { name: "另存为当前结果台账" }));
 
     await waitFor(() => {
-      expect(apiMocks.createExport).toHaveBeenCalledWith({
+      expect(apiMocks.downloadBatchFile).toHaveBeenCalledWith({
         batchId: "batch-export-1",
-        exportType: "excel_manifest",
+        downloadFormat: "excel_manifest",
+        selectionMode: "all",
+        displayStatus: undefined,
+        invoiceIds: undefined,
       });
     });
-
-    expect(await screen.findByText("最近导出")).toBeInTheDocument();
-    expect(screen.getByText("exports/BATCH-EXPORT-001/manifest.xlsx")).toBeInTheDocument();
-    expect(screen.getByText("excel_manifest")).toBeInTheDocument();
-  });
-
-  it("opens the latest export folder from batch results", async () => {
-    const messageSuccess = vi.fn();
-    vi.spyOn(AntdApp, "useApp").mockReturnValue({
-      message: { success: messageSuccess, error: vi.fn(), warning: vi.fn(), info: vi.fn(), open: vi.fn(), destroy: vi.fn(), loading: vi.fn() },
-      notification: {} as never,
-      modal: {} as never,
-    });
-
-    apiMocks.listBatches.mockResolvedValue([
-      {
-        id: "batch-export-open-1",
-        batch_no: "BATCH-EXPORT-OPEN-001",
-        created_at: "2026-04-19T09:00:00Z",
-        created_by: "tester",
-        status: "completed",
-        total_files: 2,
-        completed_files: 2,
-        processing_files: 0,
-        failed_files: 0,
-        suggested_pass_count: 1,
-        suggested_pass_total_amount: "88.00",
-        export_manifest_path: "exports/BATCH-EXPORT-OPEN-001/manifest.xlsx",
-        invoice_file_count: 2,
-        attachment_file_count: 0,
-        attachment_status_counts: {},
-      },
-    ]);
-    apiMocks.getBatch.mockResolvedValue({
-      id: "batch-export-open-1",
-      batch_no: "BATCH-EXPORT-OPEN-001",
-      created_at: "2026-04-19T09:00:00Z",
-      created_by: "tester",
-      status: "completed",
-      total_files: 2,
-      completed_files: 2,
-      processing_files: 0,
-      failed_files: 0,
-      suggested_pass_count: 1,
-      suggested_pass_total_amount: "88.00",
-      export_manifest_path: "exports/BATCH-EXPORT-OPEN-001/manifest.xlsx",
-      invoice_file_count: 2,
-      attachment_file_count: 0,
-      attachment_status_counts: {},
-      progress: {
-        batch_id: "batch-export-open-1",
-        batch_no: "BATCH-EXPORT-OPEN-001",
-        stage_code: "completed",
-        stage_text: "处理完成",
-        progress_percent: 100,
-        total_files: 2,
-        completed_files: 2,
-        processing_files: 0,
-        failed_files: 0,
-        suggested_pass_count: 1,
-        suggested_pass_total_amount: "88.00",
-        recent_failures: [],
-      },
-      export_jobs: [
-        {
-          id: "export-job-2",
-          export_type: "issue_zip",
-          status: "completed",
-          output_path: "exports/BATCH-EXPORT-OPEN-001/issues.zip",
-          created_by: "后端可信身份",
-          created_at: "2026-04-19T09:06:00Z",
-          summary: { invoice_count: 1 },
-        },
-        {
-          id: "export-job-1",
-          export_type: "excel_manifest",
-          status: "completed",
-          output_path: "exports/BATCH-EXPORT-OPEN-001/manifest.xlsx",
-          created_by: "后端可信身份",
-          created_at: "2026-04-19T09:05:00Z",
-          summary: { invoice_count: 2 },
-        },
-      ],
-    });
-    apiMocks.listBatchInvoices.mockResolvedValue({
-      items: [],
-      status_counts: {},
-      batch_summary: { count: 1, total_amount: "88.00" },
-      filtered_summary: { count: 1, total_amount: "88.00" },
-    });
-
-    const router = createMemoryRouter(appRoutes, {
-      initialEntries: ["/results/batch-export-open-1"],
-    });
-
-    render(
-      <AppProviders>
-        <RouterProvider router={router} />
-      </AppProviders>,
-    );
-
-    expect(await screen.findByText("最近导出")).toBeInTheDocument();
-    expect(screen.getByText("exports/BATCH-EXPORT-OPEN-001/issues.zip")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "打开导出文件夹" }));
-
     await waitFor(() => {
-      expect(apiMocks.openRuntimePath).toHaveBeenCalledWith({
-        path: "exports/BATCH-EXPORT-OPEN-001/issues.zip",
-      });
+      expect(showSaveFilePicker).toHaveBeenCalled();
+      expect(createWritable).toHaveBeenCalled();
+      expect(write).toHaveBeenCalled();
+      expect(close).toHaveBeenCalled();
     });
   });
 
-  it("shows an error when opening the export folder fails", async () => {
-    const messageError = vi.fn();
-    vi.spyOn(AntdApp, "useApp").mockReturnValue({
-      message: { success: vi.fn(), error: messageError, warning: vi.fn(), info: vi.fn(), open: vi.fn(), destroy: vi.fn(), loading: vi.fn() },
-      notification: {} as never,
-      modal: {} as never,
+  it("downloads selected invoices as zip from batch results", async () => {
+    const createWritable = vi.fn().mockResolvedValue({
+      write: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
     });
+    vi.stubGlobal("showSaveFilePicker", vi.fn().mockResolvedValue({ createWritable }));
 
-    apiMocks.openRuntimePath.mockRejectedValue(new Error("打开本地文件夹失败。"));
     apiMocks.listBatches.mockResolvedValue([
       {
-        id: "batch-export-open-2",
-        batch_no: "BATCH-EXPORT-OPEN-002",
+        id: "batch-export-selected-1",
+        batch_no: "BATCH-EXPORT-SELECTED-001",
         created_at: "2026-04-19T09:00:00Z",
         created_by: "tester",
         status: "completed",
@@ -1055,15 +992,15 @@ describe("runtime UI", () => {
         failed_files: 0,
         suggested_pass_count: 1,
         suggested_pass_total_amount: "66.00",
-        export_manifest_path: "exports/BATCH-EXPORT-OPEN-002/manifest.xlsx",
+        export_manifest_path: null,
         invoice_file_count: 1,
         attachment_file_count: 0,
         attachment_status_counts: {},
       },
     ]);
     apiMocks.getBatch.mockResolvedValue({
-      id: "batch-export-open-2",
-      batch_no: "BATCH-EXPORT-OPEN-002",
+      id: "batch-export-selected-1",
+      batch_no: "BATCH-EXPORT-SELECTED-001",
       created_at: "2026-04-19T09:00:00Z",
       created_by: "tester",
       status: "completed",
@@ -1073,13 +1010,13 @@ describe("runtime UI", () => {
       failed_files: 0,
       suggested_pass_count: 1,
       suggested_pass_total_amount: "66.00",
-      export_manifest_path: "exports/BATCH-EXPORT-OPEN-002/manifest.xlsx",
+      export_manifest_path: null,
       invoice_file_count: 1,
       attachment_file_count: 0,
       attachment_status_counts: {},
       progress: {
-        batch_id: "batch-export-open-2",
-        batch_no: "BATCH-EXPORT-OPEN-002",
+        batch_id: "batch-export-selected-1",
+        batch_no: "BATCH-EXPORT-SELECTED-001",
         stage_code: "completed",
         stage_text: "处理完成",
         progress_percent: 100,
@@ -1091,27 +1028,57 @@ describe("runtime UI", () => {
         suggested_pass_total_amount: "66.00",
         recent_failures: [],
       },
-      export_jobs: [
-        {
-          id: "export-job-3",
-          export_type: "excel_manifest",
-          status: "completed",
-          output_path: "exports/BATCH-EXPORT-OPEN-002/manifest.xlsx",
-          created_by: "后端可信身份",
-          created_at: "2026-04-19T09:05:00Z",
-          summary: { invoice_count: 1 },
-        },
-      ],
+      export_jobs: [],
     });
     apiMocks.listBatchInvoices.mockResolvedValue({
-      items: [],
-      status_counts: {},
+      items: [
+        {
+          id: "invoice-selected-1",
+          batch_id: "batch-export-selected-1",
+          original_filename: "selected.pdf",
+          renamed_filename: "2026-04-19-示例-66.00.pdf",
+          storage_path_original: null,
+          storage_path_renamed: null,
+          invoice_code: null,
+          invoice_number: "12345678",
+          seller_name: null,
+          buyer_name: "示例科技有限公司",
+          buyer_tax_no: "91310000123456789X",
+          invoice_date: "2026-04-19",
+          invoice_amount: "66.00",
+          processing_status: "completed",
+          system_decision: "suggested_pass",
+          review_status: "not_reviewed",
+          artifact_status: "renamed",
+          duplicate_flag: false,
+          duplicate_group_key: null,
+          risk_flags: [],
+          display_status: "系统建议通过",
+          basic_compliance_status: "通过",
+          business_compliance_status: "低风险",
+          final_decision: "系统建议通过",
+          decision_reasons: [],
+          suggested_actions: ["可直接归档"],
+          problem_count: 0,
+          failure_reason: null,
+          preview_path: "selected.pdf",
+          attachments: [],
+        },
+      ],
+      status_counts: { 系统建议通过: 1 },
       batch_summary: { count: 1, total_amount: "66.00" },
       filtered_summary: { count: 1, total_amount: "66.00" },
     });
+    apiMocks.downloadBatchFile.mockResolvedValue({
+      blob: new Blob(["zip"], {
+        type: "application/zip",
+      }),
+      filename: "selected.zip",
+      contentType: "application/zip",
+    });
 
     const router = createMemoryRouter(appRoutes, {
-      initialEntries: ["/results/batch-export-open-2"],
+      initialEntries: ["/results/batch-export-selected-1"],
     });
 
     render(
@@ -1120,21 +1087,151 @@ describe("runtime UI", () => {
       </AppProviders>,
     );
 
-    expect(await screen.findByText("最近导出")).toBeInTheDocument();
+    expect(await screen.findByText("selected.pdf")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "打开导出文件夹" }));
+    const checkboxes = screen.getAllByRole("checkbox");
+    fireEvent.click(checkboxes[1]);
+    fireEvent.click(screen.getByRole("button", { name: "另存为勾选发票 ZIP" }));
 
     await waitFor(() => {
-      expect(messageError).toHaveBeenCalledWith("打开本地文件夹失败。");
+      expect(apiMocks.downloadBatchFile).toHaveBeenCalledWith({
+        batchId: "batch-export-selected-1",
+        downloadFormat: "zip",
+        selectionMode: "selected",
+        displayStatus: undefined,
+        invoiceIds: ["invoice-selected-1"],
+      });
     });
   });
 
-  it("keeps settings focused on advanced version management after setup completes", async () => {
+  it("shows field-based settings summary after setup completes", async () => {
     renderWithProviders(<Settings />);
 
-    expect(await screen.findByText("高级版本管理")).toBeInTheDocument();
-    expect(screen.getByText("规则版本")).toBeInTheDocument();
-    expect(screen.queryByText("首次配置向导")).not.toBeInTheDocument();
+    expect(await screen.findByText("配置中心")).toBeInTheDocument();
+    expect(screen.getByText("当前页已隐藏技术配置 JSON，避免要求财务用户直接编辑系统键名。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "按字段修改配置" })).toBeInTheDocument();
+    expect(screen.getByText("公司税务档案")).toBeInTheDocument();
+    expect(screen.queryByText("{{date}}-{{seller}}-{{amount}}")).not.toBeInTheDocument();
+    expect(screen.queryByText("0.92")).not.toBeInTheDocument();
+    expect(screen.queryByText("高级版本管理")).not.toBeInTheDocument();
+  });
+
+  it("edits active settings through the shared field form without leaving settings", async () => {
+    const messageSuccess = vi.fn();
+    vi.spyOn(AntdApp, "useApp").mockReturnValue({
+      message: { success: messageSuccess, error: vi.fn(), warning: vi.fn(), info: vi.fn(), open: vi.fn(), destroy: vi.fn(), loading: vi.fn() },
+      notification: {} as never,
+      modal: {} as never,
+    });
+    const navigateMock = vi.fn();
+    routerMocks.useNavigate.mockReturnValue(navigateMock);
+
+    renderWithProviders(<Settings />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "按字段修改配置" }));
+
+    expect(await screen.findByText("字段化调整")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("示例科技有限公司")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("企业名称"), { target: { value: "更新后的示例科技有限公司" } });
+    fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+    expect(await screen.findByText("业务规则模板")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "下一步" }));
+    expect(await screen.findByText("命名规则")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "下一步" }));
+    expect(await screen.findByText("摘要确认")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "保存配置" }));
+    expect(await screen.findByText("发布确认")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("变更摘要"), { target: { value: "更新公司税务资料" } });
+    fireEvent.change(screen.getByLabelText("变更原因"), { target: { value: "财务信息更新" } });
+    fireEvent.click(screen.getByRole("button", { name: "确认发布" }));
+
+    await waitFor(() => {
+      expect(apiMocks.publishConfigBundle).toHaveBeenCalledTimes(1);
+    });
+    expect(apiMocks.publishConfigBundle).toHaveBeenCalledWith({
+      profile: {
+        company_name: "更新后的示例科技有限公司",
+        taxpayer_id: "91310000123456789X",
+        address_phone: "",
+        bank_account: "",
+      },
+      reviewPolicy: {
+        template_name: "strict_v1",
+        display_name: "严格校验",
+        minimum_confidence: 0.92,
+      },
+      namingPolicy: {
+        pattern: "{{date}}-{{seller}}-{{amount}}",
+      },
+      changeSummary: "更新公司税务资料",
+      changeReason: "财务信息更新",
+    });
+    expect(messageSuccess).toHaveBeenCalledWith("配置已发布。");
+    expect(navigateMock).not.toHaveBeenCalledWith("/setup");
+  });
+
+  it("shows publish confirmation before saving edited settings", async () => {
+    const messageSuccess = vi.fn();
+    vi.spyOn(AntdApp, "useApp").mockReturnValue({
+      message: { success: messageSuccess, error: vi.fn(), warning: vi.fn(), info: vi.fn(), open: vi.fn(), destroy: vi.fn(), loading: vi.fn() },
+      notification: {} as never,
+      modal: {} as never,
+    });
+
+    renderWithProviders(<Settings />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "按字段修改配置" }));
+    fireEvent.change(screen.getByLabelText("企业名称"), { target: { value: "更新后的示例科技有限公司" } });
+    fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+    fireEvent.click(await screen.findByRole("button", { name: "下一步" }));
+    fireEvent.click(await screen.findByRole("button", { name: "下一步" }));
+    fireEvent.click(await screen.findByRole("button", { name: "保存配置" }));
+
+    expect(await screen.findByText("发布确认")).toBeInTheDocument();
+    expect(screen.getByText("影响范围")).toBeInTheDocument();
+    expect(screen.getByText("变更原因")).toBeInTheDocument();
+    expect(screen.getByText("税务档案、审核策略、文件命名会整体生成新版本并立即生效。")).toBeInTheDocument();
+    expect(apiMocks.publishConfigBundle).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("变更摘要"), { target: { value: "更新公司税务资料" } });
+    fireEvent.change(screen.getByLabelText("变更原因"), { target: { value: "财务信息更新" } });
+    fireEvent.click(screen.getByRole("button", { name: "确认发布" }));
+
+    await waitFor(() => {
+      expect(apiMocks.publishConfigBundle).toHaveBeenCalledWith({
+        profile: {
+          company_name: "更新后的示例科技有限公司",
+          taxpayer_id: "91310000123456789X",
+          address_phone: "",
+          bank_account: "",
+        },
+        reviewPolicy: {
+          template_name: "strict_v1",
+          display_name: "严格校验",
+          minimum_confidence: 0.92,
+        },
+        namingPolicy: {
+          pattern: "{{date}}-{{seller}}-{{amount}}",
+        },
+        changeSummary: "更新公司税务资料",
+        changeReason: "财务信息更新",
+      });
+    });
+    expect(messageSuccess).toHaveBeenCalledWith("配置已发布。");
+  });
+
+  it("shows config bundle history as a read-only view", async () => {
+    renderWithProviders(<Settings />);
+
+    expect(await screen.findByRole("button", { name: "查看历史变更" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "查看历史变更" }));
+
+    expect(await screen.findByText("历史变更")).toBeInTheDocument();
+    expect(screen.getByText("bundle-20260420-001")).toBeInTheDocument();
+    expect(screen.getByText("初始化配置包")).toBeInTheDocument();
+    expect(screen.getByText("首次配置")).toBeInTheDocument();
+    expect(screen.getByText("历史版本仅供查阅，不允许直接编辑。")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "编辑该版本" })).not.toBeInTheDocument();
   });
 
   it("shows completion action and last modified time on setup status card after setup", async () => {
@@ -1232,7 +1329,7 @@ describe("runtime UI", () => {
     expect(screen.getByText("最后修改于 2026-04-20 10:02")).toBeInTheDocument();
   });
 
-  it("shows invoice diagnostic details and retries a single failed invoice", async () => {
+  it("keeps invoice diagnostics behind the advanced tab and retries a single failed invoice", async () => {
     const onChanged = vi.fn();
     const messageSuccess = vi.fn();
     vi.spyOn(AntdApp, "useApp").mockReturnValue({
@@ -1301,14 +1398,19 @@ describe("runtime UI", () => {
       <InvoiceDrawer invoiceId="invoice-failed" open onClose={() => undefined} onChanged={onChanged} />,
     );
 
-    expect(await screen.findByText("业务风险分类")).toBeInTheDocument();
-    expect(await screen.findByText("rapidocr-onnxruntime")).toBeInTheDocument();
-    expect(screen.getAllByText("ocr_timeout").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("处理失败").length).toBeGreaterThan(0);
+    expect(await screen.findByText("处理结论")).toBeInTheDocument();
+    expect(screen.getAllByText("需补充/重试").length).toBeGreaterThan(0);
     expect(screen.getByText("修复失败原因后重试")).toBeInTheDocument();
     expect(screen.getByText("broken-销货清单.pdf")).toBeInTheDocument();
     expect(screen.getByText("解析失败")).toBeInTheDocument();
     expect(screen.getByText("OCR parser timed out while parsing attachment.")).toBeInTheDocument();
+    expect(screen.queryByText("rapidocr-onnxruntime")).not.toBeInTheDocument();
+    expect(screen.queryByText("ocr_timeout")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "高级诊断" }));
+
+    expect(await screen.findByText("rapidocr-onnxruntime")).toBeInTheDocument();
+    expect(screen.getAllByText("ocr_timeout").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "重试当前票" }));
 

@@ -162,3 +162,72 @@ def test_build_portable_bundle_requires_site_packages_in_python_runtime(tmp_path
         assert "Lib" in str(exc)
     else:
         raise AssertionError("build_portable_bundle should fail when site-packages is missing")
+
+
+def test_build_portable_bundle_normalizes_batch_launchers_to_ascii_crlf(tmp_path: Path) -> None:
+    build_portable_bundle = _load_build_portable_bundle()
+    project_root = tmp_path / "fixture-project"
+    dist_root = tmp_path / "dist"
+    runtime_root = project_root / "packaging" / "windows" / "python"
+
+    _write_file(project_root / "backend" / "__init__.py", "")
+    _write_file(project_root / "backend" / "pyproject.toml", "[project]\nname = 'fixture-backend'\nversion = '0.1.0'\n")
+    _write_file(project_root / "backend" / "app" / "__init__.py", "")
+    _write_file(project_root / "backend" / "app" / "main.py", "def create_app(*args, **kwargs):\n    return {'ok': True}\n")
+    _write_file(project_root / "frontend" / "dist" / "index.html", "<html></html>\n")
+    _write_file(project_root / "packaging" / "windows" / "bootstrap" / "start_server.py", "print('bootstrap')\n")
+    _write_file(project_root / "packaging" / "windows" / "启动发票助手.bat", "@echo off\nsetlocal\n")
+    _write_file(project_root / "packaging" / "windows" / "停止发票助手.bat", "@echo off\nsetlocal\n")
+    _write_file(runtime_root / "python.exe", "runtime\n")
+    _write_file(runtime_root / "Lib" / "site-packages" / "portable_runtime.txt", "runtime marker\n")
+
+    output_dir = build_portable_bundle(
+        project_root=project_root,
+        dist_root=dist_root,
+        version="0.1.0-test",
+    )
+
+    assert (output_dir / "启动发票助手.bat").read_bytes() == b"@echo off\r\nsetlocal\r\n"
+    assert (output_dir / "停止发票助手.bat").read_bytes() == b"@echo off\r\nsetlocal\r\n"
+
+
+def test_build_portable_bundle_keeps_root_trailing_backslash_trim_in_batch_wrapper(tmp_path: Path) -> None:
+    build_portable_bundle = _load_build_portable_bundle()
+    project_root = tmp_path / "fixture-project"
+    dist_root = tmp_path / "dist"
+    runtime_root = project_root / "packaging" / "windows" / "python"
+
+    _write_file(project_root / "backend" / "__init__.py", "")
+    _write_file(project_root / "backend" / "pyproject.toml", "[project]\nname = 'fixture-backend'\nversion = '0.1.0'\n")
+    _write_file(project_root / "backend" / "app" / "__init__.py", "")
+    _write_file(project_root / "backend" / "app" / "main.py", "def create_app(*args, **kwargs):\n    return {'ok': True}\n")
+    _write_file(project_root / "frontend" / "dist" / "index.html", "<html></html>\n")
+    _write_file(project_root / "packaging" / "windows" / "bootstrap" / "start_server.py", "print('bootstrap')\n")
+    _write_file(project_root / "packaging" / "windows" / "bootstrap" / "launch_portable.py", "print('launch')\n")
+    _write_file(project_root / "packaging" / "windows" / "bootstrap" / "stop_portable.py", "print('stop')\n")
+    _write_file(
+        project_root / "packaging" / "windows" / "启动发票助手.bat",
+        "@echo off\nsetlocal\nset \"ROOT=%~dp0\"\nif \"%ROOT:~-1%\"==\"\\\" set \"ROOT=%ROOT:~0,-1%\"\nset \"PYTHON_EXE=%ROOT%\\app\\python\\python.exe\"\nset \"LAUNCHER=%ROOT%\\app\\bootstrap\\launch_portable.py\"\n",
+    )
+    _write_file(
+        project_root / "packaging" / "windows" / "停止发票助手.bat",
+        "@echo off\nsetlocal\nset \"ROOT=%~dp0\"\nif \"%ROOT:~-1%\"==\"\\\" set \"ROOT=%ROOT:~0,-1%\"\nset \"PYTHON_EXE=%ROOT%\\app\\python\\python.exe\"\nset \"STOPPER=%ROOT%\\app\\bootstrap\\stop_portable.py\"\n",
+    )
+    _write_file(runtime_root / "python.exe", "runtime\n")
+    _write_file(runtime_root / "Lib" / "site-packages" / "portable_runtime.txt", "runtime marker\n")
+
+    output_dir = build_portable_bundle(
+        project_root=project_root,
+        dist_root=dist_root,
+        version="0.1.0-test",
+    )
+
+    launcher_text = (output_dir / "启动发票助手.bat").read_text(encoding="ascii")
+    stopper_text = (output_dir / "停止发票助手.bat").read_text(encoding="ascii")
+    assert 'set "PYTHON_EXE=%ROOT%\\app\\python\\python.exe"' in launcher_text
+    assert 'set "LAUNCHER=%ROOT%\\app\\bootstrap\\launch_portable.py"' in launcher_text
+    assert 'set "PYTHON_EXE=%ROOT%\\app\\python\\python.exe"' in stopper_text
+    assert 'set "STOPPER=%ROOT%\\app\\bootstrap\\stop_portable.py"' in stopper_text
+    assert 'if "%ROOT:~-1%"=="\\\\" set "ROOT=%ROOT:~0,-1%"' not in launcher_text
+    assert 'if "%ROOT:~-1%"=="\\" set "ROOT=%ROOT:~0,-1%"' in launcher_text
+    assert 'if "%ROOT:~-1%"=="\\" set "ROOT=%ROOT:~0,-1%"' in stopper_text

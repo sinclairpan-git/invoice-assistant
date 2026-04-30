@@ -64,6 +64,9 @@ class Batch(Base):
     naming_rule_version_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("rule_versions.id"), nullable=True
     )
+    config_bundle_version_no: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True
+    )
     active_job_id: Mapped[str | None] = mapped_column(
         String(36), nullable=True, index=True
     )
@@ -85,6 +88,9 @@ class Batch(Base):
         back_populates="batch", cascade="all, delete-orphan"
     )
     export_jobs: Mapped[list["ExportJob"]] = relationship(
+        back_populates="batch", cascade="all, delete-orphan"
+    )
+    review_queue_items: Mapped[list["ReviewQueueItem"]] = relationship(
         back_populates="batch", cascade="all, delete-orphan"
     )
 
@@ -129,6 +135,9 @@ class InvoiceRecord(Base):
     artifact_status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="original_only"
     )
+    archive_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="not_ready"
+    )
     duplicate_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     duplicate_group_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     risk_flags: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
@@ -159,6 +168,9 @@ class InvoiceRecord(Base):
     )
     review_actions: Mapped[list["ReviewAction"]] = relationship(
         back_populates="invoice", cascade="all, delete-orphan"
+    )
+    review_queue_item: Mapped["ReviewQueueItem | None"] = relationship(
+        back_populates="invoice", uselist=False, cascade="all, delete-orphan"
     )
 
 
@@ -343,6 +355,9 @@ class RuleVersion(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     kind: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     version_no: Mapped[str] = mapped_column(String(32), nullable=False)
+    bundle_version_no: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True
+    )
     content_json: Mapped[str] = mapped_column(Text, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     change_summary: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -368,6 +383,38 @@ class ReviewAction(Base):
     )
 
     invoice: Mapped[InvoiceRecord] = relationship(back_populates="review_actions")
+
+
+class ReviewQueueItem(Base):
+    __tablename__ = "review_queue_items"
+    __table_args__ = (
+        UniqueConstraint("invoice_id", name="uq_review_queue_invoice_id"),
+        Index("ix_review_queue_batch_status_opened", "batch_id", "queue_status", "opened_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    batch_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("batches.id"), nullable=False, index=True
+    )
+    invoice_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("invoice_records.id"), nullable=False, index=True
+    )
+    queue_status: Mapped[str] = mapped_column(String(32), nullable=False, default="open")
+    queue_reason: Mapped[str] = mapped_column(String(64), nullable=False)
+    version_no: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    opened_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    closed_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    batch: Mapped[Batch] = relationship(back_populates="review_queue_items")
+    invoice: Mapped[InvoiceRecord] = relationship(back_populates="review_queue_item")
 
 
 class ExportJob(Base):

@@ -3,12 +3,14 @@ import type {
   Batch,
   BatchInvoiceListing,
   BatchRetryResult,
+  ConfigBundle,
   CurrentActor,
   InitialSetupPayload,
   InvoiceDetail,
   InvoiceRetryResult,
   InvoiceSummary,
   ReviewAction,
+  ReviewQueueItem,
   RuntimePathResult,
   RuleKind,
   RuleVersion,
@@ -44,9 +46,49 @@ async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function requestBlob(input: string, init?: RequestInit): Promise<{
+  blob: Blob;
+  filename: string;
+  contentType: string;
+}> {
+  const response = await fetch(input, init);
+  if (!response.ok) {
+    throw new ApiError(response.status, await readErrorDetail(response));
+  }
+
+  const blob = await response.blob();
+  const filenameHeader = response.headers.get("X-Invoice-Assistant-Filename");
+  const disposition = response.headers.get("Content-Disposition");
+  const encodedFilenameMatch = disposition?.match(/filename\*=UTF-8''([^;]+)/i);
+  const fallbackFilenameMatch = disposition?.match(/filename="?([^";]+)"?/i);
+  const decodeHeaderFilename = (value: string | null | undefined): string | undefined => {
+    if (!value) {
+      return undefined;
+    }
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  };
+  const filename =
+    decodeHeaderFilename(filenameHeader) ||
+    decodeHeaderFilename(encodedFilenameMatch?.[1]) ||
+    fallbackFilenameMatch?.[1] ||
+    "invoice-assistant-download";
+  return {
+    blob,
+    filename,
+    contentType: response.headers.get("Content-Type") || blob.type || "application/octet-stream",
+  };
+}
+
 export function getErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     return error.detail;
+  }
+  if (error instanceof TypeError && /failed to fetch|networkerror|fetch/i.test(error.message)) {
+    return "无法连接本地服务，请确认“启动发票助手.bat”仍在运行，然后刷新页面重试。";
   }
   if (error instanceof Error) {
     return error.message;
@@ -98,6 +140,10 @@ export async function getInvoiceDetail(invoiceId: string): Promise<InvoiceDetail
 }
 
 export function getInvoicePreviewUrl(invoiceId: string): string {
+  return `/api/invoices/${invoiceId}/preview-rendered`;
+}
+
+export function getInvoiceOriginalPreviewUrl(invoiceId: string): string {
   return `/api/invoices/${invoiceId}/preview`;
 }
 
@@ -105,8 +151,18 @@ export async function createReviewAction(params: {
   invoiceId: string;
   reviewAction: string;
   reviewNote?: string;
-}): Promise<{ item: ReviewAction; invoice: InvoiceSummary }> {
-  return requestJson<{ item: ReviewAction; invoice: InvoiceSummary }>(
+}): Promise<{
+  item: ReviewAction;
+  invoice: InvoiceSummary;
+  review_queue_item?: ReviewQueueItem | null;
+  batch_action_summary?: Record<string, { label: string; count: number }>;
+}> {
+  return requestJson<{
+    item: ReviewAction;
+    invoice: InvoiceSummary;
+    review_queue_item?: ReviewQueueItem | null;
+    batch_action_summary?: Record<string, { label: string; count: number }>;
+  }>(
     `/api/invoices/${params.invoiceId}/review-actions`,
     {
       method: "POST",
@@ -142,6 +198,11 @@ export async function createInvoiceRetry(params: {
 export async function getActiveConfig(): Promise<ActiveConfigPayload> {
   const payload = await requestJson<ActiveConfigPayload>("/api/config");
   return payload;
+}
+
+export async function listConfigBundles(): Promise<ConfigBundle[]> {
+  const payload = await requestJson<{ items: ConfigBundle[] }>("/api/config/bundles/versions");
+  return payload.items;
 }
 
 export async function listRuleVersions(kind: RuleKind): Promise<RuleVersion[]> {
@@ -193,6 +254,28 @@ export async function createInitialSetup(params: {
   });
 }
 
+export async function publishConfigBundle(params: {
+  profile: Record<string, unknown>;
+  reviewPolicy: Record<string, unknown>;
+  namingPolicy: Record<string, unknown>;
+  changeSummary: string;
+  changeReason: string;
+}): Promise<InitialSetupPayload> {
+  return requestJson<InitialSetupPayload>("/api/config/bundles", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      profile: params.profile,
+      review_policy: params.reviewPolicy,
+      naming_policy: params.namingPolicy,
+      change_summary: params.changeSummary,
+      change_reason: params.changeReason,
+    }),
+  });
+}
+
 export async function createExport(params: {
   batchId: string;
   exportType: string;
@@ -221,6 +304,31 @@ export async function createExport(params: {
     }),
   });
   return payload.item;
+}
+
+export async function downloadBatchFile(params: {
+  batchId: string;
+  downloadFormat: string;
+  selectionMode?: "all" | "filtered" | "selected";
+  displayStatus?: string;
+  invoiceIds?: string[];
+}): Promise<{
+  blob: Blob;
+  filename: string;
+  contentType: string;
+}> {
+  return requestBlob(`/api/batches/${params.batchId}/downloads`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      download_format: params.downloadFormat,
+      selection_mode: params.selectionMode ?? "all",
+      display_status: params.displayStatus,
+      invoice_ids: params.invoiceIds ?? [],
+    }),
+  });
 }
 
 export async function openRuntimePath(params: {

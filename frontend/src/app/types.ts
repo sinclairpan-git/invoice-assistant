@@ -58,6 +58,7 @@ export interface RuntimePathResult {
 export interface RuleSnapshotEntry {
   id: string;
   version_no: string;
+  bundle_version_no?: string | null;
   content: Record<string, unknown>;
   changed_by: string;
   change_summary: string;
@@ -78,6 +79,18 @@ export interface SetupStatus {
   missing_required_fields: Record<RuleKind, string[]>;
 }
 
+export interface ConfigBundle {
+  bundle_version_no: string;
+  profile: Record<string, unknown>;
+  review_policy: Record<string, unknown>;
+  naming_policy: Record<string, unknown>;
+  changed_by: string;
+  changed_at: string;
+  change_summary: string;
+  change_reason: string;
+  component_versions: Partial<Record<RuleKind, RuleVersion>>;
+}
+
 export interface Batch {
   id: string;
   batch_no: string;
@@ -90,6 +103,7 @@ export interface Batch {
   failed_files: number;
   suggested_pass_count: number;
   suggested_pass_total_amount: string;
+  config_bundle_version_no?: string | null;
   export_manifest_path: string | null;
   invoice_file_count: number;
   attachment_file_count: number;
@@ -128,10 +142,18 @@ export interface InvoiceSummary {
   system_decision: string | null;
   review_status: string | null;
   artifact_status: string | null;
+  archive_status: string | null;
+  stable_status: {
+    processing_status: string;
+    review_status: string;
+    archive_status: string;
+  };
   duplicate_flag: boolean;
   duplicate_group_key: string | null;
   risk_flags: string[];
   display_status: string;
+  business_bucket: string;
+  business_bucket_label: string;
   basic_compliance_status: string;
   business_compliance_status: string;
   final_decision: string;
@@ -185,6 +207,20 @@ export interface ReviewAction {
   reviewed_at: string;
 }
 
+export interface ReviewQueueItem {
+  id: string;
+  batch_id: string;
+  invoice_id: string;
+  queue_status: string;
+  queue_reason: string;
+  queue_reason_label: string;
+  version_no: number;
+  opened_at: string;
+  updated_at: string;
+  closed_at: string | null;
+  closed_reason: string | null;
+}
+
 export interface InvoiceDetail extends InvoiceSummary {
   last_error_stage: string | null;
   last_error_code: string | null;
@@ -195,6 +231,7 @@ export interface InvoiceDetail extends InvoiceSummary {
   extracted_fields: ExtractedField[];
   field_checks: FieldCheck[];
   review_actions: ReviewAction[];
+  review_queue_item: ReviewQueueItem | null;
 }
 
 export interface BatchRetryResult {
@@ -219,12 +256,14 @@ export interface BatchInvoiceListing {
     count: number;
     total_amount: string;
   };
+  action_summary: Record<string, { label: string; count: number }>;
 }
 
 export interface RuleVersion {
   id: string;
   kind: RuleKind;
   version_no: string;
+  bundle_version_no?: string | null;
   content: Record<string, unknown>;
   is_active: boolean;
   change_summary: string;
@@ -234,12 +273,18 @@ export interface RuleVersion {
 }
 
 export interface ActiveConfigPayload {
+  active_bundle?: ConfigBundle | null;
   active_snapshot: ActiveSnapshot;
   active_versions: Partial<Record<RuleKind, RuleVersion>>;
   setup_status: SetupStatus;
+  compatibility?: {
+    canonical_write_contract: string;
+    bundle_sections: Record<string, string>;
+  };
 }
 
 export interface InitialSetupPayload {
+  bundle?: ConfigBundle | null;
   items: Record<RuleKind, RuleVersion>;
   setup_status: SetupStatus;
 }

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -25,6 +27,25 @@ from backend.app.services.storage_service import StorageError, StorageService
 router = APIRouter(prefix="/api/batches", tags=["batches"])
 
 
+def _ascii_download_filename(filename: str) -> str:
+    suffix = Path(filename).suffix
+    if suffix and suffix.isascii():
+        return f"invoice-assistant-download{suffix}"
+    return "invoice-assistant-download"
+
+
+def _download_response_headers(filename: str) -> dict[str, str]:
+    encoded_filename = quote(filename, safe="")
+    fallback_filename = _ascii_download_filename(filename)
+    return {
+        "Content-Disposition": (
+            f'attachment; filename="{fallback_filename}"; '
+            f"filename*=UTF-8''{encoded_filename}"
+        ),
+        "X-Invoice-Assistant-Filename": encoded_filename,
+    }
+
+
 def get_storage_root(request: Request) -> Path:
     return Path(request.app.state.storage_root)
 
@@ -32,6 +53,13 @@ def get_storage_root(request: Request) -> Path:
 class ExportRequest(BaseModel):
     export_type: str
     created_by: str | None = None
+
+
+class DownloadRequest(BaseModel):
+    download_format: str
+    selection_mode: str = "all"
+    display_status: str | None = None
+    invoice_ids: list[str] | None = None
 
 
 @router.get("")
@@ -172,6 +200,56 @@ def create_export(
             "summary": result.summary,
         }
     }
+
+
+@router.post("/{batch_id}/downloads")
+def create_download(
+    batch_id: str,
+    payload: DownloadRequest,
+    request: Request,
+    session: Session = Depends(get_session),
+    trusted_actor=Depends(get_trusted_actor),
+) -> Response:
+    actor = trusted_actor
+    assert_actor_has_role(
+        session=session,
+        actor=actor,
+        required_role="exporter",
+        entity_type="export_job",
+        entity_id=batch_id,
+        denied_action="download_denied",
+        denied_detail="当前操作者缺少 exporter 角色。",
+        change_summary=f"download_format={payload.download_format}",
+        change_reason="missing exporter role",
+        payload={
+            "batch_id": batch_id,
+            "download_format": payload.download_format,
+            "selection_mode": payload.selection_mode,
+            "display_status": payload.display_status,
+            "invoice_ids": payload.invoice_ids or [],
+        },
+    )
+    service = ExportService(session, storage_root=get_storage_root(request))
+    try:
+        result = service.build_download(
+            batch_id=batch_id,
+            download_format=payload.download_format,
+            created_by=actor.display_name,
+            actor_roles=actor.roles,
+            selection_mode=payload.selection_mode,
+            display_status=payload.display_status,
+            invoice_ids=payload.invoice_ids,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return Response(
+        content=result.content,
+        media_type=result.media_type,
+        headers=_download_response_headers(result.filename),
+    )
 
 
 @router.post("/{batch_id}/retry-failures")

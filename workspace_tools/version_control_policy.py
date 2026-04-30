@@ -56,14 +56,19 @@ def git_tracked_file_policy_violations(repo_root: Path) -> list[str]:
 
 
 def _git_ls_files(repo_root: Path) -> list[str]:
-    completed = subprocess.run(
-        ["git", "-c", "core.quotePath=false", "ls-files"],
-        cwd=repo_root,
-        capture_output=True,
-        check=True,
-        text=True,
-        encoding="utf-8",
-    )
+    try:
+        completed = subprocess.run(
+            ["git", "-c", "core.quotePath=false", "ls-files"],
+            cwd=repo_root,
+            capture_output=True,
+            check=True,
+            text=True,
+            encoding="utf-8",
+        )
+    except subprocess.CalledProcessError as exc:
+        if exc.returncode == 128 and "not a git repository" in (exc.stderr or ""):
+            return []
+        raise
     return [line for line in completed.stdout.splitlines() if line]
 
 

@@ -37,6 +37,15 @@ class CreateInitialSetupRequest(BaseModel):
     change_reason: str
 
 
+class PublishConfigBundleRequest(BaseModel):
+    profile: dict[str, object]
+    review_policy: dict[str, object]
+    naming_policy: dict[str, object]
+    changed_by: str | None = None
+    change_summary: str
+    change_reason: str
+
+
 @router.get("")
 def get_active_config(session: Session = Depends(get_session)) -> dict[str, object]:
     service = ConfigService(session)
@@ -46,8 +55,64 @@ def get_active_config(session: Session = Depends(get_session)) -> dict[str, obje
         if (version := service.get_latest_active(kind)) is not None
     }
     return {
+        "active_bundle": service.get_active_bundle(),
         "active_snapshot": service.get_active_snapshot(),
         "active_versions": active_versions,
+        "setup_status": service.get_setup_status(),
+        "compatibility": {
+            "canonical_write_contract": "ConfigBundle",
+            "bundle_sections": {
+                "profile": "tax_profile",
+                "review_policy": "business_rules",
+                "naming_policy": "naming_rules",
+            },
+        },
+    }
+
+
+@router.get("/bundles/versions")
+def list_bundle_versions(session: Session = Depends(get_session)) -> dict[str, object]:
+    service = ConfigService(session)
+    return {"items": service.list_bundle_versions()}
+
+
+@router.post("/bundles")
+def publish_config_bundle(
+    request: PublishConfigBundleRequest,
+    session: Session = Depends(get_session),
+    trusted_actor=Depends(get_trusted_actor),
+) -> dict[str, object]:
+    actor = trusted_actor
+    assert_actor_has_role(
+        session=session,
+        actor=actor,
+        required_role="config_admin",
+        entity_type="rule_version",
+        entity_id=str(uuid4()),
+        denied_action="create_denied",
+        denied_detail="当前操作者缺少 config_admin 角色。",
+        change_summary=request.change_summary,
+        change_reason=request.change_reason,
+        payload={"kinds": list(RULE_KINDS), "atomic": True, "contract": "ConfigBundle"},
+    )
+    service = ConfigService(session)
+    try:
+        versions = service.publish_bundle(
+            profile=request.profile,
+            review_policy=request.review_policy,
+            naming_policy=request.naming_policy,
+            changed_by=actor.display_name,
+            change_summary=request.change_summary,
+            change_reason=request.change_reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "bundle": service.get_active_bundle(),
+        "items": {
+            kind: serialize_rule_version(version) for kind, version in versions.items()
+        },
         "setup_status": service.get_setup_status(),
     }
 
@@ -100,6 +165,7 @@ def create_initial_setup(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return {
+        "bundle": service.get_active_bundle(),
         "items": {
             kind: serialize_rule_version(version) for kind, version in versions.items()
         },
@@ -142,4 +208,4 @@ def create_rule_version(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"item": serialize_rule_version(version)}
+    return {"item": serialize_rule_version(version), "bundle": service.get_active_bundle()}

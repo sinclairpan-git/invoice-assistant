@@ -96,12 +96,20 @@ class ProgressService:
         batch.processing_files = processing_files
         batch.suggested_pass_count = pass_summary.count
         batch.suggested_pass_total_amount = pass_summary.total_amount
-        batch.status = self._derive_batch_status(
-            total_files=total_files,
-            completed_files=completed_files,
-            processing_files=processing_files,
-            failed_files=failed_files,
+        active_job = (
+            self.session.get(ProcessingJob, batch.active_job_id)
+            if batch.active_job_id
+            else None
         )
+        if active_job is not None and active_job.status in {"queued", "running"}:
+            batch.status = "processing"
+        else:
+            batch.status = self._derive_batch_status(
+                total_files=total_files,
+                completed_files=completed_files,
+                processing_files=processing_files,
+                failed_files=failed_files,
+            )
 
         if persist:
             self.session.commit()
@@ -154,6 +162,13 @@ class ProgressService:
             if batch.active_job_id
             else None
         )
+        if (
+            active_job is not None
+            and active_job.status in {"queued", "running"}
+            and progress_percent >= 100.0
+            and batch.total_files > 0
+        ):
+            progress_percent = 99.0
         if batch.status == "processing":
             if batch.last_stage_code:
                 stage_code = batch.last_stage_code

@@ -42,9 +42,11 @@ from backend.app.services.rules.buyer_validation import (
     BuyerValidationResult,
     validate_buyer_fields,
 )
+from backend.app.services.review_queue_service import ReviewQueueService
 from backend.app.services.rules.duplicate_detector import detect_suspected_duplicate
 from backend.app.services.rules.risk_classifier import classify_risk
 from backend.app.services.status_service import (
+    derive_archive_status,
     derive_display_status,
     summarize_suggested_pass,
 )
@@ -70,6 +72,68 @@ GENERIC_FIELD_PATTERNS = {
     ),
     "invoice_amount": re.compile(
         r"(?:Amount|价税合计|金额)[:：]?\s*([0-9]+(?:\.[0-9]{1,2})?)", re.IGNORECASE
+    ),
+}
+r"""
+GENERIC_FIELD_PATTERNS = {
+    "invoice_number": re.compile(
+        r"(?:Invoice(?:\s*No|\s*Number)?|发票(?:号码|号)|鍙戠エ鍙风爜)[:：锛歖?\s*([A-Z0-9][A-Z0-9\s-]{5,})",
+        re.IGNORECASE,
+    ),
+    "invoice_code": re.compile(
+        r"(?:Invoice\s*Code|发票代码|鍙戠エ浠ｇ爜)[:：锛歖?\s*([A-Z0-9][A-Z0-9\s-]{5,})",
+        re.IGNORECASE,
+    ),
+    "buyer_name": re.compile(
+        r"(?:购买方信息|购买方|Buyer)[\s\S]{0,120}?(?:名称|Name)[:：锛歖?\s*([^\r\n]+)",
+        re.IGNORECASE,
+    ),
+    "buyer_tax_no": re.compile(
+        r"(?:购买方信息|购买方|Buyer)[\s\S]{0,220}?(?:统一社会信用代码\s*/?\s*纳税人识别号|统一社会信用代码|纳税人识别号|购方税号|Tax(?:\s*No)?)[:：锛歖?\s*([0-9A-Z][0-9A-Z\s]{5,})",
+        re.IGNORECASE,
+    ),
+    "seller_name": re.compile(
+        r"(?:销售方信息|销售方|Seller)[\s\S]{0,120}?(?:名称|Name|閿€鏂瑰悕绉?)[:：锛歖?\s*([^\r\n]+)",
+        re.IGNORECASE,
+    ),
+    "invoice_date": re.compile(
+        r"(?:Invoice\s*Date|Date|开票日期|寮€绁ㄦ棩鏈?)[:：锛歖?\s*([0-9]{4}\s*(?:[-/年])\s*[0-9]{1,2}\s*(?:[-/月])\s*[0-9]{1,2}\s*日?)",
+        re.IGNORECASE,
+    ),
+    "invoice_amount": re.compile(
+        r"(?:价税合计\s*(?:\(?\s*小写\s*\)?|（小写）)?|小写|Amount|浠风◣鍚堣|閲戦)[^0-9]{0,20}([0-9]+(?:\.[0-9]{1,2})?)",
+        re.IGNORECASE,
+    ),
+}
+"""
+GENERIC_FIELD_PATTERNS = {
+    "invoice_number": re.compile(
+        "(?:Invoice(?:\\s*No|\\s*Number)?|\\u53d1\\u7968(?:\\u53f7\\u7801|\\u53f7))[:\\uff1a]?\\s*([A-Z0-9][A-Z0-9\\s-]{5,})",
+        re.IGNORECASE,
+    ),
+    "invoice_code": re.compile(
+        "(?:Invoice\\s*Code|\\u53d1\\u7968\\u4ee3\\u7801)[:\\uff1a]?\\s*([A-Z0-9][A-Z0-9\\s-]{5,})",
+        re.IGNORECASE,
+    ),
+    "buyer_name": re.compile(
+        "(?:\\u8d2d\\u4e70\\u65b9\\u4fe1\\u606f|\\u8d2d\\u4e70\\u65b9|Buyer)[\\s\\S]{0,120}?(?:\\u540d\\u79f0|Name)[:\\uff1a]?\\s*([^\\r\\n]+)",
+        re.IGNORECASE,
+    ),
+    "buyer_tax_no": re.compile(
+        "(?:\\u8d2d\\u4e70\\u65b9\\u4fe1\\u606f|\\u8d2d\\u4e70\\u65b9|Buyer)[\\s\\S]{0,220}?(?:\\u7edf\\u4e00\\u793e\\u4f1a\\u4fe1\\u7528\\u4ee3\\u7801\\s*/?\\s*\\u7eb3\\u7a0e\\u4eba\\u8bc6\\u522b\\u53f7|\\u7edf\\u4e00\\u793e\\u4f1a\\u4fe1\\u7528\\u4ee3\\u7801|\\u7eb3\\u7a0e\\u4eba\\u8bc6\\u522b\\u53f7|\\u8d2d\\u65b9\\u7a0e\\u53f7|Tax(?:\\s*No)?)[:\\uff1a]?\\s*([0-9A-Z][0-9A-Z\\s]{5,})",
+        re.IGNORECASE,
+    ),
+    "seller_name": re.compile(
+        "(?:\\u9500\\u552e\\u65b9\\u4fe1\\u606f|\\u9500\\u552e\\u65b9|Seller)[\\s\\S]{0,120}?(?:\\u540d\\u79f0|Name)[:\\uff1a]?\\s*([^\\r\\n]+)",
+        re.IGNORECASE,
+    ),
+    "invoice_date": re.compile(
+        "(?:Invoice\\s*Date|Date|\\u5f00\\u7968\\u65e5\\u671f)[:\\uff1a]?\\s*([0-9]{4}\\s*(?:[-/\\u5e74])\\s*[0-9]{1,2}\\s*(?:[-/\\u6708])\\s*[0-9]{1,2}\\s*\\u65e5?)",
+        re.IGNORECASE,
+    ),
+    "invoice_amount": re.compile(
+        "(?:\\u4ef7\\u7a0e\\u5408\\u8ba1\\s*(?:\\(?\\s*\\u5c0f\\u5199\\s*\\)?|\\uff08\\u5c0f\\u5199\\uff09)?|\\u5c0f\\u5199|Amount)(?:(?!\\u53d1\\u7968(?:\\u53f7\\u7801|\\u53f7)|Invoice(?:\\s*No|\\s*Number)?)[^0-9]){0,80}[\\u00a5\\uffe5]?\\s*([0-9]{1,12}(?:\\.[0-9]{1,2})?)(?![0-9])",
+        re.IGNORECASE,
     ),
 }
 SUPPORTED_NAMING_KEYS = {
@@ -272,11 +336,7 @@ class ProcessingService:
         invoice.processing_status = "completed"
         invoice.processing_stage = "completed"
         invoice.review_status = "not_reviewed"
-        invoice.display_status = derive_display_status(
-            processing_status=invoice.processing_status,
-            system_decision=invoice.system_decision,
-            duplicate_flag=invoice.duplicate_flag,
-        )
+        self._refresh_invoice_user_state(invoice)
         invoice.problem_count = self._compute_problem_count(
             risk_flags=duplicate_result.risk_flags,
             buyer_validation=buyer_validation,
@@ -374,11 +434,8 @@ class ProcessingService:
         invoice.last_error_code = self._extract_error_code(reason)
         invoice.last_error_message = reason
         invoice.retryable = self._is_retryable_error(invoice.last_error_code)
-        invoice.display_status = derive_display_status(
-            processing_status=invoice.processing_status,
-            system_decision=invoice.system_decision,
-            duplicate_flag=invoice.duplicate_flag,
-        )
+        invoice.archive_status = "not_ready"
+        self._refresh_invoice_user_state(invoice)
         invoice.problem_count = 1
         invoice.failure_reason = reason
         invoice.evidence_items.clear()
@@ -481,6 +538,7 @@ class ProcessingService:
         invoice.renamed_filename = None
         invoice.storage_path_renamed = None
         invoice.artifact_status = "original_only"
+        invoice.archive_status = "not_ready"
         invoice.last_attempt_id = attempt.id
         invoice.last_error_stage = None
         invoice.last_error_code = None
@@ -490,6 +548,7 @@ class ProcessingService:
         invoice.evidence_items.clear()
         invoice.extracted_fields.clear()
         invoice.field_checks.clear()
+        self._refresh_invoice_user_state(invoice)
 
         batch.active_job_id = job.id
         batch.status = "processing"
@@ -636,11 +695,7 @@ class ProcessingService:
                 invoice.risk_flags = json.dumps(
                     duplicate_result.risk_flags, ensure_ascii=False, sort_keys=True
                 )
-                invoice.display_status = derive_display_status(
-                    processing_status=invoice.processing_status,
-                    system_decision=invoice.system_decision,
-                    duplicate_flag=invoice.duplicate_flag,
-                )
+                self._refresh_invoice_user_state(invoice)
                 invoice.problem_count = self._compute_problem_count(
                     risk_flags=duplicate_result.risk_flags,
                     buyer_validation=buyer_validation,
@@ -854,11 +909,7 @@ class ProcessingService:
         invoice.risk_flags = json.dumps(
             merged_risk_flags, ensure_ascii=False, sort_keys=True
         )
-        invoice.display_status = derive_display_status(
-            processing_status=invoice.processing_status,
-            system_decision=invoice.system_decision,
-            duplicate_flag=invoice.duplicate_flag,
-        )
+        self._refresh_invoice_user_state(invoice)
         invoice.problem_count = self._compute_problem_count(
             risk_flags=merged_risk_flags,
             buyer_validation=buyer_validation,
@@ -998,6 +1049,9 @@ class ProcessingService:
             select(InvoiceRecord).where(InvoiceRecord.batch_id == batch_id)
         ).all()
         pass_summary = summarize_suggested_pass(invoices)
+        review_queue_service = ReviewQueueService(self.session)
+        for invoice in invoices:
+            review_queue_service.sync_invoice(invoice)
         self._refresh_job_counters(job=job)
         job.current_stage = "completed" if job.failed_items == 0 else "failed"
         job.status = "completed" if job.failed_items == 0 else "completed_with_failures"
@@ -1027,6 +1081,23 @@ class ProcessingService:
             else "completed"
         )
         self.session.commit()
+
+    def _refresh_invoice_user_state(self, invoice: InvoiceRecord) -> None:
+        invoice.archive_status = derive_archive_status(
+            processing_status=invoice.processing_status,
+            system_decision=invoice.system_decision,
+            duplicate_flag=invoice.duplicate_flag,
+            review_status=invoice.review_status,
+            archive_status=invoice.archive_status,
+            artifact_status=invoice.artifact_status,
+        )
+        invoice.display_status = derive_display_status(
+            processing_status=invoice.processing_status,
+            system_decision=invoice.system_decision,
+            duplicate_flag=invoice.duplicate_flag,
+            review_status=invoice.review_status,
+        )
+        ReviewQueueService(self.session).sync_invoice(invoice)
 
     @staticmethod
     def _current_job(batch: Batch) -> ProcessingJob | None:
@@ -1253,16 +1324,25 @@ class ProcessingService:
             if not match:
                 continue
             value = match.group(1).strip()
+            normalized_value = self._normalize_candidate_value(field_name, value)
             field_candidates.append(
                 {
                     "field_name": field_name,
                     "value": value,
+                    "normalized_value": normalized_value,
                     "confidence": extraction.base_confidence,
                     "page_no": 1,
                     "source_fragment": match.group(0).strip(),
                 }
             )
             confidence_fields[field_name] = extraction.base_confidence
+
+        self._append_e_invoice_sequence_candidates(
+            normalized_text=normalized_text,
+            field_candidates=field_candidates,
+            confidence_fields=confidence_fields,
+            confidence=extraction.base_confidence,
+        )
 
         if not field_candidates:
             raise ValueError("Unable to extract invoice fields from document text.")
@@ -1298,6 +1378,123 @@ class ProcessingService:
             return adapt_ocr_output(payload)
         return adapt_text_extraction(payload)
 
+    def _append_e_invoice_sequence_candidates(
+        self,
+        *,
+        normalized_text: str,
+        field_candidates: list[dict[str, Any]],
+        confidence_fields: dict[str, float],
+        confidence: float,
+    ) -> None:
+        existing_fields = {
+            str(candidate.get("field_name") or "") for candidate in field_candidates
+        }
+
+        sequence_match = re.search(
+            (
+                "(?P<invoice_number>[0-9]{16,24})\\s+"
+                "(?P<invoice_date>[0-9]{4}\\s*\\u5e74\\s*[0-9]{1,2}\\s*\\u6708\\s*[0-9]{1,2}\\s*\\u65e5)\\s+"
+                "(?P<buyer_name>[\\u4e00-\\u9fffA-Za-z0-9\\uff08\\uff09()\\u00b7]+?(?:\\u516c\\u53f8|\\u5355\\u4f4d|\\u4e2d\\u5fc3|\\u5382|\\u5e97))\\s+"
+                "(?P<buyer_tax_no>[0-9A-Z]{15,20})\\s+"
+                "(?P<seller_name>[\\u4e00-\\u9fffA-Za-z0-9\\uff08\\uff09()\\u00b7]+?(?:\\u516c\\u53f8|\\u5355\\u4f4d|\\u4e2d\\u5fc3|\\u5382|\\u5e97))\\s+"
+                "(?P<seller_tax_no>[0-9A-Z]{15,20})"
+            ),
+            normalized_text,
+            re.IGNORECASE,
+        )
+        if sequence_match:
+            for field_name in (
+                "invoice_number",
+                "invoice_date",
+                "buyer_name",
+                "buyer_tax_no",
+                "seller_name",
+            ):
+                if field_name in existing_fields:
+                    continue
+                value = sequence_match.group(field_name).strip()
+                self._append_generic_candidate(
+                    field_candidates=field_candidates,
+                    confidence_fields=confidence_fields,
+                    field_name=field_name,
+                    value=value,
+                    confidence=confidence,
+                    source_fragment=sequence_match.group(0).strip(),
+                )
+                existing_fields.add(field_name)
+
+        if "invoice_amount" not in existing_fields:
+            amount_candidate = self._find_total_amount_candidate(normalized_text)
+            if amount_candidate is not None:
+                amount_value, amount_fragment = amount_candidate
+                self._append_generic_candidate(
+                    field_candidates=field_candidates,
+                    confidence_fields=confidence_fields,
+                    field_name="invoice_amount",
+                    value=amount_value,
+                    confidence=confidence,
+                    source_fragment=amount_fragment,
+                )
+
+    @staticmethod
+    def _find_total_amount_candidate(normalized_text: str) -> tuple[str, str] | None:
+        anchor_match = re.search(
+            "(?:\\u4ef7\\u7a0e\\u5408\\u8ba1|\\u5c0f\\s*\\u5199|Amount)",
+            normalized_text,
+            re.IGNORECASE,
+        )
+        if anchor_match is None:
+            return None
+
+        window = normalized_text[anchor_match.start() : anchor_match.start() + 700]
+        money_matches = list(
+            re.finditer(
+                "([\\u00a5\\uffe5]\\s*([0-9]{1,12}(?:\\.[0-9]{1,2})?)(?![0-9]))",
+                window,
+                re.IGNORECASE,
+            )
+        )
+        if not money_matches:
+            return None
+
+        candidates: list[tuple[Decimal, str, str]] = []
+        for match in money_matches:
+            value = match.group(2).strip()
+            try:
+                amount = Decimal(value)
+            except InvalidOperation:
+                continue
+            if amount <= 0:
+                continue
+            candidates.append((amount, value, match.group(1).strip()))
+
+        if not candidates:
+            return None
+        _, value, fragment = max(candidates, key=lambda item: item[0])
+        return value, fragment
+
+    def _append_generic_candidate(
+        self,
+        *,
+        field_candidates: list[dict[str, Any]],
+        confidence_fields: dict[str, float],
+        field_name: str,
+        value: str,
+        confidence: float,
+        source_fragment: str,
+    ) -> None:
+        field_candidates.append(
+            {
+                "field_name": field_name,
+                "value": value,
+                "normalized_value": self._normalize_candidate_value(field_name, value),
+                "confidence": confidence,
+                "page_no": 1,
+                "source_fragment": source_fragment,
+            }
+        )
+        confidence_fields[field_name] = confidence
+
     def _try_build_generic_evidence(
         self, extraction: ProviderExtractionPayload
     ) -> UnifiedDocumentEvidence | None:
@@ -1322,7 +1519,7 @@ class ProcessingService:
         candidate = evidence.best_candidate(field_name)
         if candidate is None:
             return None
-        value = candidate.value.strip()
+        value = (candidate.normalized_value or candidate.value).strip()
         return value or None
 
     def _candidate_date(
@@ -1331,7 +1528,13 @@ class ProcessingService:
         value = self._candidate_value(evidence, field_name)
         if not value:
             return None
-        normalized = value.replace("/", "-")
+        normalized = (
+            value.replace("年", "-")
+            .replace("月", "-")
+            .replace("日", "")
+            .replace("/", "-")
+        )
+        normalized = re.sub(r"\s+", "", normalized)
         try:
             return datetime.fromisoformat(normalized).date()
         except ValueError:
@@ -1344,10 +1547,30 @@ class ProcessingService:
         candidate = evidence.best_candidate(field_name)
         if candidate is None or not candidate.value.strip():
             return None
+        raw_value = candidate.normalized_value or candidate.value
         try:
-            return Decimal(candidate.value.strip()).quantize(Decimal("0.01"))
+            return Decimal(raw_value.strip()).quantize(Decimal("0.01"))
         except InvalidOperation:
             return None
+
+    @staticmethod
+    def _normalize_candidate_value(field_name: str, value: str) -> str:
+        stripped = value.strip()
+        if field_name in {"buyer_tax_no", "invoice_number", "invoice_code"}:
+            return "".join(stripped.split()).upper()
+        if field_name in {"buyer_name", "seller_name"}:
+            return "".join(stripped.split())
+        if field_name == "invoice_date":
+            return (
+                stripped.replace("年", "-")
+                .replace("月", "-")
+                .replace("日", "")
+                .replace("/", "-")
+            )
+        if field_name == "invoice_amount":
+            match = re.search(r"[0-9]+(?:\.[0-9]{1,2})?", stripped)
+            return match.group(0) if match else stripped
+        return stripped
 
     @staticmethod
     def _compute_problem_count(

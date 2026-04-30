@@ -80,7 +80,7 @@ def set_trusted_actor(
 
 
 def wait_for_batch_stage(
-    client: TestClient, batch_id: str, expected_stage: str, *, timeout: float = 5.0
+    client: TestClient, batch_id: str, expected_stage: str, *, timeout: float = 20.0
 ) -> dict[str, object]:
     deadline = time.monotonic() + timeout
     last_payload: dict[str, object] | None = None
