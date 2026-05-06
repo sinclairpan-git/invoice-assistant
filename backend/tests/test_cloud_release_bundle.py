@@ -112,3 +112,15 @@ def test_build_cloud_release_bundle_creates_macos_tar_with_executable_scripts(tm
     assert modes["invoice-assistant-offline-v1.2.3-macos-arm64/install_offline.sh"] & 0o111
     assert modes["invoice-assistant-offline-v1.2.3-macos-arm64/start_invoice_assistant.command"] & 0o111
     assert modes["invoice-assistant-offline-v1.2.3-macos-arm64/stop_invoice_assistant.command"] & 0o111
+
+
+def test_powershell_installer_stops_on_native_command_failures() -> None:
+    script = (
+        Path(__file__).resolve().parents[2]
+        / "packaging"
+        / "offline"
+        / "install_offline.ps1"
+    ).read_text(encoding="utf-8")
+
+    assert "$PSNativeCommandUseErrorActionPreference = $true" in script
+    assert "if ($LASTEXITCODE -ne 0)" in script
