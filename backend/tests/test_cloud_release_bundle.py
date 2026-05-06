@@ -39,8 +39,11 @@ def _create_fixture_project(tmp_path: Path) -> tuple[Path, Path]:
     _write_file(project_root / "packaging" / "offline" / "install_offline.sh", "#!/usr/bin/env bash\necho install\n")
     _write_file(project_root / "packaging" / "offline" / "install_offline.ps1", "Write-Host install\n")
     _write_file(project_root / "packaging" / "offline" / "install_offline.bat", "@echo off\r\necho install\r\n")
+    _write_file(project_root / "packaging" / "offline" / "windows_path_alias.ps1", "function Resolve-InvoiceAssistantWindowsRuntimeRoot {}\n")
+    _write_file(project_root / "packaging" / "offline" / "start_invoice_assistant.ps1", "Write-Host start\n")
     _write_file(project_root / "packaging" / "offline" / "start_invoice_assistant.command", "#!/usr/bin/env bash\necho start\n")
     _write_file(project_root / "packaging" / "offline" / "start_invoice_assistant.bat", "@echo off\r\necho start\r\n")
+    _write_file(project_root / "packaging" / "offline" / "stop_invoice_assistant.ps1", "Write-Host stop\n")
     _write_file(project_root / "packaging" / "offline" / "stop_invoice_assistant.command", "#!/usr/bin/env bash\necho stop\n")
     _write_file(project_root / "packaging" / "offline" / "stop_invoice_assistant.bat", "@echo off\r\necho stop\r\n")
     _write_file(project_root / "packaging" / "windows" / "bootstrap" / "start_server.py", "print('start server')\n")
@@ -70,7 +73,11 @@ def test_build_cloud_release_bundle_creates_windows_zip(tmp_path: Path) -> None:
     with zipfile.ZipFile(result.archive_path) as archive:
         names = set(archive.namelist())
     assert "invoice-assistant-offline-v1.2.3-windows-amd64/install_offline.bat" in names
+    assert "invoice-assistant-offline-v1.2.3-windows-amd64/install_offline.ps1" in names
+    assert "invoice-assistant-offline-v1.2.3-windows-amd64/windows_path_alias.ps1" in names
+    assert "invoice-assistant-offline-v1.2.3-windows-amd64/start_invoice_assistant.ps1" in names
     assert "invoice-assistant-offline-v1.2.3-windows-amd64/start_invoice_assistant.bat" in names
+    assert "invoice-assistant-offline-v1.2.3-windows-amd64/stop_invoice_assistant.ps1" in names
     assert "invoice-assistant-offline-v1.2.3-windows-amd64/wheels/fastapi-0.0.0-py3-none-any.whl" in names
     assert "invoice-assistant-offline-v1.2.3-windows-amd64/app/server/backend/app/main.py" in names
     assert "invoice-assistant-offline-v1.2.3-windows-amd64/app/server/frontend-dist/index.html" in names
@@ -126,3 +133,28 @@ def test_powershell_installer_stops_on_native_command_failures() -> None:
     assert "if ($LASTEXITCODE -ne 0)" in script
     assert "Invoke-CheckedNative -Command $Python -Arguments @(" in script
     assert 'Invoke-CheckedNative -Command $VenvPython -Arguments @("-m", "pip", "install"' in script
+
+
+def test_windows_offline_scripts_use_short_path_alias_for_runtime_operations() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    helper = (repo_root / "packaging" / "offline" / "windows_path_alias.ps1").read_text(encoding="utf-8")
+    installer = (repo_root / "packaging" / "offline" / "install_offline.ps1").read_text(encoding="utf-8")
+    launcher = (repo_root / "packaging" / "offline" / "start_invoice_assistant.ps1").read_text(encoding="utf-8")
+    stopper = (repo_root / "packaging" / "offline" / "stop_invoice_assistant.ps1").read_text(encoding="utf-8")
+    bat_installer = (repo_root / "packaging" / "offline" / "install_offline.bat").read_text(encoding="utf-8")
+    bat_launcher = (repo_root / "packaging" / "offline" / "start_invoice_assistant.bat").read_text(encoding="utf-8")
+    bat_stopper = (repo_root / "packaging" / "offline" / "stop_invoice_assistant.bat").read_text(encoding="utf-8")
+
+    assert "Resolve-InvoiceAssistantWindowsRuntimeRoot" in helper
+    assert "New-Item -ItemType Junction" in helper
+    assert "InvoiceAssistant\\aliases" in helper
+    assert "$RuntimeRoot = Resolve-InvoiceAssistantWindowsRuntimeRoot" in installer
+    assert "$RuntimeRoot = Resolve-InvoiceAssistantWindowsRuntimeRoot" in launcher
+    assert "$RuntimeRoot = Resolve-InvoiceAssistantWindowsRuntimeRoot" in stopper
+    assert "install_offline.ps1" in bat_installer
+    assert "if not errorlevel 1 (" not in bat_installer
+    assert "if not errorlevel 1 (" not in bat_launcher
+    assert "if not errorlevel 1 (" not in bat_stopper
+    assert "goto windows_powershell" in bat_installer
+    assert "goto windows_powershell" in bat_launcher
+    assert "goto windows_powershell" in bat_stopper

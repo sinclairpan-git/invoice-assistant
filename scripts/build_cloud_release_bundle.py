@@ -21,9 +21,12 @@ OFFLINE_SCRIPT_NAMES = (
     "install_offline.ps1",
     "install_offline.sh",
     "start_invoice_assistant.bat",
+    "start_invoice_assistant.ps1",
     "start_invoice_assistant.command",
     "stop_invoice_assistant.bat",
+    "stop_invoice_assistant.ps1",
     "stop_invoice_assistant.command",
+    "windows_path_alias.ps1",
 )
 POSIX_EXECUTABLE_SUFFIXES = (".sh", ".command")
 
