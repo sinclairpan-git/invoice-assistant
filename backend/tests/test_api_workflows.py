@@ -1054,55 +1054,65 @@ def test_create_batch_returns_without_waiting_for_processing_completion(
 
     with TestClient(app) as client:
         response_holder: dict[str, object] = {}
+        response_received = threading.Event()
+        request_error: dict[str, BaseException] = {}
 
         def send_request() -> None:
-            response_holder["response"] = client.post(
-                "/api/batches",
-                data={"created_by": "async-uploader", "batch_no": "BATCH-ASYNC-001"},
-                files=[
-                    (
-                        "files",
-                        ("upload.pdf", b"%PDF-1.7\nupload fixture", "application/pdf"),
-                    ),
-                    (
-                        "files",
+            try:
+                response_holder["response"] = client.post(
+                    "/api/batches",
+                    data={"created_by": "async-uploader", "batch_no": "BATCH-ASYNC-001"},
+                    files=[
                         (
-                            "upload-销货清单.pdf",
-                            b"%PDF-1.7\nattachment fixture",
-                            "application/pdf",
+                            "files",
+                            ("upload.pdf", b"%PDF-1.7\nupload fixture", "application/pdf"),
                         ),
-                    ),
-                ],
-            )
+                        (
+                            "files",
+                            (
+                                "upload-销货清单.pdf",
+                                b"%PDF-1.7\nattachment fixture",
+                                "application/pdf",
+                            ),
+                        ),
+                    ],
+                )
+            except BaseException as exc:
+                request_error["error"] = exc
+            finally:
+                response_received.set()
 
         request_thread = threading.Thread(target=send_request)
         request_thread.start()
 
-        assert processing_started.wait(timeout=1.0)
-        request_thread.join(timeout=0.2)
-        assert not request_thread.is_alive()
-
-        response = response_holder["response"]
-        assert response.status_code == 200
-        payload = response.json()["item"]
-        assert payload["batch_no"] == "BATCH-ASYNC-001"
-        assert payload["total_files"] == 1
-        assert payload["invoice_file_count"] == 1
-        assert payload["attachment_file_count"] == 1
-        assert payload["progress"]["stage_code"] in {"queued", "processing"}
-
-        session = app.state.session_factory()
         try:
-            batch = session.scalar(
-                select(Batch).where(Batch.batch_no == "BATCH-ASYNC-001")
-            )
-            assert batch is not None
-            assert batch.status in {"queued", "processing"}
-            assert batch.total_files == 1
-        finally:
-            session.close()
+            assert processing_started.wait(timeout=1.0)
+            assert response_received.wait(timeout=2.0)
+            assert "error" not in request_error
 
-        release_processing.set()
+            response = response_holder["response"]
+            assert response.status_code == 200
+            payload = response.json()["item"]
+            assert payload["batch_no"] == "BATCH-ASYNC-001"
+            assert payload["total_files"] == 1
+            assert payload["invoice_file_count"] == 1
+            assert payload["attachment_file_count"] == 1
+            assert payload["progress"]["stage_code"] in {"queued", "processing"}
+
+            session = app.state.session_factory()
+            try:
+                batch = session.scalar(
+                    select(Batch).where(Batch.batch_no == "BATCH-ASYNC-001")
+                )
+                assert batch is not None
+                assert batch.status in {"queued", "processing"}
+                assert batch.total_files == 1
+            finally:
+                session.close()
+        finally:
+            release_processing.set()
+            request_thread.join(timeout=5.0)
+
         final_progress = wait_for_batch_stage(client, payload["id"], "failed")
         assert final_progress["failed_files"] == 1
 

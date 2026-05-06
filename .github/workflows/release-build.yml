@@ -6,7 +6,7 @@ on:
       tag:
         description: Release tag that will receive platform assets.
         required: true
-        default: v0.1.0
+        default: v0.5.0
       upload_to_release:
         description: Upload smoke-passed assets to the existing GitHub Release.
         required: true
