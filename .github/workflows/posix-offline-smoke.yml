@@ -18,6 +18,9 @@ on:
 permissions:
   contents: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   smoke:
     name: ${{ matrix.asset_os }} tar.gz
@@ -45,7 +48,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -130,7 +133,7 @@ jobs:
 
       - name: Upload smoke evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: posix-offline-smoke-evidence-${{ matrix.asset_os }}
           path: ${{ runner.temp }}/invoice-assistant-posix-smoke-evidence

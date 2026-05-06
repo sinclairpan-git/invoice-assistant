@@ -14,6 +14,9 @@ on:
 permissions:
   contents: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 concurrency:
   group: release-artifact-smoke-${{ github.event.release.tag_name || inputs.tag }}
   cancel-in-progress: true
@@ -30,7 +33,7 @@ jobs:
 
     steps:
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -66,7 +69,7 @@ jobs:
 
       - name: Upload release zip smoke evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: release-zip-smoke-evidence
           path: ${{ runner.temp }}/invoice-assistant-release-zip-evidence
@@ -93,7 +96,7 @@ jobs:
 
     steps:
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -131,7 +134,7 @@ jobs:
 
       - name: Upload release tar smoke evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: release-${{ matrix.asset_os }}-tar-smoke-evidence
           path: ${{ runner.temp }}/invoice-assistant-release-tar-evidence
