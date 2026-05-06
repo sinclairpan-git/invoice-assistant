@@ -1,0 +1,138 @@
+name: Release Artifact Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to verify.
+        required: true
+        default: v0.1.0
+  release:
+    types:
+      - published
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-artifact-smoke-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: true
+
+jobs:
+  windows-zip:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download release zip asset
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $assetDir = Join-Path $env:RUNNER_TEMP "invoice-assistant-release-assets"
+          New-Item -ItemType Directory -Force -Path $assetDir | Out-Null
+          gh release download $env:RELEASE_TAG --pattern "invoice-assistant-offline-*-windows-*.zip" --dir $assetDir --repo $env:GITHUB_REPOSITORY
+
+      - name: Install release zip and run smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $assetDir = Join-Path $env:RUNNER_TEMP "invoice-assistant-release-assets"
+          $smokeRoot = Join-Path $env:RUNNER_TEMP "invoice-assistant-release-zip-smoke"
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP "invoice-assistant-release-zip-evidence"
+          Remove-Item -Recurse -Force $smokeRoot, $evidenceRoot -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $smokeRoot, $evidenceRoot | Out-Null
+          $archive = Get-ChildItem -Path $assetDir -Filter "invoice-assistant-offline-*-windows-*.zip" -File | Select-Object -First 1
+          if (-not $archive) { throw "Expected release zip asset was not downloaded." }
+          Expand-Archive -LiteralPath $archive.FullName -DestinationPath $smokeRoot -Force
+          $bundleDir = Get-ChildItem -Path $smokeRoot -Directory | Select-Object -First 1
+          if (-not $bundleDir) { throw "Expanded release zip did not contain a bundle directory." }
+          Push-Location $bundleDir.FullName
+          & .\install_offline.bat *>&1 | Tee-Object -FilePath (Join-Path $evidenceRoot "install.log")
+          if ($LASTEXITCODE -ne 0) { throw "release install_offline.bat failed with exit code $LASTEXITCODE" }
+          & .\.venv\Scripts\python.exe app\bootstrap\start_server.py --help *>&1 | Tee-Object -FilePath (Join-Path $evidenceRoot "start-help.txt")
+          if ($LASTEXITCODE -ne 0) { throw "release start_server.py --help failed with exit code $LASTEXITCODE" }
+          Pop-Location
+          Copy-Item -LiteralPath (Join-Path $bundleDir.FullName "bundle-manifest.json") -Destination $evidenceRoot
+
+      - name: Upload release zip smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-zip-smoke-evidence
+          path: ${{ runner.temp }}/invoice-assistant-release-zip-evidence
+          if-no-files-found: warn
+
+  posix-tar:
+    name: ${{ matrix.asset_os }} tar.gz
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - asset_os: macos
+            runner: macos-latest
+          - asset_os: linux
+            runner: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      RELEASE_ASSET_OS: ${{ matrix.asset_os }}
+      GH_TOKEN: ${{ github.token }}
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download release tar asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          asset_dir="${RUNNER_TEMP}/invoice-assistant-release-assets"
+          mkdir -p "${asset_dir}"
+          gh release download "${RELEASE_TAG}" --pattern "invoice-assistant-offline-*-${RELEASE_ASSET_OS}-*.tar.gz" --dir "${asset_dir}" --repo "${GITHUB_REPOSITORY}"
+
+      - name: Install release tar and run smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          asset_dir="${RUNNER_TEMP}/invoice-assistant-release-assets"
+          smoke_root="${RUNNER_TEMP}/invoice-assistant-release-tar-smoke"
+          evidence_root="${RUNNER_TEMP}/invoice-assistant-release-tar-evidence"
+          rm -rf "${smoke_root}" "${evidence_root}"
+          mkdir -p "${smoke_root}" "${evidence_root}"
+          archive="$(find "${asset_dir}" -maxdepth 1 -name "invoice-assistant-offline-*-${RELEASE_ASSET_OS}-*.tar.gz" -type f | head -n 1)"
+          if [[ -z "${archive}" ]]; then
+            echo "Expected ${RELEASE_ASSET_OS} release tar asset was not downloaded." >&2
+            exit 1
+          fi
+          tar xzf "${archive}" -C "${smoke_root}"
+          bundle_dir="$(find "${smoke_root}" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+          test -n "${bundle_dir}"
+          (
+            cd "${bundle_dir}"
+            ./install_offline.sh 2>&1 | tee "${evidence_root}/install.log"
+            ./.venv/bin/python app/bootstrap/start_server.py --help 2>&1 | tee "${evidence_root}/start-help.txt"
+          )
+          cp "${bundle_dir}/bundle-manifest.json" "${evidence_root}/"
+
+      - name: Upload release tar smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.asset_os }}-tar-smoke-evidence
+          path: ${{ runner.temp }}/invoice-assistant-release-tar-evidence
+          if-no-files-found: warn
