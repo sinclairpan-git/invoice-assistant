@@ -1,0 +1,144 @@
+name: Compatibility Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: utf-8
+
+concurrency:
+  group: compatibility-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cross-platform-validation:
+    name: Cross Platform Validation (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+        python-version:
+          - "3.11"
+          - "3.12"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v5.0.0
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Run backend compatibility tests
+        run: >-
+          uv run pytest
+          backend/tests/test_app_boot.py
+          backend/tests/test_release_runtime.py
+          backend/tests/test_portable_bootstrap.py
+          backend/tests/test_cloud_release_bundle.py
+          -q
+
+      - name: Install frontend dependencies
+        run: pnpm --dir frontend install --frozen-lockfile
+
+      - name: Build frontend
+        run: pnpm --dir frontend build
+
+  windows-shell-smoke:
+    name: Windows Shell Smoke (${{ matrix.shell }})
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        shell:
+          - pwsh
+          - cmd
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Shell smoke (pwsh)
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          uv run python -c "import backend.app.main; import fastapi, sqlalchemy, uvicorn"
+
+      - name: Shell smoke (cmd)
+        if: matrix.shell == 'cmd'
+        shell: cmd
+        run: |
+          uv run python -c "import backend.app.main; import fastapi, sqlalchemy, uvicorn" || exit /b 1
+
+  compatibility-gate-result:
+    name: Compatibility Gate Result
+    runs-on: ubuntu-latest
+    needs:
+      - cross-platform-validation
+      - windows-shell-smoke
+    if: always()
+
+    steps:
+      - name: Check compatibility gate inputs
+        run: |
+          echo "cross-platform-validation: ${{ needs.cross-platform-validation.result }}"
+          echo "windows-shell-smoke: ${{ needs.windows-shell-smoke.result }}"
+
+          if [ "${{ needs.cross-platform-validation.result }}" != "success" ]; then
+            echo "cross-platform-validation did not succeed."
+            exit 1
+          fi
+
+          if [ "${{ needs.windows-shell-smoke.result }}" != "success" ]; then
+            echo "windows-shell-smoke did not succeed."
+            exit 1
+          fi
+
+          echo "Compatibility gate inputs succeeded."

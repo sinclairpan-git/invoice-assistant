@@ -1,0 +1,133 @@
+name: Windows Offline Smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/windows-offline-smoke.yml"
+      - ".github/workflows/posix-offline-smoke.yml"
+      - ".github/workflows/release-build.yml"
+      - ".github/workflows/release-artifact-smoke.yml"
+      - "backend/**"
+      - "frontend/**"
+      - "packaging/**"
+      - "scripts/build_cloud_release_bundle.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-offline-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v5.0.0
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm --dir frontend install --frozen-lockfile
+
+      - name: Build frontend
+        run: pnpm --dir frontend build
+
+      - name: Build backend runtime wheelhouse
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist-offline/wheels
+          python - <<'PY'
+          import tomllib
+          from pathlib import Path
+          deps = tomllib.loads(Path("backend/pyproject.toml").read_text(encoding="utf-8"))["project"]["dependencies"]
+          Path("dist-offline/backend-runtime-requirements.txt").write_text("\n".join(deps) + "\n", encoding="utf-8")
+          PY
+          python -m pip install --upgrade pip
+          python -m pip download --only-binary=:all: --dest dist-offline/wheels -r dist-offline/backend-runtime-requirements.txt
+
+      - name: Build Windows offline bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/build_cloud_release_bundle.py \
+            --version "v0.1.0-smoke" \
+            --platform-os windows \
+            --platform-machine amd64 \
+            --archive-format zip \
+            --wheels-dir dist-offline/wheels
+
+      - name: Install bundle and run runtime smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
+
+          $archive = Get-ChildItem -Path "dist-offline" -Filter "invoice-assistant-offline-*.zip" -File | Select-Object -First 1
+          if (-not $archive) {
+            throw "Expected invoice-assistant-offline-*.zip archive was not produced."
+          }
+
+          $smokeRoot = Join-Path $env:RUNNER_TEMP "invoice-assistant-windows-smoke"
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP "invoice-assistant-windows-smoke-evidence"
+          Remove-Item -Recurse -Force $smokeRoot, $evidenceRoot -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $smokeRoot, $evidenceRoot | Out-Null
+
+          Expand-Archive -LiteralPath $archive.FullName -DestinationPath $smokeRoot -Force
+          $bundleDir = Get-ChildItem -Path $smokeRoot -Directory | Select-Object -First 1
+          if (-not $bundleDir) {
+            throw "Expanded archive did not contain a bundle directory."
+          }
+
+          Push-Location $bundleDir.FullName
+          & .\install_offline.ps1 *>&1 | Tee-Object -FilePath (Join-Path $evidenceRoot "install.log")
+          if ($LASTEXITCODE -ne 0) {
+            throw "install_offline.ps1 failed with exit code $LASTEXITCODE"
+          }
+
+          & .\.venv\Scripts\python.exe app\bootstrap\start_server.py --help *>&1 | Tee-Object -FilePath (Join-Path $evidenceRoot "start-help.txt")
+          if ($LASTEXITCODE -ne 0) {
+            throw "start_server.py --help failed with exit code $LASTEXITCODE"
+          }
+
+          & .\.venv\Scripts\python.exe -c "import sys; sys.path.insert(0, 'app/server'); import backend.app.main; import fastapi, sqlalchemy, uvicorn" *>&1 | Tee-Object -FilePath (Join-Path $evidenceRoot "import-smoke.txt")
+          if ($LASTEXITCODE -ne 0) {
+            throw "runtime import smoke failed with exit code $LASTEXITCODE"
+          }
+          Pop-Location
+
+          Copy-Item -LiteralPath (Join-Path $bundleDir.FullName "bundle-manifest.json") -Destination $evidenceRoot
+
+      - name: Upload smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-offline-smoke-evidence
+          path: ${{ runner.temp }}/invoice-assistant-windows-smoke-evidence
+          if-no-files-found: error
