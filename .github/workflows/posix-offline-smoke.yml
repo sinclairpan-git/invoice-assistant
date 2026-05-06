@@ -1,0 +1,137 @@
+name: POSIX Offline Smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/posix-offline-smoke.yml"
+      - ".github/workflows/windows-offline-smoke.yml"
+      - ".github/workflows/release-build.yml"
+      - ".github/workflows/release-artifact-smoke.yml"
+      - "backend/**"
+      - "frontend/**"
+      - "packaging/**"
+      - "scripts/build_cloud_release_bundle.py"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: ${{ matrix.asset_os }} tar.gz
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    concurrency:
+      group: posix-offline-smoke-${{ github.event.pull_request.number || github.ref }}-${{ matrix.asset_os }}
+      cancel-in-progress: true
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - asset_os: macos
+            runner: macos-latest
+          - asset_os: linux
+            runner: ubuntu-latest
+
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v5.0.0
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm --dir frontend install --frozen-lockfile
+
+      - name: Build frontend
+        run: pnpm --dir frontend build
+
+      - name: Build backend runtime wheelhouse
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist-offline/wheels
+          python - <<'PY'
+          import tomllib
+          from pathlib import Path
+          deps = tomllib.loads(Path("backend/pyproject.toml").read_text(encoding="utf-8"))["project"]["dependencies"]
+          Path("dist-offline/backend-runtime-requirements.txt").write_text("\n".join(deps) + "\n", encoding="utf-8")
+          PY
+          python -m pip install --upgrade pip
+          python -m pip download --only-binary=:all: --dest dist-offline/wheels -r dist-offline/backend-runtime-requirements.txt
+
+      - name: Build POSIX offline bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          machine="$(uname -m | tr '[:upper:]' '[:lower:]')"
+          case "${machine}" in
+            x86_64|amd64) machine="amd64" ;;
+            arm64|aarch64) machine="arm64" ;;
+          esac
+          python scripts/build_cloud_release_bundle.py \
+            --version "v0.1.0-smoke" \
+            --platform-os "${{ matrix.asset_os }}" \
+            --platform-machine "${machine}" \
+            --archive-format tar.gz \
+            --wheels-dir dist-offline/wheels
+
+      - name: Install bundle and run runtime smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$(find dist-offline -maxdepth 1 -name 'invoice-assistant-offline-*.tar.gz' -type f | head -n 1)"
+          if [[ -z "${archive}" ]]; then
+            echo "Expected invoice-assistant-offline-*.tar.gz archive was not produced." >&2
+            exit 1
+          fi
+
+          smoke_root="${RUNNER_TEMP}/invoice-assistant-posix-smoke"
+          evidence_root="${RUNNER_TEMP}/invoice-assistant-posix-smoke-evidence"
+          rm -rf "${smoke_root}" "${evidence_root}"
+          mkdir -p "${smoke_root}" "${evidence_root}"
+
+          tar -xzf "${archive}" -C "${smoke_root}"
+          bundle_dir="$(find "${smoke_root}" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+          if [[ -z "${bundle_dir}" ]]; then
+            echo "Expanded archive did not contain a bundle directory." >&2
+            exit 1
+          fi
+
+          (
+            cd "${bundle_dir}"
+            ./install_offline.sh 2>&1 | tee "${evidence_root}/install.log"
+            ./.venv/bin/python app/bootstrap/start_server.py --help 2>&1 | tee "${evidence_root}/start-help.txt"
+            ./.venv/bin/python -c "import sys; sys.path.insert(0, 'app/server'); import backend.app.main; import fastapi, sqlalchemy, uvicorn" 2>&1 | tee "${evidence_root}/import-smoke.txt"
+          )
+
+          cp "${bundle_dir}/bundle-manifest.json" "${evidence_root}/bundle-manifest.json"
+
+      - name: Upload smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: posix-offline-smoke-evidence-${{ matrix.asset_os }}
+          path: ${{ runner.temp }}/invoice-assistant-posix-smoke-evidence
+          if-no-files-found: error

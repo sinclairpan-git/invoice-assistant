@@ -59,3 +59,44 @@ def test_release_artifact_smoke_downloads_and_checks_release_assets() -> None:
     assert "gh release download" in content
     assert "invoice-assistant-offline-*-windows-*.zip" in content
     assert "invoice-assistant-offline-*-${RELEASE_ASSET_OS}-*.tar.gz" in content
+
+
+def test_compatibility_gate_matches_required_branch_status() -> None:
+    content = _workflow_text("compatibility-gate.yml")
+
+    assert "name: Compatibility Gate" in content
+    assert "pull_request:" in content
+    assert "push:" in content
+    assert "ubuntu-latest" in content
+    assert "macos-latest" in content
+    assert "windows-latest" in content
+    assert '"3.11"' in content
+    assert '"3.12"' in content
+    assert "name: Compatibility Gate Result" in content
+    assert "cross-platform-validation" in content
+    assert "windows-shell-smoke" in content
+
+
+def test_windows_offline_smoke_builds_and_installs_cloud_bundle() -> None:
+    content = _workflow_text("windows-offline-smoke.yml")
+
+    assert "name: Windows Offline Smoke" in content
+    assert "windows-latest" in content
+    assert "scripts/build_cloud_release_bundle.py" in content
+    assert "invoice-assistant-offline-*.zip" in content
+    assert ".\\install_offline.ps1" in content
+    assert "app\\bootstrap\\start_server.py --help" in content
+    assert "Upload smoke evidence" in content
+
+
+def test_posix_offline_smoke_builds_macos_and_linux_cloud_bundles() -> None:
+    content = _workflow_text("posix-offline-smoke.yml")
+
+    assert "name: POSIX Offline Smoke" in content
+    assert "macos-latest" in content
+    assert "ubuntu-latest" in content
+    assert "scripts/build_cloud_release_bundle.py" in content
+    assert "invoice-assistant-offline-*.tar.gz" in content
+    assert "./install_offline.sh" in content
+    assert "app/bootstrap/start_server.py --help" in content
+    assert "Upload smoke evidence" in content

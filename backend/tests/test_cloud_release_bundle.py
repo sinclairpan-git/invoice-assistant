@@ -124,3 +124,5 @@ def test_powershell_installer_stops_on_native_command_failures() -> None:
 
     assert "$PSNativeCommandUseErrorActionPreference = $true" in script
     assert "if ($LASTEXITCODE -ne 0)" in script
+    assert "Invoke-CheckedNative -Command $Python -Arguments @(" in script
+    assert 'Invoke-CheckedNative -Command $VenvPython -Arguments @("-m", "pip", "install"' in script
