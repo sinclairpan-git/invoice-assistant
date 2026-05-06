@@ -76,7 +76,7 @@ def create_app(
         finally:
             app.state.processing_runner.shutdown()
 
-    app = FastAPI(title="Invoice Assistant API", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Invoice Assistant API", version="0.5.0", lifespan=lifespan)
     app.state.engine = engine
     app.state.session_factory = session_factory
     app.state.logger = get_app_logger()
