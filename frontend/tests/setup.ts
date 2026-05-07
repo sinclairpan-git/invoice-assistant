@@ -1,7 +1,4 @@
-import "@testing-library/jest-dom/vitest";
 import { afterEach, vi } from "vitest";
-import { cleanup } from "@testing-library/react";
-
 
 Object.defineProperty(window, "matchMedia", {
   writable: true,
@@ -18,6 +15,5 @@ Object.defineProperty(window, "matchMedia", {
 });
 
 afterEach(() => {
-  cleanup();
   vi.unstubAllGlobals();
 });

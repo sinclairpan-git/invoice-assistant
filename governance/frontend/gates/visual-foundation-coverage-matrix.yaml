@@ -1,0 +1,47 @@
+items:
+- coverage_id: state-visual-presence
+  quality_surface: state-visual-presence
+  governed_targets:
+  - refreshing
+  - submitting
+  - no-results
+  - partial-error
+  - success-feedback
+  source_truth_refs:
+  - '015'
+  - '067'
+  - 069
+  - '071'
+  expectation: P1 extended states stay visually perceivable without erasing prior
+    content context
+  boundary: covers only bounded state presence and does not introduce visual regression
+    tooling
+- coverage_id: required-area-visual-presence
+  quality_surface: required-area-visual-presence
+  governed_targets:
+  - Main Insight Area
+  - State / Validation Area
+  - Result Summary Area
+  - Step Progress Area
+  source_truth_refs:
+  - 068
+  - 069
+  - '071'
+  expectation: required P1 recipe areas remain explicitly present and visually distinguishable
+  boundary: reuses recipe area truth without redefining layout systems
+- coverage_id: controlled-container-visual-continuity
+  quality_surface: controlled-container-visual-continuity
+  governed_targets:
+  - UiDialog
+  - UiDrawer
+  - UiSection
+  - UiCard
+  - UiResult
+  source_truth_refs:
+  - '067'
+  - 068
+  - 069
+  - '071'
+  expectation: controlled containers preserve continuity cues across transitions and
+    partial failures
+  boundary: stays within shared Ui* container semantics and does not add runtime probes

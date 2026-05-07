@@ -43,9 +43,14 @@ def _create_fixture_project(tmp_path: Path) -> tuple[Path, Path]:
     _write_file(project_root / "packaging" / "offline" / "start_invoice_assistant.ps1", "Write-Host start\n")
     _write_file(project_root / "packaging" / "offline" / "start_invoice_assistant.command", "#!/usr/bin/env bash\necho start\n")
     _write_file(project_root / "packaging" / "offline" / "start_invoice_assistant.bat", "@echo off\r\necho start\r\n")
+    _write_file(project_root / "packaging" / "offline" / "启动发票助手.bat", "@echo off\r\necho start alias\r\n")
+    _write_file(project_root / "packaging" / "offline" / "启动发票助手.command", "#!/usr/bin/env bash\necho start alias\n")
     _write_file(project_root / "packaging" / "offline" / "stop_invoice_assistant.ps1", "Write-Host stop\n")
     _write_file(project_root / "packaging" / "offline" / "stop_invoice_assistant.command", "#!/usr/bin/env bash\necho stop\n")
     _write_file(project_root / "packaging" / "offline" / "stop_invoice_assistant.bat", "@echo off\r\necho stop\r\n")
+    _write_file(project_root / "packaging" / "offline" / "停止发票助手.bat", "@echo off\r\necho stop alias\r\n")
+    _write_file(project_root / "packaging" / "offline" / "停止发票助手.command", "#!/usr/bin/env bash\necho stop alias\n")
+    _write_file(project_root / "packaging" / "offline" / "用户指引.html", "<html><body>guide</body></html>\n")
     _write_file(project_root / "packaging" / "windows" / "bootstrap" / "start_server.py", "print('start server')\n")
     _write_file(project_root / "packaging" / "windows" / "bootstrap" / "stop_portable.py", "print('stop server')\n")
     _write_file(wheels_dir / "fastapi-0.0.0-py3-none-any.whl", "wheel\n")
@@ -78,6 +83,9 @@ def test_build_cloud_release_bundle_creates_windows_zip(tmp_path: Path) -> None:
     assert "invoice-assistant-offline-v1.2.3-windows-amd64/start_invoice_assistant.ps1" in names
     assert "invoice-assistant-offline-v1.2.3-windows-amd64/start_invoice_assistant.bat" in names
     assert "invoice-assistant-offline-v1.2.3-windows-amd64/stop_invoice_assistant.ps1" in names
+    assert "invoice-assistant-offline-v1.2.3-windows-amd64/启动发票助手.bat" in names
+    assert "invoice-assistant-offline-v1.2.3-windows-amd64/停止发票助手.bat" in names
+    assert "invoice-assistant-offline-v1.2.3-windows-amd64/用户指引.html" in names
     assert "invoice-assistant-offline-v1.2.3-windows-amd64/wheels/fastapi-0.0.0-py3-none-any.whl" in names
     assert "invoice-assistant-offline-v1.2.3-windows-amd64/app/server/backend/app/main.py" in names
     assert "invoice-assistant-offline-v1.2.3-windows-amd64/app/server/frontend-dist/index.html" in names
@@ -113,12 +121,17 @@ def test_build_cloud_release_bundle_creates_macos_tar_with_executable_scripts(tm
         modes = {member.name: member.mode for member in archive.getmembers()}
     assert "invoice-assistant-offline-v1.2.3-macos-arm64/install_offline.sh" in names
     assert "invoice-assistant-offline-v1.2.3-macos-arm64/start_invoice_assistant.command" in names
+    assert "invoice-assistant-offline-v1.2.3-macos-arm64/启动发票助手.command" in names
+    assert "invoice-assistant-offline-v1.2.3-macos-arm64/停止发票助手.command" in names
+    assert "invoice-assistant-offline-v1.2.3-macos-arm64/用户指引.html" in names
     assert "invoice-assistant-offline-v1.2.3-macos-arm64/wheels/fastapi-0.0.0-py3-none-any.whl" in names
     assert "invoice-assistant-offline-v1.2.3-macos-arm64/app/bootstrap/start_server.py" in names
     assert "invoice-assistant-offline-v1.2.3-macos-arm64/app/server/frontend-dist/assets/app.js" in names
     assert modes["invoice-assistant-offline-v1.2.3-macos-arm64/install_offline.sh"] & 0o111
     assert modes["invoice-assistant-offline-v1.2.3-macos-arm64/start_invoice_assistant.command"] & 0o111
     assert modes["invoice-assistant-offline-v1.2.3-macos-arm64/stop_invoice_assistant.command"] & 0o111
+    assert modes["invoice-assistant-offline-v1.2.3-macos-arm64/启动发票助手.command"] & 0o111
+    assert modes["invoice-assistant-offline-v1.2.3-macos-arm64/停止发票助手.command"] & 0o111
 
 
 def test_powershell_installer_stops_on_native_command_failures() -> None:

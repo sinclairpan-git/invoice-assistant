@@ -1,0 +1,26 @@
+schema_family: frontend-provider-runtime-adapter
+current_version: '1.0'
+compatible_versions:
+- '1.0'
+artifact_root: governance/frontend/provider-runtime-adapter
+canonical_files:
+- provider-runtime-adapter.manifest.yaml
+- handoff.schema.yaml
+- adapter-targets.yaml
+program_service_fields:
+- carrier_mode
+- evidence_return_state
+- provider_id
+- runtime_delivery_state
+- target_frontend_stack
+cli_fields:
+- carrier_mode
+- provider_id
+- runtime_delivery_state
+verify_fields:
+- carrier_mode
+- certification_gate
+- evidence_return_state
+- provider_id
+- runtime_delivery_state
+- target_frontend_stack

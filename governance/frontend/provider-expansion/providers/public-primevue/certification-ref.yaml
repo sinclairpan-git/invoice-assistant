@@ -1,0 +1,7 @@
+provider_id: public-primevue
+items:
+- pair_id: public-primevue/default
+  journey_id: simple
+  roster_scope: provider-roster
+  certification_gate: ready
+  certification_ref: specs/150-frontend-p2-cross-provider-consistency-baseline/evidence/public-primevue-default-ready.yaml

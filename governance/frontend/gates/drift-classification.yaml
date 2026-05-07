@@ -1,0 +1,57 @@
+items:
+- classification_id: input-gap
+  trigger_condition: observation artifact missing for the target spec_dir
+  report_type: coverage-report
+  severity_floor: medium
+  source_truth_refs:
+  - '065'
+  - 018
+  boundary: reports missing inputs without misclassifying them as drift
+- classification_id: stable-empty-observation
+  trigger_condition: observation artifact exists but the observations list is empty
+  report_type: coverage-report
+  severity_floor: medium
+  source_truth_refs:
+  - '065'
+  - 018
+  boundary: records a stable empty result without silently turning green
+- classification_id: recipe-structure-drift
+  trigger_condition: implementation structure diverges from required areas or forbidden
+    patterns
+  report_type: drift-report
+  severity_floor: high
+  source_truth_refs:
+  - 068
+  - 018
+  boundary: consumes recipe truth without redefining recipe bodies
+- classification_id: state-expectation-drift
+  trigger_condition: required P1 state semantics are missing, misused, or conflict
+    with recipe expectations
+  report_type: drift-report
+  severity_floor: high
+  source_truth_refs:
+  - '067'
+  - 068
+  - 018
+  boundary: evaluates state expectations without introducing new state vocabularies
+- classification_id: whitelist-leakage
+  trigger_condition: implementation bypasses controlled Ui* entry points or leaks
+    outside whitelist boundaries
+  report_type: violation-report
+  severity_floor: high
+  source_truth_refs:
+  - '017'
+  - '067'
+  - 068
+  - 018
+  boundary: reuses whitelist truth without widening exemptions
+- classification_id: token-leakage
+  trigger_condition: implementation introduces naked values or token violations in
+    P1 structures
+  report_type: violation-report
+  severity_floor: high
+  source_truth_refs:
+  - '017'
+  - 068
+  - 018
+  boundary: reuses minimal token truth without becoming a full token platform

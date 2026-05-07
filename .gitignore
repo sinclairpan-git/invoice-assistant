@@ -6,6 +6,7 @@ frontend/dist/
 frontend/.corepack/
 frontend/.npm-cache/
 frontend/.pnpm-store/
+.pnpm-store/
 frontend/*.tsbuildinfo
 frontend/vite.config.js
 frontend/vite.config.d.ts

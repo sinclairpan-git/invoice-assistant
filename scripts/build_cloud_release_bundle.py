@@ -20,6 +20,10 @@ OFFLINE_SCRIPT_NAMES = (
     "install_offline.bat",
     "install_offline.ps1",
     "install_offline.sh",
+    "启动发票助手.bat",
+    "停止发票助手.bat",
+    "启动发票助手.command",
+    "停止发票助手.command",
     "start_invoice_assistant.bat",
     "start_invoice_assistant.ps1",
     "start_invoice_assistant.command",
@@ -28,6 +32,7 @@ OFFLINE_SCRIPT_NAMES = (
     "stop_invoice_assistant.command",
     "windows_path_alias.ps1",
 )
+OFFLINE_DOC_NAMES = ("用户指引.html",)
 POSIX_EXECUTABLE_SUFFIXES = (".sh", ".command")
 
 
@@ -61,6 +66,7 @@ def build_cloud_release_bundle(
     _copy_required_tree(project_root / "packaging" / "windows" / "bootstrap", bundle_dir / "app" / "bootstrap")
     _copy_required_tree(wheels_dir, bundle_dir / "wheels")
     _copy_offline_scripts(project_root / "packaging" / "offline", bundle_dir)
+    _copy_offline_docs(project_root / "packaging" / "offline", bundle_dir)
     _write_runtime_requirements(project_root / "backend" / "pyproject.toml", bundle_dir / "runtime-requirements.txt")
 
     archive_path = _archive_bundle(
@@ -150,6 +156,11 @@ def _copy_offline_scripts(source_root: Path, bundle_dir: Path) -> None:
         _copy_required_file(source_root / script_name, destination)
         if destination.suffix in POSIX_EXECUTABLE_SUFFIXES:
             destination.chmod(destination.stat().st_mode | 0o755)
+
+
+def _copy_offline_docs(source_root: Path, bundle_dir: Path) -> None:
+    for doc_name in OFFLINE_DOC_NAMES:
+        _copy_required_file(source_root / doc_name, bundle_dir / doc_name)
 
 
 def _write_runtime_requirements(backend_pyproject: Path, output_path: Path) -> None:

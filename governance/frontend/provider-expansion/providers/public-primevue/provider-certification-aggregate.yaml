@@ -1,0 +1,9 @@
+provider_id: public-primevue
+source_work_item_id: '150'
+pair_certifications:
+- pair_id: public-primevue/default
+  journey_id: simple
+  roster_scope: provider-roster
+  certification_gate: ready
+  certification_ref: specs/150-frontend-p2-cross-provider-consistency-baseline/evidence/public-primevue-default-ready.yaml
+aggregate_gate: ready

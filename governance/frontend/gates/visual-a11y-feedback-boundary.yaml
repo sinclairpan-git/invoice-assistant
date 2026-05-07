@@ -1,0 +1,22 @@
+items:
+- boundary_id: shared-report-family-reuse
+  allowed_feedback_surfaces:
+  - report-severity
+  - location-anchor
+  - quality-hint
+  - changed-scope-explanation
+  report_types:
+  - violation-report
+  - coverage-report
+  - drift-report
+  - legacy-expansion-report
+  forbidden_expansions:
+  - second-visual-gate-system
+  - runtime-browser-verifier
+  source_truth_refs:
+  - 018
+  - 069
+  - '070'
+  - '071'
+  description: visual and a11y findings reuse the shared report family instead of
+    inventing a parallel gate output

@@ -1,0 +1,30 @@
+scaffold_id: react-nextjs-shadcn-target-project-adapter
+provider_id: react-nextjs-shadcn
+target_frontend_stack: react
+carrier_mode: target-project-adapter-layer
+validated_project_count: 1
+required_layer_ids:
+- kernel-wrapper
+- provider-adapter
+- legacy-adapter
+- runtime-boundary-receipt
+files:
+- contract_id: kernel-wrapper
+  relative_path: src/frontend-governance/runtime/kernel/KernelWrapper.tsx
+  purpose: route all governed pages through the kernel wrapper entry
+  required: true
+- contract_id: provider-adapter
+  relative_path: src/frontend-governance/runtime/providers/react-nextjs-shadcn/ProviderAdapter.tsx
+  purpose: bind provider runtime behind the controlled provider adapter layer
+  required: true
+- contract_id: legacy-adapter
+  relative_path: src/frontend-governance/runtime/legacy/LegacyAdapterBridge.tsx
+  purpose: bridge allowed legacy usage through a controlled adapter boundary
+  required: true
+- contract_id: runtime-boundary-receipt
+  relative_path: .ai-sdlc/evidence/frontend-runtime/react-nextjs-shadcn/runtime-boundary-receipt.yaml
+  purpose: persist machine-verifiable runtime boundary and delivery state evidence
+  required: true
+boundary_violation_codes:
+- provider-runtime-bypass
+- legacy-default-entry

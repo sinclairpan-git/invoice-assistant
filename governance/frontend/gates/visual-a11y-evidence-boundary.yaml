@@ -1,0 +1,13 @@
+items:
+- boundary_id: explicit-evidence-only
+  allowed_evidence_sources:
+  - explicit-input-artifact
+  forbidden_implicit_sources:
+  - workspace-root-discovery
+  - ambient-screenshot-scan
+  - runtime-dom-assumption
+  source_truth_refs:
+  - 069
+  - '071'
+  description: visual and a11y feedback can only consume explicit artifacts handed
+    into verification

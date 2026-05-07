@@ -1,0 +1,14 @@
+provider_id: react-nextjs-shadcn
+source_work_item_id: '150'
+pair_certifications:
+- pair_id: react-nextjs-shadcn/default
+  journey_id: advanced
+  roster_scope: provider-roster
+  certification_gate: ready
+  certification_ref: specs/150-frontend-p2-cross-provider-consistency-baseline/evidence/react-nextjs-shadcn-default-ready.yaml
+- pair_id: react-nextjs-shadcn/forms
+  journey_id: advanced
+  roster_scope: provider-roster
+  certification_gate: conditional
+  certification_ref: specs/150-frontend-p2-cross-provider-consistency-baseline/evidence/react-nextjs-shadcn-forms-conditional.yaml
+aggregate_gate: conditional
