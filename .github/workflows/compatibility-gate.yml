@@ -121,12 +121,169 @@ jobs:
         run: |
           python -c "import backend.app.main; import fastapi, sqlalchemy, uvicorn" || exit /b 1
 
+  offline-bundle-smoke:
+    name: Offline Bundle Smoke (${{ matrix.asset_os }} ${{ matrix.archive }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - asset_os: windows
+            runner: windows-latest
+            archive: zip
+          - asset_os: macos
+            runner: macos-latest
+            archive: tar.gz
+
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v5.0.0
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm --dir frontend install --frozen-lockfile
+
+      - name: Build frontend
+        run: pnpm --dir frontend build
+
+      - name: Build backend runtime wheelhouse
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist-offline/wheels
+          python - <<'PY'
+          import tomllib
+          from pathlib import Path
+          deps = tomllib.loads(Path("backend/pyproject.toml").read_text(encoding="utf-8"))["project"]["dependencies"]
+          Path("dist-offline/backend-runtime-requirements.txt").write_text("\n".join(deps) + "\n", encoding="utf-8")
+          PY
+          python -m pip install --upgrade pip
+          python -m pip download --only-binary=:all: --dest dist-offline/wheels -r dist-offline/backend-runtime-requirements.txt
+
+      - name: Build Windows offline bundle
+        if: matrix.asset_os == 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/build_cloud_release_bundle.py \
+            --version "v0.5.1-pr-smoke" \
+            --platform-os windows \
+            --platform-machine amd64 \
+            --archive-format zip \
+            --wheels-dir dist-offline/wheels
+
+      - name: Build macOS offline bundle
+        if: matrix.asset_os == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          machine="$(uname -m | tr '[:upper:]' '[:lower:]')"
+          case "${machine}" in
+            x86_64|amd64) machine="amd64" ;;
+            arm64|aarch64) machine="arm64" ;;
+          esac
+          python scripts/build_cloud_release_bundle.py \
+            --version "v0.5.1-pr-smoke" \
+            --platform-os macos \
+            --platform-machine "${machine}" \
+            --archive-format tar.gz \
+            --wheels-dir dist-offline/wheels
+
+      - name: Smoke Windows zip
+        if: matrix.asset_os == 'windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $asset = Get-ChildItem -Path "dist-offline" -Filter "invoice-assistant-offline-*.zip" -File | Select-Object -First 1
+          if (-not $asset) { throw "Expected invoice-assistant-offline-*.zip was not produced." }
+          $smokeRoot = Join-Path $env:RUNNER_TEMP "invoice-assistant-compat-smoke"
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP "invoice-assistant-compat-evidence"
+          Remove-Item -Recurse -Force $smokeRoot, $evidenceRoot -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $smokeRoot, $evidenceRoot | Out-Null
+          Expand-Archive -LiteralPath $asset.FullName -DestinationPath $smokeRoot -Force
+          $bundleDir = Get-ChildItem -Path $smokeRoot -Directory | Select-Object -First 1
+          if (-not $bundleDir) { throw "Expanded archive did not contain a bundle directory." }
+          if (-not (Test-Path (Join-Path $bundleDir.FullName "bundle-manifest.json"))) { throw "Missing bundle-manifest.json" }
+          if (-not (Test-Path (Join-Path $bundleDir.FullName "启动发票助手.bat"))) { throw "Missing 启动发票助手.bat" }
+          if (-not (Test-Path (Join-Path $bundleDir.FullName "停止发票助手.bat"))) { throw "Missing 停止发票助手.bat" }
+          if (-not (Test-Path (Join-Path $bundleDir.FullName "用户指引.html"))) { throw "Missing 用户指引.html" }
+          Push-Location $bundleDir.FullName
+          & .\install_offline.bat *>&1 | Tee-Object -FilePath (Join-Path $evidenceRoot "install.log")
+          if ($LASTEXITCODE -ne 0) { throw "install_offline.bat failed with exit code $LASTEXITCODE" }
+          & .\.venv\Scripts\python.exe app\bootstrap\start_server.py --help *>&1 | Tee-Object -FilePath (Join-Path $evidenceRoot "start-help.txt")
+          if ($LASTEXITCODE -ne 0) { throw "start_server.py --help failed with exit code $LASTEXITCODE" }
+          & .\.venv\Scripts\python.exe -c "import sys; sys.path.insert(0, 'app/server'); import backend.app.main; import fastapi, sqlalchemy, uvicorn" *>&1 | Tee-Object -FilePath (Join-Path $evidenceRoot "import-smoke.txt")
+          if ($LASTEXITCODE -ne 0) { throw "runtime import smoke failed with exit code $LASTEXITCODE" }
+          Pop-Location
+          Copy-Item -LiteralPath (Join-Path $bundleDir.FullName "bundle-manifest.json") -Destination $evidenceRoot
+
+      - name: Smoke macOS tar
+        if: matrix.asset_os == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$(find dist-offline -maxdepth 1 -name 'invoice-assistant-offline-*.tar.gz' -type f | head -n 1)"
+          if [[ -z "${archive}" ]]; then
+            echo "Expected invoice-assistant-offline-*.tar.gz was not produced." >&2
+            exit 1
+          fi
+          smoke_root="${RUNNER_TEMP}/invoice-assistant-compat-smoke"
+          evidence_root="${RUNNER_TEMP}/invoice-assistant-compat-evidence"
+          rm -rf "${smoke_root}" "${evidence_root}"
+          mkdir -p "${smoke_root}" "${evidence_root}"
+          tar xzf "${archive}" -C "${smoke_root}"
+          bundle_dir="$(find "${smoke_root}" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+          test -n "${bundle_dir}"
+          test -f "${bundle_dir}/bundle-manifest.json"
+          test -x "${bundle_dir}/install_offline.sh"
+          test -x "${bundle_dir}/启动发票助手.command"
+          test -x "${bundle_dir}/停止发票助手.command"
+          test -f "${bundle_dir}/用户指引.html"
+          (
+            cd "${bundle_dir}"
+            ./install_offline.sh 2>&1 | tee "${evidence_root}/install.log"
+            ./.venv/bin/python app/bootstrap/start_server.py --help 2>&1 | tee "${evidence_root}/start-help.txt"
+            ./.venv/bin/python -c "import sys; sys.path.insert(0, 'app/server'); import backend.app.main; import fastapi, sqlalchemy, uvicorn" 2>&1 | tee "${evidence_root}/import-smoke.txt"
+          )
+          cp "${bundle_dir}/bundle-manifest.json" "${evidence_root}/"
+
+      - name: Upload offline bundle smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: compatibility-offline-smoke-${{ matrix.asset_os }}-${{ matrix.archive }}-evidence
+          path: ${{ runner.temp }}/invoice-assistant-compat-evidence
+          if-no-files-found: warn
+
   compatibility-gate-result:
     name: Compatibility Gate Result
     runs-on: ubuntu-latest
     needs:
       - cross-platform-validation
       - windows-shell-smoke
+      - offline-bundle-smoke
     if: always()
 
     steps:
@@ -134,6 +291,7 @@ jobs:
         run: |
           echo "cross-platform-validation: ${{ needs.cross-platform-validation.result }}"
           echo "windows-shell-smoke: ${{ needs.windows-shell-smoke.result }}"
+          echo "offline-bundle-smoke: ${{ needs.offline-bundle-smoke.result }}"
 
           if [ "${{ needs.cross-platform-validation.result }}" != "success" ]; then
             echo "cross-platform-validation did not succeed."
@@ -142,6 +300,11 @@ jobs:
 
           if [ "${{ needs.windows-shell-smoke.result }}" != "success" ]; then
             echo "windows-shell-smoke did not succeed."
+            exit 1
+          fi
+
+          if [ "${{ needs.offline-bundle-smoke.result }}" != "success" ]; then
+            echo "offline-bundle-smoke did not succeed."
             exit 1
           fi
 
