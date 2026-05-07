@@ -1,0 +1,23 @@
+items:
+- mode: strict
+  scope_mode: entire-scope
+  block_new_violations: true
+  record_existing_debt: true
+  advisory_only_for_existing_debt: false
+  require_legacy_expansion_report: true
+  description: new or standard pages run the full gate matrix over the whole scope
+- mode: incremental
+  scope_mode: changed-scope
+  block_new_violations: true
+  record_existing_debt: true
+  advisory_only_for_existing_debt: true
+  require_legacy_expansion_report: true
+  description: changed scope is strict while unchanged debt stays recorded
+- mode: compatibility
+  scope_mode: changed-scope
+  block_new_violations: true
+  record_existing_debt: true
+  advisory_only_for_existing_debt: true
+  require_legacy_expansion_report: true
+  description: stop new degradation and record debt without inventing a second gate
+    system

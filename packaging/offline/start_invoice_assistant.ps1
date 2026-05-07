@@ -5,8 +5,11 @@ $RuntimeRoot = Resolve-InvoiceAssistantWindowsRuntimeRoot -Root $Root
 $PythonExe = Join-Path $RuntimeRoot ".venv\Scripts\python.exe"
 
 if (-not (Test-Path -LiteralPath $PythonExe)) {
-  Write-Error "Missing offline runtime. Run install_offline.bat first."
-  exit 1
+  Write-Host "首次启动：正在安装离线运行环境，请稍等..."
+  & (Join-Path $Root "install_offline.ps1")
+  if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+  }
 }
 
 & $PythonExe (Join-Path $RuntimeRoot "app\bootstrap\start_server.py") --portable-root $RuntimeRoot --host 127.0.0.1 --port 18080

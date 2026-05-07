@@ -1,0 +1,27 @@
+schema_family: frontend-provider-expansion
+current_version: '1.0'
+compatible_versions:
+- '1.0'
+artifact_root: governance/frontend/provider-expansion
+canonical_files:
+- provider-expansion.manifest.yaml
+- handoff.schema.yaml
+- truth-surfacing.yaml
+- choice-surface-policy.yaml
+- react-exposure-boundary.yaml
+program_service_fields:
+- certification_gate
+- choice_surface_visibility
+- provider_id
+- roster_admission_state
+cli_fields:
+- certification_gate
+- choice_surface_visibility
+- provider_id
+verify_fields:
+- certification_gate
+- choice_surface_visibility
+- provider_id
+- react_binding_visibility
+- react_stack_visibility
+- roster_admission_state

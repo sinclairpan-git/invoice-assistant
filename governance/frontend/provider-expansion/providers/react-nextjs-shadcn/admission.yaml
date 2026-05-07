@@ -1,0 +1,6 @@
+provider_id: react-nextjs-shadcn
+certification_gate: conditional
+roster_admission_state: candidate
+choice_surface_visibility: hidden
+caveat_codes: []
+artifact_root_ref: governance/frontend/provider-expansion

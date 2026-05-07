@@ -1,0 +1,67 @@
+rules:
+- rule_id: i18n-contract-completeness
+  family: i18n
+  severity: high
+  required_sources:
+  - page-metadata
+  - i18n-contract
+  - implementation-code
+  description: declared i18n contract must match implementation usage
+  source_rule_refs: []
+  allow_structured_exceptions: true
+- rule_id: validation-contract-coverage
+  family: validation
+  severity: high
+  required_sources:
+  - page-metadata
+  - validation-contract
+  - implementation-code
+  description: declared validation contract must be implemented
+  source_rule_refs: []
+  allow_structured_exceptions: true
+- rule_id: recipe-declaration-compliance
+  family: recipe
+  severity: high
+  required_sources:
+  - recipe-declaration
+  - ui-kernel
+  - implementation-code
+  description: page implementation must respect declared recipe regions
+  source_rule_refs: []
+  allow_structured_exceptions: true
+- rule_id: whitelist-entry-compliance
+  family: whitelist
+  severity: high
+  required_sources:
+  - provider-profile
+  - generation-constraints
+  - implementation-code
+  description: implementation must enter through whitelist-approved surfaces
+  source_rule_refs: []
+  allow_structured_exceptions: true
+- rule_id: token-rule-compliance
+  family: token-rules
+  severity: high
+  required_sources:
+  - token-rules-ref
+  - generation-constraints
+  - implementation-code
+  description: implementation must avoid naked visual values
+  source_rule_refs: []
+  allow_structured_exceptions: true
+- rule_id: vue2-hard-rule-compliance
+  family: hard-rules
+  severity: high
+  required_sources:
+  - hard-rules-set
+  - provider-profile
+  - implementation-code
+  description: non-exempt vue2 hard rules remain blocking in MVP
+  source_rule_refs:
+  - no-direct-props-mutation
+  - no-default-sf-components
+  - no-kernel-protocol-overwrite
+  - no-new-legacy-dependencies
+  - whitelist-extension-by-exception
+  - token-layout-exception
+  allow_structured_exceptions: false

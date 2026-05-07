@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>发票整理助手便携包用户指引</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+        line-height: 1.6;
+        color: #1f2937;
+        background: #f5f7fa;
+      }
+      body { margin: 0; }
+      main { max-width: 920px; margin: 0 auto; padding: 24px 16px 48px; }
+      section { background: #fff; border: 1px solid #d9e2ec; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+      h1, h2, h3 { margin-top: 0; color: #102a43; }
+      .hero { border: 2px solid #118a62; background: #f0fbf6; }
+      .warn { background: #fff7ed; border-left: 4px solid #dd6b20; padding: 12px 14px; }
+      .tip { background: #f0f9ff; border-left: 4px solid #2b6cb0; padding: 12px 14px; }
+      code { background: #eef2f6; padding: 1px 4px; border-radius: 4px; }
+      ol, ul { padding-left: 20px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <h1>发票整理助手便携包用户指引</h1>
+        <p><strong>解压后先看这里：Windows 双击“启动发票助手.bat”，macOS 双击“启动发票助手.command”。</strong></p>
+        <p>首次启动会自动准备本地运行环境，随后打开浏览器。第一次进入系统后，请先完成“首次配置向导”。</p>
+      </section>
+
+      <section>
+        <h2>一、Windows 怎么启动</h2>
+        <ol>
+          <li>解压整个压缩包，不要只拖出单个文件。</li>
+          <li>双击根目录的 <code>启动发票助手.bat</code>。</li>
+          <li>首次启动会自动安装离线运行环境，请等待命令窗口完成。</li>
+          <li>浏览器会自动打开；如果没有打开，手动访问 <code>http://127.0.0.1:18080</code>。</li>
+          <li>如果 18080 被占用，查看 <code>runtime/app.url</code>，按里面的实际地址访问。</li>
+        </ol>
+        <div class="warn">关闭浏览器不等于停止服务。用完请双击 <code>停止发票助手.bat</code>。</div>
+      </section>
+
+      <section>
+        <h2>二、macOS 怎么启动</h2>
+        <ol>
+          <li>解压整个压缩包，保留文件夹内所有内容。</li>
+          <li>双击根目录的 <code>启动发票助手.command</code>。</li>
+          <li>首次启动会自动安装离线运行环境，请等待终端窗口完成。</li>
+          <li>浏览器会自动打开；如果没有打开，手动访问 <code>http://127.0.0.1:18080</code>。</li>
+          <li>如果 18080 被占用，查看 <code>runtime/app.url</code>，按里面的实际地址访问。</li>
+        </ol>
+        <div class="tip">
+          如果 macOS 提示无法打开，请在 Finder 中右键点击 <code>启动发票助手.command</code>，选择“打开”，再确认运行。
+        </div>
+        <div class="warn">关闭浏览器不等于停止服务。用完请双击 <code>停止发票助手.command</code>。</div>
+      </section>
+
+      <section>
+        <h2>三、第一次进入系统后做什么</h2>
+        <ol>
+          <li>先完成“首次配置向导”。</li>
+          <li>录入公司名称、纳税人识别号、地址电话、开户行及账号。</li>
+          <li>选择审核策略模板。</li>
+          <li>确认文件命名方式。</li>
+          <li>保存配置后回到“批次工作台”，再上传 PDF 发票。</li>
+        </ol>
+        <div class="warn">首次配置没完成前，上传入口会被禁用，这是正常设计。</div>
+      </section>
+
+      <section>
+        <h2>四、打不开怎么办</h2>
+        <ul>
+          <li>先等待 30 秒，首次安装运行环境会比较慢。</li>
+          <li>手动访问 <code>http://127.0.0.1:18080</code>。</li>
+          <li>查看 <code>runtime/app.url</code>，按文件里的地址访问。</li>
+          <li>查看 <code>logs/startup.log</code>，把日志发给维护人员。</li>
+          <li>重新启动前，先运行对应的停止脚本。</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>五、数据和备份</h2>
+        <p>系统数据放在便携包目录下的 <code>data</code> 文件夹。换电脑或备份时，请先停止服务，再复制整个便携包或至少复制 <code>data</code> 文件夹。</p>
+      </section>
+    </main>
+  </body>
+</html>

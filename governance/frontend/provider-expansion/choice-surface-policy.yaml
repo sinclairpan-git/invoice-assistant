@@ -1,0 +1,14 @@
+internal_modeling_allowed:
+- hidden
+- advanced-visible
+- public-visible
+- simple-default-eligible
+simple_mode_default_allowed:
+- simple-default-eligible
+advanced_mode_allowed:
+- advanced-visible
+- public-visible
+- simple-default-eligible
+public_choice_surface_allowed:
+- public-visible
+- simple-default-eligible

@@ -1,0 +1,78 @@
+items:
+- coverage_id: semantic-component-coverage
+  coverage_type: semantic-component
+  governed_targets:
+  - UiTabs
+  - UiSearchBar
+  - UiFilterBar
+  - UiResult
+  - UiSection
+  - UiToolbar
+  - UiPagination
+  - UiCard
+  source_truth_refs:
+  - '067'
+  - 018
+  diagnostic_focus: validate P1 semantic component entry and structure role usage
+  boundary: consumes controlled Ui* semantics without defining provider APIs
+- coverage_id: page-recipe-coverage
+  coverage_type: page-recipe
+  governed_targets:
+  - DashboardPage
+  - DialogFormPage
+  - SearchListPage
+  - WizardPage
+  source_truth_refs:
+  - 068
+  - 018
+  diagnostic_focus: validate required areas, optional areas, and forbidden patterns
+  boundary: consumes recipe truth without redefining recipe bodies
+- coverage_id: state-coverage
+  coverage_type: state
+  governed_targets:
+  - refreshing
+  - submitting
+  - no-results
+  - partial-error
+  - success-feedback
+  source_truth_refs:
+  - '067'
+  - 068
+  - 018
+  diagnostic_focus: validate P1 state expectations alongside MVP state baseline
+  boundary: extends coverage only and keeps MVP state semantics intact
+- coverage_id: whitelist-coverage
+  coverage_type: whitelist
+  governed_targets:
+  - UiTabs
+  - UiSearchBar
+  - UiFilterBar
+  - UiResult
+  - UiSection
+  - UiToolbar
+  - UiPagination
+  - UiCard
+  - DashboardPage
+  - DialogFormPage
+  - SearchListPage
+  - WizardPage
+  source_truth_refs:
+  - '017'
+  - '067'
+  - 068
+  - 018
+  diagnostic_focus: detect bypasses of controlled Ui* entry points and recipe combinations
+  boundary: does not enlarge the default whitelist or provider exemptions
+- coverage_id: token-rule-coverage
+  coverage_type: token-rule
+  governed_targets:
+  - DashboardPage
+  - DialogFormPage
+  - SearchListPage
+  - WizardPage
+  source_truth_refs:
+  - '017'
+  - 068
+  - 018
+  diagnostic_focus: extend minimal token-rule checks into new P1 recipe structures
+  boundary: does not upgrade minimal token rules into a full token platform

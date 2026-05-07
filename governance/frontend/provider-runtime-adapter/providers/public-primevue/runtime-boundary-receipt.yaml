@@ -1,0 +1,19 @@
+provider_id: public-primevue
+source_work_item_ids:
+- '151'
+- '152'
+target_frontend_stack: vue3
+certification_gate: ready
+roster_admission_state: admitted
+choice_surface_visibility: simple-default-eligible
+react_stack_visibility: hidden
+react_binding_visibility: hidden
+carrier_mode: target-project-adapter-layer
+runtime_delivery_state: scaffolded
+evidence_return_state: missing
+boundary_constraints:
+- must-route-through-kernel-wrapper
+- must-not-bypass-provider-adapter
+- legacy-usage-via-legacy-adapter-only
+- runtime-verified-requires-fresh-evidence-return
+default_entry_contract_id: kernel-wrapper

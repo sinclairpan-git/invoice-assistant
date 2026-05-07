@@ -1,8 +1,8 @@
-import react from "@vitejs/plugin-react";
+import vue from "@vitejs/plugin-vue";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [vue()],
   build: {
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
@@ -12,16 +12,14 @@ export default defineConfig({
             return undefined;
           }
           if (
-            id.includes("/node_modules/react/") ||
-            id.includes("/node_modules/react-dom/") ||
-            id.includes("/node_modules/scheduler/") ||
-            id.includes("/node_modules/react-router/") ||
-            id.includes("/node_modules/react-router-dom/")
+            id.includes("/node_modules/vue/") ||
+            id.includes("/node_modules/@vue/") ||
+            id.includes("/node_modules/vue-router/")
           ) {
-            return "react-vendor";
+            return "vue-vendor";
           }
-          if (id.includes("/node_modules/antd/") || id.includes("/node_modules/@ant-design/")) {
-            return "antd";
+          if (id.includes("/node_modules/primevue/") || id.includes("/node_modules/@primeuix/")) {
+            return "primevue";
           }
           return undefined;
         },
@@ -38,5 +36,6 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: "./tests/setup.ts",
+    globals: true,
   },
 });

@@ -1,0 +1,6 @@
+provider_id: public-primevue
+certification_gate: ready
+roster_admission_state: admitted
+choice_surface_visibility: simple-default-eligible
+caveat_codes: []
+artifact_root_ref: governance/frontend/provider-expansion

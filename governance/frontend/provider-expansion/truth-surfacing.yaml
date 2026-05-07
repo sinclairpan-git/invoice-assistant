@@ -1,0 +1,17 @@
+items:
+- provider_id: public-primevue
+  truth_layer: runtime-truth
+  provider_roster_state: admitted
+  choice_surface_state: simple-default-eligible
+  react_stack_visibility: hidden
+  react_binding_visibility: hidden
+  artifact_root_ref: governance/frontend/provider-expansion
+  certification_ref: specs/150-frontend-p2-cross-provider-consistency-baseline/evidence/public-primevue-default-ready.yaml
+- provider_id: react-nextjs-shadcn
+  truth_layer: runtime-truth
+  provider_roster_state: candidate
+  choice_surface_state: hidden
+  react_stack_visibility: hidden
+  react_binding_visibility: hidden
+  artifact_root_ref: governance/frontend/provider-expansion
+  certification_ref: specs/150-frontend-p2-cross-provider-consistency-baseline/evidence/react-nextjs-shadcn-default-ready.yaml

@@ -1,0 +1,15 @@
+items:
+- provider_id: public-primevue
+  target_frontend_stack: vue3
+  carrier_mode: target-project-adapter-layer
+  runtime_delivery_state: scaffolded
+  evidence_return_state: missing
+  certification_gate: ready
+  scaffold_id: public-primevue-target-project-adapter
+- provider_id: react-nextjs-shadcn
+  target_frontend_stack: react
+  carrier_mode: target-project-adapter-layer
+  runtime_delivery_state: not-started
+  evidence_return_state: missing
+  certification_gate: conditional
+  scaffold_id: react-nextjs-shadcn-target-project-adapter

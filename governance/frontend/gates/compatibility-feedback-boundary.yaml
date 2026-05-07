@@ -1,0 +1,39 @@
+items:
+- mode: strict
+  allowed_feedback_surfaces:
+  - report-severity
+  - changed-scope-explanation
+  - remediation-hint
+  forbidden_truth_mutations:
+  - kernel-truth
+  - recipe-truth
+  - whitelist-truth
+  - token-truth
+  description: strict mode keeps the full gate semantics and only shapes operator
+    feedback
+- mode: incremental
+  allowed_feedback_surfaces:
+  - report-severity
+  - changed-scope-explanation
+  - remediation-hint
+  forbidden_truth_mutations:
+  - kernel-truth
+  - recipe-truth
+  - whitelist-truth
+  - token-truth
+  description: incremental mode keeps changed-scope semantics without relaxing upstream
+    truths
+- mode: compatibility
+  allowed_feedback_surfaces:
+  - report-severity
+  - changed-scope-explanation
+  - remediation-hint
+  - legacy-expansion-context
+  forbidden_truth_mutations:
+  - kernel-truth
+  - recipe-truth
+  - whitelist-truth
+  - token-truth
+  - second-gate-system
+  description: compatibility mode can add debt context but cannot create a second
+    gate system

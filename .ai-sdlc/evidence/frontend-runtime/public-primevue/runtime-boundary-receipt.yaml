@@ -1,0 +1,11 @@
+provider_id: public-primevue
+target_frontend_stack: vue3
+runtime_delivery_state: implemented
+carrier_mode: target-project-adapter-layer
+adapter_files:
+  - frontend/src/frontend-governance/runtime/kernel/KernelWrapper.vue
+  - frontend/src/frontend-governance/runtime/providers/public-primevue/ProviderAdapter.ts
+  - frontend/src/frontend-governance/runtime/legacy/LegacyAdapterBridge.ts
+business_page_import_policy:
+  direct_primevue_imports_allowed: false
+  adapter_boundary: frontend/src/ui-adapter

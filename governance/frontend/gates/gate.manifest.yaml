@@ -1,0 +1,7 @@
+work_item_id: '071'
+execution_priority:
+- ui-kernel-standard
+- non-exempt-hard-rules
+- declared-rules
+- structured-exceptions
+- implementation-code

@@ -1,0 +1,10 @@
+work_item_id: '151'
+source_work_item_ids:
+- '073'
+- '150'
+artifact_root: governance/frontend/provider-expansion
+schema_family: frontend-provider-expansion
+current_version: '1.0'
+provider_ids:
+- public-primevue
+- react-nextjs-shadcn

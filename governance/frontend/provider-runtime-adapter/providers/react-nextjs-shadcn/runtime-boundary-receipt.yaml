@@ -1,0 +1,20 @@
+provider_id: react-nextjs-shadcn
+source_work_item_ids:
+- '151'
+- '152'
+target_frontend_stack: react
+certification_gate: conditional
+roster_admission_state: candidate
+choice_surface_visibility: hidden
+react_stack_visibility: hidden
+react_binding_visibility: hidden
+carrier_mode: target-project-adapter-layer
+runtime_delivery_state: not-started
+evidence_return_state: missing
+boundary_constraints:
+- must-route-through-kernel-wrapper
+- must-not-bypass-provider-adapter
+- legacy-usage-via-legacy-adapter-only
+- runtime-verified-requires-fresh-evidence-return
+- react-public-rollout-remains-hidden-until-upstream-truth-upgrades
+default_entry_contract_id: kernel-wrapper

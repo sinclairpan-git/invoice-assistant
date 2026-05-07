@@ -1,0 +1,71 @@
+items:
+- coverage_id: error-status-perceivability
+  quality_surface: error-status-perceivability
+  governed_targets:
+  - error
+  - partial-error
+  - success-feedback
+  - no-results
+  source_truth_refs:
+  - '015'
+  - '067'
+  - 069
+  - '071'
+  expectation: critical feedback and result states remain perceivable without relying
+    on one visual cue
+  boundary: extends minimum perceivability truth without adding browser automation
+- coverage_id: accessible-naming-semantics
+  quality_surface: accessible-naming-semantics
+  governed_targets:
+  - UiInput
+  - UiFormItem
+  - UiTabs
+  - UiSearchBar
+  - UiFilterBar
+  - UiToolbar
+  - UiPagination
+  - UiResult
+  source_truth_refs:
+  - '015'
+  - '067'
+  - 069
+  - '071'
+  expectation: interactive and result-bearing protocols keep explicit naming and semantic
+    affordances
+  boundary: reuses shared component semantics without creating a separate accessibility
+    contract family
+- coverage_id: keyboard-reachability
+  quality_surface: keyboard-reachability
+  governed_targets:
+  - UiButton
+  - UiInput
+  - UiSelect
+  - UiTabs
+  - UiSearchBar
+  - UiFilterBar
+  - UiPagination
+  - UiDialog
+  - UiDrawer
+  source_truth_refs:
+  - '015'
+  - '067'
+  - '071'
+  expectation: key interactive surfaces remain reachable in standard keyboard flows
+  boundary: captures minimum reachability expectations without adding runtime tab-order
+    assertions
+- coverage_id: focus-continuity
+  quality_surface: focus-continuity
+  governed_targets:
+  - DialogFormPage
+  - WizardPage
+  - UiDialog
+  - UiDrawer
+  - UiTabs
+  source_truth_refs:
+  - '067'
+  - 068
+  - '071'
+  expectation: focus handling remains continuous across overlays, step transitions,
+    and segmented navigation
+  boundary: records continuity expectations only and does not define provider focus
+    traps
