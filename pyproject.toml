@@ -1,6 +1,6 @@
 [project]
 name = "invoice-assistant-workspace"
-version = "0.5.1"
+version = "0.5.2"
 description = "Workspace tooling for the invoice assistant repository."
 requires-python = ">=3.11"
 dependencies = [

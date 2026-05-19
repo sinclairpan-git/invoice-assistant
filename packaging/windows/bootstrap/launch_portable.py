@@ -13,12 +13,22 @@ from typing import Sequence
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 18080
+DEFAULT_READY_TIMEOUT_SECONDS = 60.0
+READY_PROBE_INTERVAL_SECONDS = 0.5
+READY_PROBE_TIMEOUT_SECONDS = 0.5
 RUNTIME_DIRS = ("data", "data/storage", "data/exports", "logs", "runtime")
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Launch the portable invoice assistant.")
     parser.add_argument("--portable-root", required=True)
+    parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument(
+        "--timeout-seconds",
+        type=float,
+        default=DEFAULT_READY_TIMEOUT_SECONDS,
+        help="Maximum seconds to wait for the local service to become ready.",
+    )
     return parser.parse_args(argv)
 
 
@@ -43,7 +53,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     existing_url = _resolve_existing_running_url(portable_root)
     if existing_url is not None:
         _append_startup_log(startup_log, f"Reusing running app at {existing_url}")
-        _open_url(existing_url)
+        if args.no_browser:
+            _append_startup_log(
+                startup_log,
+                f"Launcher ready without opening browser for {existing_url}",
+            )
+        else:
+            _open_url(existing_url)
         return 0
 
     try:
@@ -53,13 +69,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             python_exe=python_exe,
             start_script=start_script,
         )
-        app_url = _wait_for_ready_url(portable_root, startup_log)
+        app_url = _wait_for_ready_url(portable_root, startup_log, args.timeout_seconds)
     except Exception as exc:
         _append_startup_log(startup_log, f"Launcher failed: {exc}")
         return 1
 
-    _open_url(app_url)
-    _append_startup_log(startup_log, f"Launcher opened browser for {app_url}")
+    if args.no_browser:
+        _append_startup_log(startup_log, f"Launcher ready without opening browser for {app_url}")
+    else:
+        _open_url(app_url)
+        _append_startup_log(startup_log, f"Launcher opened browser for {app_url}")
     return 0
 
 
@@ -139,19 +158,20 @@ def _start_server_process(*, portable_root: Path, python_exe: Path, start_script
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         stdin=subprocess.DEVNULL,
-        close_fds=False,
+        close_fds=True,
     )
 
 
-def _wait_for_ready_url(portable_root: Path, startup_log: Path) -> str:
+def _wait_for_ready_url(portable_root: Path, startup_log: Path, timeout_seconds: float) -> str:
     url_file = portable_root / "runtime" / "app.url"
-    for _ in range(30):
+    deadline = time.monotonic() + max(timeout_seconds, READY_PROBE_INTERVAL_SECONDS)
+    while time.monotonic() < deadline:
         if url_file.is_file():
             app_url = url_file.read_text(encoding="utf-8").strip()
             if app_url and _is_app_ready(app_url):
                 _append_startup_log(startup_log, f"Ready URL detected: {app_url}")
                 return app_url
-        time.sleep(0.5)
+        time.sleep(READY_PROBE_INTERVAL_SECONDS)
     raise RuntimeError("Timed out waiting for runtime/app.url")
 
 
@@ -161,7 +181,7 @@ def _is_app_ready(app_url: str) -> bool:
 
 def _url_ready(url: str) -> bool:
     try:
-        with urllib.request.urlopen(url, timeout=2) as response:
+        with urllib.request.urlopen(url, timeout=READY_PROBE_TIMEOUT_SECONDS) as response:
             return 200 <= response.status < 400
     except (urllib.error.URLError, TimeoutError):
         return False

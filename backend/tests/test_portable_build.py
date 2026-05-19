@@ -138,6 +138,41 @@ def test_build_portable_bundle_requires_python_runtime(tmp_path: Path) -> None:
         raise AssertionError("build_portable_bundle should fail when python runtime is missing")
 
 
+def test_build_portable_bundle_accepts_release_asset_bundle_name(tmp_path: Path) -> None:
+    build_portable_bundle = _load_build_portable_bundle()
+    project_root = tmp_path / "fixture-project"
+    dist_root = tmp_path / "dist"
+    runtime_root = project_root / "packaging" / "windows" / "python"
+
+    _write_file(project_root / "backend" / "__init__.py", "")
+    _write_file(project_root / "backend" / "pyproject.toml", "[project]\nname = 'fixture-backend'\nversion = '0.1.0'\n")
+    _write_file(project_root / "backend" / "app" / "__init__.py", "")
+    _write_file(project_root / "backend" / "app" / "main.py", "def create_app(*args, **kwargs):\n    return {'ok': True}\n")
+    _write_file(project_root / "frontend" / "dist" / "index.html", "<html></html>\n")
+    _write_file(project_root / "packaging" / "windows" / "bootstrap" / "start_server.py", "print('bootstrap')\n")
+    _write_file(project_root / "packaging" / "windows" / "bootstrap" / "launch_portable.py", "print('launch')\n")
+    _write_file(project_root / "packaging" / "windows" / "bootstrap" / "stop_portable.py", "print('stop')\n")
+    _write_file(project_root / "packaging" / "windows" / "启动发票助手.bat", "@echo off\r\necho start\r\n")
+    _write_file(project_root / "packaging" / "windows" / "停止发票助手.bat", "@echo off\r\necho stop\r\n")
+    _write_file(runtime_root / "python.exe", "runtime\n")
+    _write_file(runtime_root / "Lib" / "site-packages" / "portable_runtime.txt", "runtime marker\n")
+
+    output_dir = build_portable_bundle(
+        project_root=project_root,
+        dist_root=dist_root,
+        version="v0.5.2",
+        bundle_name="invoice-assistant-offline-v0.5.2-windows-amd64",
+    )
+
+    assert output_dir == dist_root / "invoice-assistant-offline-v0.5.2-windows-amd64"
+    assert (dist_root / "invoice-assistant-offline-v0.5.2-windows-amd64.zip").is_file()
+    manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["bundle_name"] == "invoice-assistant-offline-v0.5.2-windows-amd64"
+    assert manifest["version"] == "v0.5.2"
+    assert "app/python/python.exe" in manifest["artifacts"]
+    assert "app/bootstrap/launch_portable.py" in manifest["artifacts"]
+
+
 def test_build_portable_bundle_requires_site_packages_in_python_runtime(tmp_path: Path) -> None:
     build_portable_bundle = _load_build_portable_bundle()
     project_root = tmp_path / "fixture-project"
