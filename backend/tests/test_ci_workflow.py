@@ -43,6 +43,11 @@ def test_release_build_workflow_builds_cloud_artifacts_for_each_platform() -> No
     assert "macos-latest" in content
     assert "ubuntu-latest" in content
     assert "scripts/build_cloud_release_bundle.py" in content
+    assert "scripts/prepare_windows_portable_runtime.py" in content
+    assert "scripts/build_windows_portable.py" in content
+    assert "app\\python\\python.exe" in content
+    assert "launch_portable.py" in content
+    assert "--no-browser --timeout-seconds 45" in content
     assert "invoice-assistant-offline-*.zip" in content
     assert "invoice-assistant-offline-*.tar.gz" in content
     assert "gh release upload" in content
@@ -59,6 +64,9 @@ def test_release_artifact_smoke_downloads_and_checks_release_assets() -> None:
     assert "gh release download" in content
     assert "invoice-assistant-offline-*-windows-*.zip" in content
     assert "invoice-assistant-offline-*-${RELEASE_ASSET_OS}-*.tar.gz" in content
+    assert "app\\python\\python.exe" in content
+    assert "launch_portable.py" in content
+    assert "--no-browser --timeout-seconds 45" in content
 
 
 def test_compatibility_gate_matches_required_branch_status() -> None:
@@ -75,6 +83,11 @@ def test_compatibility_gate_matches_required_branch_status() -> None:
     assert "name: Compatibility Gate Result" in content
     assert "cross-platform-validation" in content
     assert "windows-shell-smoke" in content
+    assert "offline-bundle-smoke" in content
+    assert "Offline Bundle Smoke (${{ matrix.asset_os }} ${{ matrix.archive }})" in content
+    assert "asset_os: windows" in content
+    assert "asset_os: macos" in content
+    assert "--no-browser --timeout-seconds 45" in content
 
 
 def test_windows_offline_smoke_builds_and_installs_cloud_bundle() -> None:
@@ -82,10 +95,12 @@ def test_windows_offline_smoke_builds_and_installs_cloud_bundle() -> None:
 
     assert "name: Windows Offline Smoke" in content
     assert "windows-latest" in content
-    assert "scripts/build_cloud_release_bundle.py" in content
+    assert "scripts/prepare_windows_portable_runtime.py" in content
+    assert "scripts/build_windows_portable.py" in content
     assert "invoice-assistant-offline-*.zip" in content
-    assert ".\\install_offline.ps1" in content
-    assert "app\\bootstrap\\start_server.py --help" in content
+    assert "app\\python\\python.exe" in content
+    assert "launch_portable.py" in content
+    assert "--no-browser --timeout-seconds 45" in content
     assert "Upload smoke evidence" in content
 
 

@@ -22,10 +22,11 @@ def build_portable_bundle(
     dist_root: Path,
     version: str,
     python_runtime_root: Path | None = None,
+    bundle_name: str | None = None,
 ) -> Path:
     project_root = project_root.expanduser().resolve()
     dist_root = dist_root.expanduser().resolve()
-    output_dir = dist_root / f"invoice-assistant-windows-x64-{version}"
+    output_dir = dist_root / (bundle_name or f"invoice-assistant-windows-x64-{version}")
     runtime_source = _resolve_python_runtime_root(project_root, python_runtime_root)
 
     if output_dir.exists():
@@ -199,6 +200,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--project-root", default=Path(__file__).resolve().parents[1])
     parser.add_argument("--dist-root", default=Path(__file__).resolve().parents[1] / "dist")
     parser.add_argument("--python-runtime-root")
+    parser.add_argument("--bundle-name")
     return parser.parse_args()
 
 
@@ -209,6 +211,7 @@ def main() -> None:
         dist_root=Path(args.dist_root),
         version=args.version,
         python_runtime_root=Path(args.python_runtime_root) if args.python_runtime_root else None,
+        bundle_name=args.bundle_name,
     )
     print(output_dir)
 

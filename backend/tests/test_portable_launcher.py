@@ -82,6 +82,35 @@ def test_launch_portable_starts_server_and_opens_runtime_url(tmp_path: Path, mon
     ).read_text(encoding="utf-8")
 
 
+def test_launch_portable_can_skip_browser_for_ci_smoke(tmp_path: Path, monkeypatch) -> None:
+    module = _load_portable_launcher_module()
+    portable_root = tmp_path / "portable"
+    python_exe = portable_root / "app" / "python" / "python.exe"
+    start_server = portable_root / "app" / "bootstrap" / "start_server.py"
+
+    python_exe.parent.mkdir(parents=True, exist_ok=True)
+    python_exe.write_text("runtime\n", encoding="utf-8")
+    start_server.parent.mkdir(parents=True, exist_ok=True)
+    start_server.write_text("print('start')\n", encoding="utf-8")
+
+    monkeypatch.setattr(module, "_resolve_existing_running_url", lambda *_args: None)
+    monkeypatch.setattr(module, "_probe_python_runtime", lambda *_args: None)
+    monkeypatch.setattr(module, "_start_server_process", lambda **_kwargs: None)
+    monkeypatch.setattr(module, "_wait_for_ready_url", lambda *_args: "http://127.0.0.1:18082")
+    monkeypatch.setattr(
+        module,
+        "_open_url",
+        lambda _url: (_ for _ in ()).throw(AssertionError("browser should stay closed")),
+    )
+
+    exit_code = module.main(["--portable-root", str(portable_root), "--no-browser"])
+
+    assert exit_code == 0
+    assert "Launcher ready without opening browser for http://127.0.0.1:18082" in (
+        portable_root / "logs" / "startup.log"
+    ).read_text(encoding="utf-8")
+
+
 def test_normalize_portable_root_strips_trailing_quote_and_backslash(tmp_path: Path) -> None:
     module = _load_portable_launcher_module()
     portable_root = tmp_path / "portable-root"
@@ -105,6 +134,29 @@ def test_launch_process_is_running_uses_binary_tasklist_output(monkeypatch) -> N
     monkeypatch.setattr(module.subprocess, "run", _fake_run)
 
     assert module._process_is_running(11940) is True
+
+
+def test_launch_server_process_does_not_inherit_parent_handles(tmp_path: Path, monkeypatch) -> None:
+    module = _load_portable_launcher_module()
+    calls: list[dict] = []
+
+    def _fake_popen(_args, **kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace()
+
+    monkeypatch.setattr(module.subprocess, "Popen", _fake_popen)
+
+    module._start_server_process(
+        portable_root=tmp_path,
+        python_exe=tmp_path / "python.exe",
+        start_script=tmp_path / "start_server.py",
+    )
+
+    assert calls
+    assert calls[0]["stdout"] is module.subprocess.DEVNULL
+    assert calls[0]["stderr"] is module.subprocess.DEVNULL
+    assert calls[0]["stdin"] is module.subprocess.DEVNULL
+    assert calls[0]["close_fds"] is True
 
 
 def test_launch_process_is_running_handles_missing_tasklist_stdout(monkeypatch) -> None:

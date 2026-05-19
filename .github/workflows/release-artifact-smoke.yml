@@ -6,7 +6,7 @@ on:
       tag:
         description: Release tag to verify.
         required: true
-        default: v0.5.0
+        default: v0.5.2
   release:
     types:
       - published
@@ -59,13 +59,19 @@ jobs:
           Expand-Archive -LiteralPath $archive.FullName -DestinationPath $smokeRoot -Force
           $bundleDir = Get-ChildItem -Path $smokeRoot -Directory | Select-Object -First 1
           if (-not $bundleDir) { throw "Expanded release zip did not contain a bundle directory." }
+          if (-not (Test-Path (Join-Path $bundleDir.FullName "manifest.json"))) { throw "Missing manifest.json" }
+          if (-not (Test-Path (Join-Path $bundleDir.FullName "启动发票助手.bat"))) { throw "Missing 启动发票助手.bat" }
+          if (-not (Test-Path (Join-Path $bundleDir.FullName "停止发票助手.bat"))) { throw "Missing 停止发票助手.bat" }
+          if (-not (Test-Path (Join-Path $bundleDir.FullName "app\python\python.exe"))) { throw "Missing bundled Python runtime" }
+          if (-not (Test-Path (Join-Path $bundleDir.FullName "app\bootstrap\launch_portable.py"))) { throw "Missing launch_portable.py" }
           Push-Location $bundleDir.FullName
-          & .\install_offline.bat *>&1 | Tee-Object -FilePath (Join-Path $evidenceRoot "install.log")
-          if ($LASTEXITCODE -ne 0) { throw "release install_offline.bat failed with exit code $LASTEXITCODE" }
-          & .\.venv\Scripts\python.exe app\bootstrap\start_server.py --help *>&1 | Tee-Object -FilePath (Join-Path $evidenceRoot "start-help.txt")
-          if ($LASTEXITCODE -ne 0) { throw "release start_server.py --help failed with exit code $LASTEXITCODE" }
+          & .\app\python\python.exe app\bootstrap\launch_portable.py --portable-root $bundleDir.FullName --no-browser --timeout-seconds 45 *>&1 | Tee-Object -FilePath (Join-Path $evidenceRoot "launch.log")
+          if ($LASTEXITCODE -ne 0) { throw "release launch_portable.py failed with exit code $LASTEXITCODE" }
+          & .\app\python\python.exe app\bootstrap\stop_portable.py --portable-root $bundleDir.FullName *>&1 | Tee-Object -FilePath (Join-Path $evidenceRoot "stop.log")
+          if ($LASTEXITCODE -ne 0) { throw "release stop_portable.py failed with exit code $LASTEXITCODE" }
           Pop-Location
-          Copy-Item -LiteralPath (Join-Path $bundleDir.FullName "bundle-manifest.json") -Destination $evidenceRoot
+          Copy-Item -LiteralPath (Join-Path $bundleDir.FullName "manifest.json") -Destination $evidenceRoot
+          Copy-Item -LiteralPath (Join-Path $bundleDir.FullName "logs\startup.log") -Destination $evidenceRoot -ErrorAction SilentlyContinue
 
       - name: Upload release zip smoke evidence
         if: always()

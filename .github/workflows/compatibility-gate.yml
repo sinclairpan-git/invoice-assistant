@@ -169,6 +169,7 @@ jobs:
         run: pnpm --dir frontend build
 
       - name: Build backend runtime wheelhouse
+        if: matrix.asset_os == 'macos'
         shell: bash
         run: |
           set -euo pipefail
@@ -184,15 +185,15 @@ jobs:
 
       - name: Build Windows offline bundle
         if: matrix.asset_os == 'windows'
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
-          python scripts/build_cloud_release_bundle.py \
-            --version "v0.5.1-pr-smoke" \
-            --platform-os windows \
-            --platform-machine amd64 \
-            --archive-format zip \
-            --wheels-dir dist-offline/wheels
+          $ErrorActionPreference = "Stop"
+          python scripts/prepare_windows_portable_runtime.py --runtime-root ".tmp\windows-runtime\python-3.11.9"
+          python scripts/build_windows_portable.py `
+            --version "v0.5.2-pr-smoke" `
+            --dist-root dist-offline `
+            --python-runtime-root ".tmp\windows-runtime\python-3.11.9" `
+            --bundle-name "invoice-assistant-offline-v0.5.2-pr-smoke-windows-amd64"
 
       - name: Build macOS offline bundle
         if: matrix.asset_os == 'macos'
@@ -205,7 +206,7 @@ jobs:
             arm64|aarch64) machine="arm64" ;;
           esac
           python scripts/build_cloud_release_bundle.py \
-            --version "v0.5.1-pr-smoke" \
+            --version "v0.5.2-pr-smoke" \
             --platform-os macos \
             --platform-machine "${machine}" \
             --archive-format tar.gz \
@@ -225,19 +226,22 @@ jobs:
           Expand-Archive -LiteralPath $asset.FullName -DestinationPath $smokeRoot -Force
           $bundleDir = Get-ChildItem -Path $smokeRoot -Directory | Select-Object -First 1
           if (-not $bundleDir) { throw "Expanded archive did not contain a bundle directory." }
-          if (-not (Test-Path (Join-Path $bundleDir.FullName "bundle-manifest.json"))) { throw "Missing bundle-manifest.json" }
+          if (-not (Test-Path (Join-Path $bundleDir.FullName "manifest.json"))) { throw "Missing manifest.json" }
           if (-not (Test-Path (Join-Path $bundleDir.FullName "启动发票助手.bat"))) { throw "Missing 启动发票助手.bat" }
           if (-not (Test-Path (Join-Path $bundleDir.FullName "停止发票助手.bat"))) { throw "Missing 停止发票助手.bat" }
           if (-not (Test-Path (Join-Path $bundleDir.FullName "用户指引.html"))) { throw "Missing 用户指引.html" }
+          if (-not (Test-Path (Join-Path $bundleDir.FullName "app\python\python.exe"))) { throw "Missing bundled Python runtime" }
+          if (-not (Test-Path (Join-Path $bundleDir.FullName "app\bootstrap\launch_portable.py"))) { throw "Missing launch_portable.py" }
           Push-Location $bundleDir.FullName
-          & .\install_offline.bat *>&1 | Tee-Object -FilePath (Join-Path $evidenceRoot "install.log")
-          if ($LASTEXITCODE -ne 0) { throw "install_offline.bat failed with exit code $LASTEXITCODE" }
-          & .\.venv\Scripts\python.exe app\bootstrap\start_server.py --help *>&1 | Tee-Object -FilePath (Join-Path $evidenceRoot "start-help.txt")
-          if ($LASTEXITCODE -ne 0) { throw "start_server.py --help failed with exit code $LASTEXITCODE" }
-          & .\.venv\Scripts\python.exe -c "import sys; sys.path.insert(0, 'app/server'); import backend.app.main; import fastapi, sqlalchemy, uvicorn" *>&1 | Tee-Object -FilePath (Join-Path $evidenceRoot "import-smoke.txt")
+          & .\app\python\python.exe app\bootstrap\launch_portable.py --portable-root $bundleDir.FullName --no-browser --timeout-seconds 45 *>&1 | Tee-Object -FilePath (Join-Path $evidenceRoot "launch.log")
+          if ($LASTEXITCODE -ne 0) { throw "launch_portable.py failed with exit code $LASTEXITCODE" }
+          & .\app\python\python.exe -c "import sys; sys.path.insert(0, 'app/server'); import backend.app.main; import fastapi, sqlalchemy, uvicorn" *>&1 | Tee-Object -FilePath (Join-Path $evidenceRoot "import-smoke.txt")
           if ($LASTEXITCODE -ne 0) { throw "runtime import smoke failed with exit code $LASTEXITCODE" }
+          & .\app\python\python.exe app\bootstrap\stop_portable.py --portable-root $bundleDir.FullName *>&1 | Tee-Object -FilePath (Join-Path $evidenceRoot "stop.log")
+          if ($LASTEXITCODE -ne 0) { throw "stop_portable.py failed with exit code $LASTEXITCODE" }
           Pop-Location
-          Copy-Item -LiteralPath (Join-Path $bundleDir.FullName "bundle-manifest.json") -Destination $evidenceRoot
+          Copy-Item -LiteralPath (Join-Path $bundleDir.FullName "manifest.json") -Destination $evidenceRoot
+          Copy-Item -LiteralPath (Join-Path $bundleDir.FullName "logs\startup.log") -Destination $evidenceRoot -ErrorAction SilentlyContinue
 
       - name: Smoke macOS tar
         if: matrix.asset_os == 'macos'
